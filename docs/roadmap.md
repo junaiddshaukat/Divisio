@@ -23,6 +23,8 @@ Phases are sequential. Do not start the next phase until exit criteria for the c
 
 Also delivered beyond the original bar: the five handshake checks with all eight rejection paths verified, reconnect gap replay plus `snapshot_required`, delta coalescing with backpressure, a `stopping` session state, and projections proven to rebuild identically from the log.
 
+**Committed tests:** `bun test` covers handshake (8 paths), resume replay vs `snapshot_required`, projection rebuild, interrupt → `stopping`, and a mock-peer adapter fixture (no live Claude).
+
 ## Phase 1 — Core
 
 **Goal:** Three first-party adapters, permissions, projects, checkpoints.

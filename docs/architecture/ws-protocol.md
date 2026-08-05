@@ -160,13 +160,14 @@ Several clients may attach to one environment and one thread simultaneously (des
 
 ## Testing
 
-Belongs in the Phase 0 suite:
+Phase 0 suite (`bun test`):
 
-- Handshake rejection for each of the five checks
-- Resume inside retention → `replay`, and past retention → `snapshot_required`
-- Reconnect mid-turn: no lost or duplicated events across the gap
-- Slow-consumer socket: deltas collapse, domain events survive in order
-- Unknown subprotocol → rejected, not downgraded
+- Handshake rejection for each of the eight concrete paths (host, origin missing/foreign, protocol, bearer-first, no token, query token, bad token)
+- Resume inside retention → `replay`, and past retention / future cursor → `snapshot_required`
+- Projection rebuild from the event log
+- Interrupt → `stopping` via the mock-peer adapter fixture (no live CLI)
+
+See `apps/server/src/*.test.ts` and `packages/adapters/src/mock.ts`.
 
 ## Related
 

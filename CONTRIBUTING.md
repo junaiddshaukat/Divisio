@@ -15,9 +15,13 @@ Divisio is early. The daemon, protocol, and web UI work end to end; provider bre
 - Keep PRs small and focused
 - Use glossary terms from [docs/specs/glossary.md](docs/specs/glossary.md)
 
-## Issues
+## Verifying
 
-Focused bugs and concrete proposals beat vague feature dumps. For providers, specify CLI name, auth flow, and which adapter tier you believe applies.
+```bash
+bun test
+```
+
+Runs the Phase 0 suite (handshake, resume, projections, interrupt via mock peer). Do not require a live Claude/Codex install for these tests.
 
 ## License
 

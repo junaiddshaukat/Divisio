@@ -12,7 +12,7 @@ import type { EventStore } from "./store/log.ts";
 const log = logger("ws");
 
 /** How many recent events stay available for gap replay before a snapshot is required. */
-const REPLAY_WINDOW = 5_000;
+export const DEFAULT_REPLAY_WINDOW = 5_000;
 /** Delta flush cadence — one frame per render frame, not one per token. */
 const FLUSH_MS = 16;
 /** Above this many bytes queued, the client is too slow and deltas collapse. */
@@ -27,13 +27,22 @@ export interface SocketData {
   catchUp: boolean;
 }
 
+export interface WsHubOptions {
+  /** Override the replay retention window (tests use a small value). */
+  replayWindow?: number;
+}
+
 export class WsHub {
   private readonly clients = new Set<ServerWebSocket<SocketData>>();
+  private readonly replayWindow: number;
 
   constructor(
     private readonly store: EventStore,
     private readonly environmentId: string,
-  ) {}
+    options: WsHubOptions = {},
+  ) {
+    this.replayWindow = options.replayWindow ?? DEFAULT_REPLAY_WINDOW;
+  }
 
   private orchestrator!: Orchestrator;
   attach(orchestrator: Orchestrator) {
@@ -159,12 +168,12 @@ export class WsHub {
     ws.data.threads = new Set(payload.threads);
     const head = this.store.head();
 
-    if (payload.since > head || head - payload.since > REPLAY_WINDOW) {
+    if (payload.since > head || head - payload.since > this.replayWindow) {
       this.send(ws, { t: "res", id, payload: { mode: "snapshot_required" } as never });
       return;
     }
 
-    const events = this.store.readSince(payload.since, REPLAY_WINDOW);
+    const events = this.store.readSince(payload.since, this.replayWindow);
     this.send(ws, { t: "res", id, payload: { mode: "replay", through: head } as never });
     for (const event of events) {
       if (event.threadId === null || ws.data.threads.has(event.threadId)) {

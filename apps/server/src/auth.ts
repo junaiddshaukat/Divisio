@@ -27,12 +27,17 @@ export interface AuthConfig {
   port: number;
   /** Extra origins to allow, e.g. the Vite dev server. */
   extraOrigins?: string[];
+  /**
+   * Inject a token instead of reading/creating the userdata file.
+   * Used by tests so they never touch the developer's live `~/.divisio`.
+   */
+  token?: string;
 }
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 /** Token-bearing subprotocol entry, for browser clients that cannot set headers. */
-const BEARER_PROTO_PREFIX = "bearer.";
+export const BEARER_PROTO_PREFIX = "bearer.";
 
 export class Auth {
   readonly token: string;
@@ -42,7 +47,7 @@ export class Auth {
 
   constructor(cfg: AuthConfig) {
     this.port = cfg.port;
-    this.token = loadOrCreateToken();
+    this.token = cfg.token ?? loadOrCreateToken();
     this.tokenBuf = Buffer.from(this.token, "utf8");
     this.allowedOrigins = new Set([
       `http://localhost:${cfg.port}`,
