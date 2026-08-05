@@ -1,0 +1,19 @@
+# Git ignore
+
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+*.tsbuildinfo
+dist/
+build/
+.turbo/
+.orchestrator/
+*.log
+.vscode/*
+!.vscode/extensions.json
+
+# Internal-only: competitive analysis, peer research, third-party screenshots.
+# Not published. Keeps the reasoning without shipping it.
+docs/internal/
