@@ -10,9 +10,11 @@ Vendor CLIs change constantly. Adapters must be testable **without** a live bina
 | [`testkit/replay.ts`](../../packages/adapters/src/testkit/replay.ts) | Replay NDJSON fixtures through a normalizer |
 | [`claude/normalize.ts`](../../packages/adapters/src/claude/normalize.ts) | Pure Claude stream-json → `ProviderRuntimeEvent` |
 | [`codex/normalize.ts`](../../packages/adapters/src/codex/normalize.ts) | Pure Codex app-server notifications → `ProviderRuntimeEvent` |
+| [`cursor/normalize.ts`](../../packages/adapters/src/cursor/normalize.ts) | Pure Cursor stream-json → `ProviderRuntimeEvent` |
 | [`jsonrpc/stdio.ts`](../../packages/adapters/src/jsonrpc/stdio.ts) | NDJSON JSON-RPC client (Codex omits `"jsonrpc":"2.0"`) |
 | [`fixtures/claude/*.ndjson`](../../packages/adapters/fixtures/claude/) | Golden Claude stream-json lines |
 | [`fixtures/codex/*.ndjson`](../../packages/adapters/fixtures/codex/) | Golden Codex notification frames (`method` + `params`) |
+| [`fixtures/cursor/*.ndjson`](../../packages/adapters/fixtures/cursor/) | Golden Cursor stream-json lines |
 
 ## Adding a fixture
 

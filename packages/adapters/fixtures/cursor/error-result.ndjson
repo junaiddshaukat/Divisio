@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp/demo","session_id":"ses_fixture_cursor_err","model":"Claude 4 Sonnet","permissionMode":"default"}
+{"type":"result","subtype":"error","is_error":true,"result":"not authenticated — run cursor-agent login","session_id":"ses_fixture_cursor_err"}

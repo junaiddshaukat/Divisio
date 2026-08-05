@@ -1,0 +1,7 @@
+# Cursor Agent stream-json golden fixtures (from official output-format docs).
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp/demo","session_id":"ses_fixture_cursor_text","model":"Claude 4 Sonnet","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Say hello"}]},"session_id":"ses_fixture_cursor_text"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello "}]},"timestamp_ms":1761698920748,"session_id":"ses_fixture_cursor_text"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"from Cursor."}]},"timestamp_ms":1761698920800,"session_id":"ses_fixture_cursor_text"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello from Cursor."}]},"session_id":"ses_fixture_cursor_text"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":100,"result":"Hello from Cursor.","session_id":"ses_fixture_cursor_text"}

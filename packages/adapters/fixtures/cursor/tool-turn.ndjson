@@ -1,0 +1,7 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp/demo","session_id":"ses_fixture_cursor_tool","model":"Claude 4 Sonnet","permissionMode":"default"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll read the file."}]},"timestamp_ms":1000,"session_id":"ses_fixture_cursor_tool"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll read the file."}]},"timestamp_ms":1001,"model_call_id":"mc_dup","session_id":"ses_fixture_cursor_tool"}
+{"type":"tool_call","subtype":"started","call_id":"toolu_01","tool_call":{"readToolCall":{"args":{"path":"README.md"}}},"session_id":"ses_fixture_cursor_tool"}
+{"type":"tool_call","subtype":"completed","call_id":"toolu_01","tool_call":{"readToolCall":{"args":{"path":"README.md"},"result":{"success":{"content":"# Divisio\n","totalLines":1}}}},"session_id":"ses_fixture_cursor_tool"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]},"timestamp_ms":2000,"session_id":"ses_fixture_cursor_tool"}
+{"type":"result","subtype":"success","is_error":false,"result":"I'll read the file.Done.","session_id":"ses_fixture_cursor_tool"}

@@ -1,6 +1,7 @@
 import { ADAPTER_CONTRACT_VERSION, type ProviderAdapter } from "@divisio/contracts";
 import { ClaudeAdapter } from "./claude.ts";
 import { CodexAdapter } from "./codex.ts";
+import { CursorAdapter } from "./cursor.ts";
 
 /**
  * Adapter registry. Orchestration resolves providers through here and never
@@ -9,7 +10,9 @@ import { CodexAdapter } from "./codex.ts";
 export class AdapterRegistry {
   private readonly adapters = new Map<string, ProviderAdapter>();
 
-  constructor(adapters: ProviderAdapter[] = [new ClaudeAdapter(), new CodexAdapter()]) {
+  constructor(
+    adapters: ProviderAdapter[] = [new ClaudeAdapter(), new CodexAdapter(), new CursorAdapter()],
+  ) {
     for (const a of adapters) this.register(a);
   }
 

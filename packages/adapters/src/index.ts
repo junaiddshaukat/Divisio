@@ -7,6 +7,9 @@ export {
   normalizeCodexNotification,
 } from "./codex/normalize.ts";
 export type { CodexNormalizeResult, CodexNormalizeState } from "./codex/normalize.ts";
+export { CursorAdapter } from "./cursor.ts";
+export { normalizeCursorStreamLine } from "./cursor/normalize.ts";
+export type { CursorNormalizeResult, CursorNormalizeState } from "./cursor/normalize.ts";
 export { JsonRpcStdioClient } from "./jsonrpc/stdio.ts";
 export { MockPeerAdapter } from "./mock.ts";
 export type { MockPeerOptions } from "./mock.ts";

@@ -23,7 +23,7 @@ Phases are sequential. Do not start the next phase until exit criteria for the c
 
 Also delivered beyond the original bar: the five handshake checks with all eight rejection paths verified, reconnect gap replay plus `snapshot_required`, delta coalescing with backpressure, a `stopping` session state, and projections proven to rebuild identically from the log.
 
-**Committed tests:** `bun test` covers handshake (8 paths), resume replay vs `snapshot_required`, projection rebuild, interrupt → `stopping`, mock-peer adapter, and Claude + Codex golden normalizer fixtures (no live CLIs).
+**Committed tests:** `bun test` covers handshake (8 paths), resume replay vs `snapshot_required`, projection rebuild, interrupt → `stopping`, mock-peer adapter, and Claude + Codex + Cursor golden normalizer fixtures (no live CLIs).
 
 ## Phase 1 — Core
 
@@ -31,7 +31,7 @@ Also delivered beyond the original bar: the five handshake checks with all eight
 
 | Deliverable | Notes |
 | --- | --- |
-| Adapters | Claude Code ✓, Codex ✓ (`app-server`), Cursor (next) — [providers](specs/providers.md) |
+| Adapters | Claude Code ✓, Codex ✓, Cursor Agent ✓ — [providers](specs/providers.md) |
 | Permissions | Supervised vs full-access modes — [permissions](specs/permissions.md) |
 | Projects | Directory-rooted workspaces |
 | Checkpoints | Hidden git ref (or equivalent) per turn for diff/restore |

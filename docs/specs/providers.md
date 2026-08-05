@@ -32,7 +32,7 @@ Users must install and auth at least one provider before useful work:
 | --- | --- | --- |
 | Codex | Structured (`codex app-server`) | Implemented (`CodexAdapter`) |
 | Claude Code | Stream (`--print --output-format stream-json`) | Implemented (`ClaudeAdapter`) |
-| Cursor | Stream | Planned |
+| Cursor | Stream (`cursor-agent --print … stream-json`) | Implemented (`CursorAdapter`) |
 | Others | Best available; PTY fallback allowed | — |
 
 ### Codex (Structured)
@@ -49,6 +49,14 @@ Users must install and auth at least one provider before useful work:
 - Print mode owns the permission engine — `approvals: false` until a PreToolUse / supervised path exists.
 - Capabilities: `sessionResume`, `interruptTurn`, `worktreeAware`, `usageSignals`.
 
+### Cursor Agent (Stream)
+
+- Binary: prefer `cursor-agent` (not bare `agent` — that is often Grok on PATH).
+- Spawn: `cursor-agent --print --output-format stream-json --stream-partial-output --workspace <cwd> [--resume <id>] <prompt>`.
+- Partial-stream filter: only assistant events with `timestamp_ms` and without `model_call_id` are new text.
+- Approvals: `false` in print mode (CLI-owned). Mediated approvals need ACP (`cursor-agent acp`) later.
+- Capabilities: `sessionResume`, `interruptTurn`, `worktreeAware`. Auth: `cursor-agent login`.
+- Detect: `cursor-agent --version`.
 ## Capability honesty
 
 If a provider cannot interrupt, resume, or emit approvals, the capability matrix must say so. Do not emulate fake approvals in the UI.
