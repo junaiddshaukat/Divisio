@@ -9,6 +9,7 @@ import {
   type StartSessionInput,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
+import { normalizeClaudeStreamLine } from "./claude/normalize.ts";
 
 const log = logger("adapter:claude");
 
@@ -17,6 +18,9 @@ const log = logger("adapter:claude");
  *
  * Drives the `claude` CLI in `--print --output-format stream-json` mode, one
  * process per turn. The CLI owns its own auth; we never see a key.
+ *
+ * Stream-json parsing lives in `claude/normalize.ts` so golden fixtures can
+ * replay vendor output without spawning a process.
  *
  * Capabilities are declared from what this transport can actually do, not from
  * what the product roadmap wants. `approvals` is false: in print mode the CLI
@@ -115,6 +119,7 @@ export class ClaudeAdapter implements ProviderAdapter {
   private async pump(session: Session, proc: TurnProcess, turnId: string) {
     let assistantText = "";
     let buffer = "";
+    let normState = { nativeId: session.nativeId };
 
     try {
       const reader = proc.stdout.getReader();
@@ -139,7 +144,11 @@ export class ClaudeAdapter implements ProviderAdapter {
             log.warn("unparseable stream line", { sample: trimmed.slice(0, 120) });
             continue;
           }
-          assistantText += this.handleMessage(session, msg, turnId);
+          const result = normalizeClaudeStreamLine(msg, turnId, normState);
+          normState = result.state;
+          if (normState.nativeId) session.nativeId = normState.nativeId;
+          for (const event of result.events) session.emit(event);
+          assistantText += result.text;
         }
       }
 
@@ -167,67 +176,6 @@ export class ClaudeAdapter implements ProviderAdapter {
         session.emit({ type: "status", status: "ready" });
       }
     }
-  }
-
-  /** Maps vendor stream-json lines onto normalized events. Returns text to accumulate. */
-  private handleMessage(session: Session, msg: Record<string, unknown>, turnId: string): string {
-    const type = msg["type"];
-
-    if (type === "system" && msg["subtype"] === "init") {
-      const id = msg["session_id"];
-      if (typeof id === "string") session.nativeId = id;
-      return "";
-    }
-
-    if (type === "assistant") {
-      const message = msg["message"] as { content?: unknown[] } | undefined;
-      const content = Array.isArray(message?.content) ? message.content : [];
-      let text = "";
-      for (const block of content) {
-        const b = block as Record<string, unknown>;
-        if (b["type"] === "text" && typeof b["text"] === "string") {
-          text += b["text"];
-          session.emit({ type: "assistant.delta", turnId, text: b["text"] });
-        } else if (b["type"] === "tool_use") {
-          session.emit({
-            type: "tool.started",
-            turnId,
-            toolCallId: String(b["id"] ?? ""),
-            name: String(b["name"] ?? "tool"),
-            input: JSON.stringify(b["input"] ?? {}).slice(0, 2000),
-          });
-        }
-      }
-      return text;
-    }
-
-    if (type === "user") {
-      const message = msg["message"] as { content?: unknown[] } | undefined;
-      const content = Array.isArray(message?.content) ? message.content : [];
-      for (const block of content) {
-        const b = block as Record<string, unknown>;
-        if (b["type"] === "tool_result") {
-          session.emit({
-            type: "tool.finished",
-            turnId,
-            toolCallId: String(b["tool_use_id"] ?? ""),
-            ok: b["is_error"] !== true,
-            output: typeof b["content"] === "string" ? b["content"].slice(0, 2000) : undefined,
-          });
-        }
-      }
-      return "";
-    }
-
-    if (type === "result" && msg["is_error"] === true) {
-      session.emit({
-        type: "error",
-        code: "provider_error",
-        message: String(msg["result"] ?? "provider reported an error"),
-      });
-    }
-
-    return "";
   }
 
   async interruptTurn(handle: SessionHandle, turnId: string): Promise<void> {

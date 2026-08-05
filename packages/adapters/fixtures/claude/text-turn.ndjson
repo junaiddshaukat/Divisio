@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"ses_fixture_text_001","cwd":"/tmp/demo"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello "},{"type":"text","text":"from Claude."}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"Hello from Claude.","session_id":"ses_fixture_text_001"}

@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"ses_fixture_tool_001"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll read the file."},{"type":"tool_use","id":"toolu_01","name":"Read","input":{"path":"README.md"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01","content":"# Divisio\n","is_error":false}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"Done."}

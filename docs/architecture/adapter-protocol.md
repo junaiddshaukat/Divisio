@@ -60,6 +60,8 @@ Normalized `ProviderRuntimeEvent` examples: `assistant.delta`, `tool.started`, `
 - Community adapters (Phase 4) load against the same interface and declare capabilities
 - Orchestration never branches on `kind` except for display metadata
 
+See [adapter-testkit.md](adapter-testkit.md) for golden fixtures and normalizer replay.
+
 ## First-party vs community
 
 | Class | Expectation |
