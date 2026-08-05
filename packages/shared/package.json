@@ -1,0 +1,12 @@
+{
+  "name": "@divisio/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./brand": "./src/brand.ts",
+    "./paths": "./src/paths.ts",
+    "./ids": "./src/ids.ts",
+    "./log": "./src/log.ts"
+  }
+}
