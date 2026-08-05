@@ -1,0 +1,8 @@
+{
+  "name": "@divisio/adapters",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@divisio/contracts": "workspace:*", "@divisio/shared": "workspace:*" }
+}
