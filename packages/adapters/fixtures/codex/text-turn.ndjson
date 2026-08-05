@@ -1,0 +1,7 @@
+# Golden Codex app-server notifications (NDJSON). Comments (#) ignored by testkit.
+# Simulates one text turn: turn/started → deltas → agentMessage completed → turn/completed.
+{"method":"turn/started","params":{"turn":{"id":"turn_fixture_text","status":"inProgress","items":[]}}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_msg_1","delta":"Hello "}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_msg_1","delta":"from Codex."}}
+{"method":"item/completed","params":{"item":{"id":"item_msg_1","type":"agentMessage","text":"Hello from Codex."}}}
+{"method":"turn/completed","params":{"turn":{"id":"turn_fixture_text","status":"completed","items":[]}}}

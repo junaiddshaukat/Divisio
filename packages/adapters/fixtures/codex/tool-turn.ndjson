@@ -1,0 +1,7 @@
+# Command execution tool turn with approval request shape exercised in unit tests separately.
+{"method":"turn/started","params":{"turn":{"id":"turn_fixture_tool","status":"inProgress","items":[]}}}
+{"method":"item/started","params":{"item":{"id":"item_cmd_1","type":"commandExecution","command":"ls -la","cwd":"/tmp/demo","status":"inProgress"}}}
+{"method":"item/completed","params":{"item":{"id":"item_cmd_1","type":"commandExecution","command":"ls -la","status":"completed","aggregatedOutput":"total 0\n"}}}
+{"method":"item/agentMessage/delta","params":{"itemId":"item_msg_2","delta":"Listed."}}
+{"method":"item/completed","params":{"item":{"id":"item_msg_2","type":"agentMessage","text":"Listed."}}}
+{"method":"turn/completed","params":{"turn":{"id":"turn_fixture_tool","status":"completed","items":[]}}}

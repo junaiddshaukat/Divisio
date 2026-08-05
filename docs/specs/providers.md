@@ -28,12 +28,26 @@ Users must install and auth at least one provider before useful work:
 
 ## Adapter tier expectations
 
-| Provider | Expected tier (initial) |
-| --- | --- |
-| Codex | Structured (app-server) when available |
-| Claude Code | Stream (or structured if/when offered) |
-| Cursor | Stream |
-| Others | Best available; PTY fallback allowed |
+| Provider | Expected tier (initial) | Status |
+| --- | --- | --- |
+| Codex | Structured (`codex app-server`) | Implemented (`CodexAdapter`) |
+| Claude Code | Stream (`--print --output-format stream-json`) | Implemented (`ClaudeAdapter`) |
+| Cursor | Stream | Planned |
+| Others | Best available; PTY fallback allowed | — |
+
+### Codex (Structured)
+
+- Binary: `codex` on PATH; session transport is `codex app-server` (NDJSON JSON-RPC, no `"jsonrpc":"2.0"` field).
+- Handshake: `initialize` → notify `initialized` → `thread/start` or `thread/resume` (resume falls back to start).
+- Turns: `turn/start` with `input: [{ type: "text", text }]`; interrupt via `turn/interrupt`.
+- Approvals: server requests `item/commandExecution/requestApproval` / `item/fileChange/requestApproval` → `approval.requested`; Divisio replies `accept` / `decline`.
+- Capabilities: `sessionResume`, `interruptTurn`, `approvals`, `worktreeAware`. No usage signals yet.
+- Detect: `codex --version`; auth remains `codex login` (BYO CLI).
+
+### Claude Code (Stream)
+
+- Print mode owns the permission engine — `approvals: false` until a PreToolUse / supervised path exists.
+- Capabilities: `sessionResume`, `interruptTurn`, `worktreeAware`, `usageSignals`.
 
 ## Capability honesty
 
