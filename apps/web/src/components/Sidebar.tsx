@@ -11,6 +11,7 @@ interface Props {
   onProviders(): void;
   onLanes(): void;
   laneCount: number;
+  view: "thread" | "board";
 }
 
 /** Relative time, kept terse the way a dense list needs. */
@@ -22,7 +23,7 @@ function ago(iso: string): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
-export function Sidebar({ projects, threads, activeId, state, onOpen, onNew, onProviders, onLanes, laneCount }: Props) {
+export function Sidebar({ projects, threads, activeId, state, onOpen, onNew, onProviders, onLanes, laneCount, view }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
@@ -32,6 +33,11 @@ export function Sidebar({ projects, threads, activeId, state, onOpen, onNew, onP
         </button>
       </div>
       <div className="sidebar-body">
+        <button className="row" aria-selected={view === "board"} onClick={onLanes}>
+          <span className="label">Board</span>
+          {laneCount > 0 && <span className="meta">{laneCount}</span>}
+        </button>
+
         {projects.length === 0 && <div className="section-label">No projects yet</div>}
         {projects.map((project) => {
           const owned = threads.filter((t) => t.projectId === project.id);
@@ -60,10 +66,7 @@ export function Sidebar({ projects, threads, activeId, state, onOpen, onNew, onP
         <span className="meta" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
           {state === "open" ? "connected" : state}
         </span>
-        <button className="linkish" style={{ marginLeft: "auto", fontSize: 11 }} onClick={onLanes}>
-          Lanes{laneCount > 0 ? ` (${laneCount})` : ""}
-        </button>
-        <button className="linkish" style={{ fontSize: 11 }} onClick={onProviders}>
+        <button className="linkish" style={{ marginLeft: "auto", fontSize: 11 }} onClick={onProviders}>
           Providers
         </button>
       </div>

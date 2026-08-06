@@ -35,11 +35,21 @@ fn daemon_ready(state: State<'_, DaemonState>) -> bool {
   state.token.lock().map(|g| g.is_some()).unwrap_or(false)
 }
 
-fn repo_root() -> PathBuf {
+fn repo_root() -> Option<PathBuf> {
+  // Only meaningful in a dev checkout. A packaged app has no monorepo, so this
+  // returning None is normal rather than an error.
   PathBuf::from(env!("CARGO_MANIFEST_DIR"))
     .join("../../..")
     .canonicalize()
-    .expect("resolve monorepo root")
+    .ok()
+}
+
+/// The bundled daemon binary, which Tauri places beside the app executable.
+/// Present in a packaged build, absent when running `tauri dev`.
+fn sidecar_path() -> Option<PathBuf> {
+  let exe = std::env::current_exe().ok()?;
+  let candidate = exe.parent()?.join("divisio-daemon");
+  candidate.exists().then_some(candidate)
 }
 
 fn token_file_path() -> PathBuf {
@@ -84,12 +94,7 @@ fn wait_for_health(timeout: Duration) -> bool {
   false
 }
 
-fn start_daemon(repo: &Path) -> Result<Child, String> {
-  let entry = repo.join("apps/server/src/index.ts");
-  if !entry.exists() {
-    return Err(format!("daemon entry missing: {}", entry.display()));
-  }
-
+fn start_daemon() -> Result<Child, String> {
   let origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -99,17 +104,34 @@ fn start_daemon(repo: &Path) -> Result<Child, String> {
   ]
   .join(",");
 
-  let mut child = Command::new("bun")
-    .arg("run")
-    .arg(&entry)
-    .current_dir(repo)
+  // Prefer the bundled binary; fall back to running from source in a dev
+  // checkout. A packaged app must never depend on Bun being installed.
+  let mut command = match sidecar_path() {
+    Some(bin) => {
+      eprintln!("[divisio] starting bundled daemon: {}", bin.display());
+      Command::new(bin)
+    }
+    None => {
+      let repo = repo_root().ok_or_else(|| {
+        "no bundled daemon and no source checkout to run from".to_string()
+      })?;
+      let entry = repo.join("apps/server/src/index.ts");
+      if !entry.exists() {
+        return Err(format!("daemon entry missing: {}", entry.display()));
+      }
+      eprintln!("[divisio] starting daemon from source (dev)");
+      let mut c = Command::new("bun");
+      c.arg("run").arg(&entry).current_dir(&repo);
+      c
+    }
+  };
+
+  let mut child = command
     .env("DIVISIO_DEV_ORIGINS", origins)
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .spawn()
-    .map_err(|e| {
-      format!("failed to spawn bun daemon (is Bun on PATH?): {e}")
-    })?;
+    .map_err(|e| format!("failed to start the Divisio daemon: {e}"))?;
 
   // Drain stderr so the pipe does not fill and stall the child.
   if let Some(stderr) = child.stderr.take() {
@@ -162,8 +184,7 @@ fn bootstrap_daemon(app: &AppHandle) -> Result<(), String> {
     return Ok(());
   }
 
-  let repo = repo_root();
-  let child = start_daemon(&repo)?;
+  let child = start_daemon()?;
   *state.child.lock().map_err(|e| e.to_string())? = Some(child);
 
   if !wait_for_health(Duration::from_secs(20)) {

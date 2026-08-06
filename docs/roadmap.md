@@ -64,7 +64,8 @@ Also delivered beyond the original bar: the five handshake checks with all eight
 
 Lane creation, carry-over, per-lane ports, setup, diff, concurrency cap,
 archive safety, and pull requests are implemented and covered by tests.
-Outstanding for the phase: a richer session board view.
+The session board is a first-class view with lanes grouped by whether they need
+attention. Phase 2 is complete.
 
 ## Phase 3 — Handoff + remote
 
@@ -81,8 +82,8 @@ Outstanding for the phase: a richer session board view.
 
 - [ ] Hand off Claude → Codex (or reverse) with usable continued context
 - [ ] Pair a second browser on the LAN with a one-time token
-- [ ] Desktop app starts daemon without separate terminal
-- [ ] Packaged desktop artifact measures under 150 MB
+- [x] Desktop app starts daemon without separate terminal
+- [x] Packaged desktop artifact measures under 150 MB (66 MB)
 - [ ] Perf smoke: thread switch and stream paint meet [performance](architecture/performance.md) targets
 
 ## Phase 4 — Ecosystem

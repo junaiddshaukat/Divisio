@@ -17,7 +17,7 @@ import { Composer } from "./components/Composer.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Transcript, type Bubble } from "./components/Transcript.tsx";
 import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
-import { LaneBoard } from "./components/LaneBoard.tsx";
+import { SessionBoard } from "./components/SessionBoard.tsx";
 import { TurnDiff } from "./components/TurnDiff.tsx";
 
 const PORT = 4577;
@@ -66,7 +66,9 @@ export function App() {
   const [dialog, setDialog] = useState(false);
   const [matrixOpen, setMatrixOpen] = useState(false);
   const [lanes, setLanes] = useState<LaneView[]>([]);
-  const [laneBoard, setLaneBoard] = useState(false);
+  const [view, setView] = useState<"thread" | "board">("thread");
+  /** Set when the new-thread dialog was opened from a lane card. */
+  const [laneForNewThread, setLaneForNewThread] = useState<string | null>(null);
   const [laneBusy, setLaneBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [diffTurns, setDiffTurns] = useState<Set<string>>(new Set());
@@ -379,9 +381,16 @@ export function App() {
   const createThread = async (projectId: string, title: string, provider: string) => {
     const client = clientRef.current;
     if (!client) return;
-    const res = await client.send("thread.create", { projectId, title, provider });
+    const res = await client.send("thread.create", {
+      projectId,
+      title,
+      provider,
+      ...(laneForNewThread ? { laneId: laneForNewThread } : {}),
+    });
     setDialog(false);
+    setLaneForNewThread(null);
     await refresh(client);
+    setView("thread");
     await openThread(res.thread.id);
   };
 
@@ -436,15 +445,23 @@ export function App() {
         threads={threads}
         activeId={activeId}
         state={state}
-        onOpen={(id) => void openThread(id)}
+        onOpen={(id) => {
+          setView("thread");
+          void openThread(id);
+        }}
         onNew={() => setDialog(true)}
         onProviders={() => setMatrixOpen(true)}
-        onLanes={() => setLaneBoard(true)}
+        onLanes={() => setView("board")}
         laneCount={lanes.filter((l) => l.status !== "archived").length}
+        view={view}
       />
       <main className="main">
         <div className="topbar">
-          {activeThread ? (
+          {view === "board" ? (
+            <span className="crumb">
+              <strong>Board</strong> — parallel lanes
+            </span>
+          ) : activeThread ? (
             <span className="crumb">
               {projects.find((p) => p.id === activeThread.projectId)?.name ?? "project"} /{" "}
               <strong>{activeThread.title}</strong>
@@ -452,7 +469,7 @@ export function App() {
           ) : (
             <span className="crumb">No thread selected</span>
           )}
-          {activeThread && (
+          {view === "thread" && activeThread && (
             <span className="status">
               <span className={`dot ${activeThread.status}`} />
               {activeThread.status}
@@ -460,7 +477,26 @@ export function App() {
           )}
         </div>
 
-        {activeThread ? (
+        {view === "board" ? (
+          <SessionBoard
+            lanes={lanes}
+            projects={projects}
+            threads={threads}
+            busy={laneBusy}
+            onCreate={createLane}
+            onArchive={archiveLane}
+            onDiff={(laneId) => void showLaneDiff(laneId)}
+            onOpenPr={openLanePr}
+            onOpenThread={(id) => {
+              setView("thread");
+              void openThread(id);
+            }}
+            onNewThread={(laneId) => {
+              setLaneForNewThread(laneId);
+              setDialog(true);
+            }}
+          />
+        ) : activeThread ? (
           <>
             <Transcript bubbles={bubbles} onShowDiff={(turnId) => void showDiff(turnId)} />
             {error && <div className="banner">{error}</div>}
@@ -493,27 +529,19 @@ export function App() {
 
       {dialog && (
         <NewThreadDialog
+          lockedProjectId={
+            laneForNewThread ? (lanes.find((l) => l.id === laneForNewThread)?.projectId ?? null) : null
+          }
           projects={projects}
           providers={providers}
           onCreateProject={createProject}
           onCreate={createThread}
-          onClose={() => setDialog(false)}
+          onClose={() => {
+            setDialog(false);
+            setLaneForNewThread(null);
+          }}
         />
       )}
-      {laneBoard && (
-        <LaneBoard
-          lanes={lanes}
-          projects={projects}
-          threads={threads}
-          busy={laneBusy}
-          onCreate={createLane}
-          onArchive={archiveLane}
-          onDiff={(laneId) => void showLaneDiff(laneId)}
-          onOpenPr={openLanePr}
-          onClose={() => setLaneBoard(false)}
-        />
-      )}
-
       {matrixOpen && (
         <CapabilityMatrix
           providers={providers}

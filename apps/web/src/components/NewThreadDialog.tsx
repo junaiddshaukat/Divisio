@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { ProjectView, ProviderView } from "@divisio/contracts";
 
 interface Props {
+  /** Set when creating into a specific lane; the project is then not a choice. */
+  lockedProjectId?: string | null;
   projects: ProjectView[];
   providers: ProviderView[];
   onCreateProject(name: string, rootPath: string): Promise<ProjectView | null>;
@@ -9,9 +11,9 @@ interface Props {
   onClose(): void;
 }
 
-export function NewThreadDialog({ projects, providers, onCreateProject, onCreate, onClose }: Props) {
+export function NewThreadDialog({ lockedProjectId, projects, providers, onCreateProject, onCreate, onClose }: Props) {
   const available = providers.filter((p) => p.available);
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
+  const [projectId, setProjectId] = useState(lockedProjectId ?? projects[0]?.id ?? "");
   const [title, setTitle] = useState("New thread");
   const [provider, setProvider] = useState(available[0]?.kind ?? "claude");
   const [rootPath, setRootPath] = useState("");

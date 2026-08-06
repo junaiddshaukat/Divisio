@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:daemon": "bun run scripts/build-daemon.ts"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

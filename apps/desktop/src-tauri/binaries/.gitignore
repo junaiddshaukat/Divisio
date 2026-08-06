@@ -1,0 +1,3 @@
+# Compiled daemon binaries — built by scripts/build-daemon.ts, never committed.
+*
+!.gitignore

@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bun run --cwd ../web dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "bun run --cwd ../web build",
+    "beforeBuildCommand": "bun run --cwd ../web build && bun run scripts/build-daemon.ts",
     "frontendDist": "../../web/dist"
   },
   "app": {
@@ -33,6 +33,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/divisio-daemon"
     ]
   }
 }
