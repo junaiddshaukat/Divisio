@@ -1,0 +1,4 @@
+{"type":"assistant.message_delta","data":{"deltaContent":"Hi"}}
+{"type":"assistant.message_delta","data":{"deltaContent":" there"}}
+{"type":"assistant.message","data":{"content":"Hi there"}}
+{"type":"session.idle"}

@@ -57,6 +57,8 @@ export interface SessionHandle {
 export interface SendTurnInput {
   turnId: string;
   text: string;
+  /** Vendor model slug when the adapter declares modelSwitch / accepts --model. */
+  model?: string;
 }
 
 /** Normalized runtime events. Adapters translate; orchestration never branches on vendor. */

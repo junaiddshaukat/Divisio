@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./sdk": "./src/sdk/index.ts"
+  },
   "dependencies": { "@divisio/contracts": "workspace:*", "@divisio/shared": "workspace:*" }
 }

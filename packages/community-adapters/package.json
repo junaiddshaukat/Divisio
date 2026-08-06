@@ -1,0 +1,14 @@
+{
+  "name": "@divisio/community-adapters",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@divisio/adapters": "workspace:*",
+    "@divisio/contracts": "workspace:*",
+    "@divisio/shared": "workspace:*"
+  }
+}

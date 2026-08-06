@@ -15,11 +15,37 @@ export interface CommandPayloads {
   "thread.create": { projectId: string; title: string; provider: string; laneId?: string };
   "thread.snapshot": { threadId: string };
   "thread.setPermissionMode": { threadId: string; mode: PermissionMode };
-  "turn.send": { threadId: string; text: string };
+  /**
+   * Switch provider/model on an empty thread. Threads with history must use
+   * `thread.handoff` to change provider.
+   */
+  "thread.setProvider": { threadId: string; provider: string; model?: string | null };
+  "turn.send": {
+    threadId: string;
+    text: string;
+    model?: string;
+    /** Optional images — written into the thread workdir and referenced in the prompt. */
+    images?: Array<{ name: string; mimeType: string; dataBase64: string }>;
+  };
   "turn.interrupt": { threadId: string; turnId: string };
   "turn.diff": { threadId: string; turnId: string };
   /** Restores the working tree to the state before or after a turn. */
   "turn.restore": { threadId: string; turnId: string; phase: "pre" | "post" };
+  /**
+   * Stages and commits everything in the thread's working directory.
+   * Never invents a message — the client must supply one.
+   */
+  "thread.commit": { threadId: string; message: string; /** Relative paths; omit to commit all. */ paths?: string[] };
+  /**
+   * Live git view for the thread workdir.
+   * - `working`: porcelain status + `git diff HEAD`
+   * - `branch`: lane vs baseSha, or primary checkout vs remote default
+   */
+  "thread.diff": { threadId: string; scope: "working" | "branch" };
+  /** Dirty flag + branch for header git actions. */
+  "thread.gitStatus": { threadId: string };
+  /** Push the current branch of the thread workdir (`-u` when needed). */
+  "thread.push": { threadId: string };
   "approval.respond": { threadId: string; approvalId: string; decision: "approve" | "deny" };
   "provider.detect": Record<string, never>;
   "thread.handoff": { threadId: string; toProvider: string; title?: string };
@@ -35,6 +61,8 @@ export interface CommandPayloads {
   "pairing.createToken": Record<string, never>;
   "pairing.revoke": { clientId: string };
   "pairing.revokeAll": Record<string, never>;
+  /** Local toolchain probes (git, host CLIs) for Settings → Source Control. */
+  "toolchain.status": Record<string, never>;
   "lane.create": { projectId: string; title: string; base?: string };
   "lane.list": { projectId?: string };
   "lane.archive": { laneId: string; deleteBranch: boolean; force: boolean };
@@ -66,6 +94,8 @@ export interface ThreadView {
   laneId: string | null;
   /** Default supervised. Controls whether Divisio mediates provider approvals. */
   permissionMode: PermissionMode;
+  /** Preferred CLI model slug, or null for vendor default. */
+  model: string | null;
   updatedAt: string;
 }
 
@@ -90,10 +120,14 @@ export interface MessageView {
   at: string;
 }
 
+export type AdapterSource = "builtin" | "community";
+
 export interface ProviderView {
   kind: string;
   label: string;
   tier: "structured" | "stream" | "pty";
+  /** First-party vs opt-in / SDK-loaded community adapter. */
+  source: AdapterSource;
   available: boolean;
   version: string | null;
   detail: string | null;
@@ -105,8 +139,15 @@ export interface CommandResults {
   "project.create": { project: ProjectView };
   "project.list": { projects: ProjectView[]; threads: ThreadView[] };
   "thread.create": { thread: ThreadView };
-  "thread.snapshot": { thread: ThreadView; messages: MessageView[]; seq: number };
+  "thread.snapshot": {
+    thread: ThreadView;
+    messages: MessageView[];
+    seq: number;
+    /** Checkpoint diffs for chat chips / Changes pane hydration. */
+    diffs: Array<{ turnId: string; files: DiffFileEntry[] }>;
+  };
   "thread.setPermissionMode": { thread: ThreadView };
+  "thread.setProvider": { thread: ThreadView };
   "turn.send": { turnId: string };
   "turn.interrupt": Record<string, never>;
   "turn.diff": {
@@ -116,6 +157,23 @@ export interface CommandResults {
     status: "ready" | "skipped" | "error" | "missing";
     detail?: string;
   };
+  "thread.commit": { ok: boolean; detail?: string };
+  "thread.diff": {
+    scope: "working" | "branch";
+    files: DiffFileEntry[];
+    patch: string | null;
+    status: "ready" | "skipped" | "error";
+    detail?: string;
+    branch?: string | null;
+  };
+  "thread.gitStatus": {
+    dirty: boolean;
+    branch: string | null;
+    laneId: string | null;
+    hasRemote: boolean;
+    git: boolean;
+  };
+  "thread.push": { ok: boolean; detail?: string; compareUrl?: string | null };
   "approval.respond": Record<string, never>;
   "turn.restore": {
     status: "restored" | "skipped" | "missing" | "error";
@@ -135,6 +193,7 @@ export interface CommandResults {
   "pairing.createToken": { url: string; expiresAt: string; fingerprint: string | null };
   "pairing.revoke": { revoked: boolean };
   "pairing.revokeAll": { revoked: number };
+  "toolchain.status": ToolchainStatus;
   "lane.create": { lane: LaneView };
   "lane.list": { lanes: LaneView[] };
   "lane.archive": { lane: LaneView };
@@ -168,6 +227,23 @@ export interface PairingStatus {
   address: string | null;
   fingerprint: string | null;
   clients: PairedClient[];
+}
+
+/** One host CLI probed for Settings → Source Control. */
+export interface ToolchainToolStatus {
+  available: boolean;
+  version: string | null;
+  /**
+   * `true` / `false` when the tool has an auth notion (e.g. `gh`).
+   * `null` when auth does not apply (e.g. local `git`).
+   */
+  authenticated: boolean | null;
+  detail: string | null;
+}
+
+export interface ToolchainStatus {
+  git: ToolchainToolStatus;
+  gh: ToolchainToolStatus;
 }
 
 export interface PrResult {
@@ -258,6 +334,7 @@ export interface ReadyFrame {
 export const REQUIRED_COMMANDS: readonly CommandName[] = [
   "project.list",
   "thread.create",
+  "thread.setProvider",
   "turn.send",
   "file.tree",
   "file.read",

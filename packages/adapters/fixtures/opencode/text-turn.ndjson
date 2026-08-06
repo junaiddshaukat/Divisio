@@ -1,0 +1,4 @@
+{"type":"session.created","properties":{"info":{"id":"oc-sess-1"}}}
+{"type":"message.part.updated","properties":{"part":{"id":"p1","type":"text","text":"Hello"}}}
+{"type":"message.part.updated","properties":{"part":{"id":"p1","type":"text","text":"Hello from OpenCode"}}}
+{"type":"message.part.updated","properties":{"part":{"id":"t1","type":"tool","tool":"read","callID":"c1","state":{"status":"completed"}}}}

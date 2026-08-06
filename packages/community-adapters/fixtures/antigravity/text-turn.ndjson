@@ -1,0 +1,6 @@
+{"event":"init","conversation_id":"agy-sess-1","init":{"cwd":"/tmp","tools":["run_command"],"permission_mode":"request-review"}}
+{"event":"step_update","step_update":{"conversation_id":"agy-sess-1","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"agy-sess-1","step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"Rewriting"}}
+{"event":"step_update","step_update":{"conversation_id":"agy-sess-1","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":" history.\n"}}
+{"event":"step_update","step_update":{"conversation_id":"agy-sess-1","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hi"},"output":"hi\n"}}}
+{"event":"result","result":{"conversation_id":"agy-sess-1","status":"SUCCESS","response":"Rewriting history.\n"}}

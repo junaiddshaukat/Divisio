@@ -12,6 +12,7 @@ import {
 import { logger } from "@divisio/shared/log";
 import { spawnWithEnv } from "@divisio/shared/spawn";
 import { normalizeClaudeStreamLine } from "./claude/normalize.ts";
+import { pushModelArg } from "./shared/modelArg.ts";
 
 const log = logger("adapter:claude");
 
@@ -46,7 +47,7 @@ interface Session extends SessionHandle {
 const CAPABILITIES: AdapterCapabilities = {
   sessionResume: true,
   interruptTurn: true,
-  modelSwitch: false,
+  modelSwitch: true,
   approvals: false,
   handoffExport: false,
   worktreeAware: true,
@@ -111,6 +112,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     args.push("--permission-mode", session.permissionMode === "full_access" ? "acceptEdits" : "manual");
 
     if (session.nativeId) args.push("--resume", session.nativeId);
+    pushModelArg(args, turn.model);
     args.push(turn.text);
 
     log.info("spawning turn", { threadId: session.threadId, turnId: turn.turnId, resume: !!session.nativeId });

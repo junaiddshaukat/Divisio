@@ -14,6 +14,7 @@ export const EVENT_VERSIONS = {
   "project.created": 1,
   "thread.created": 1,
   "thread.permission_mode_set": 1,
+  "thread.provider_set": 1,
   "turn.started": 1,
   "turn.message": 1,
   "turn.completed": 1,
@@ -73,6 +74,15 @@ export interface EventPayloads {
     laneId?: string;
   };
   "thread.permission_mode_set": { threadId: string; mode: PermissionMode };
+  /**
+   * Empty-thread provider/model switch (no handoff). `model` null clears the
+   * preferred slug so the CLI default applies.
+   */
+  "thread.provider_set": {
+    threadId: string;
+    provider: string;
+    model: string | null;
+  };
   "turn.started": { threadId: string; turnId: string; provider: string };
   /** A complete message. Streaming deltas are transport-only and never stored. */
   "turn.message": { threadId: string; turnId: string; role: TurnRole; text: string };
