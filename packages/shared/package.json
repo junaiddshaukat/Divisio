@@ -7,6 +7,8 @@
     "./brand": "./src/brand.ts",
     "./paths": "./src/paths.ts",
     "./ids": "./src/ids.ts",
-    "./log": "./src/log.ts"
+    "./log": "./src/log.ts",
+    "./path-env": "./src/path-env.ts",
+    "./spawn": "./src/spawn.ts"
   }
 }

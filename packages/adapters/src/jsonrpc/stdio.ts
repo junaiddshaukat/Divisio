@@ -64,7 +64,8 @@ export class JsonRpcStdioClient {
     this.proc = Bun.spawn({
       cmd,
       cwd: options.cwd,
-      env: options.env ? { ...process.env, ...options.env } : undefined,
+      // Always explicit: PATH repair does not apply to an inherited environ.
+      env: { ...(process.env as Record<string, string>), ...(options.env ?? {}) },
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",

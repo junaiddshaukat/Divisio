@@ -3,6 +3,7 @@ import { DEFAULT_PORT, ENV_PREFIX, PRODUCT_NAME, WS_SUBPROTOCOL } from "@divisio
 import { newId } from "@divisio/shared/ids";
 import { logger } from "@divisio/shared/log";
 import { dbPath, ensureUserDataDir, tokenPath } from "@divisio/shared/paths";
+import { repairPath } from "@divisio/shared/path-env";
 import { Auth } from "./auth.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { EventStore } from "./store/log.ts";
@@ -20,6 +21,10 @@ const devOrigins = (
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+
+// Before anything can spawn a provider. A GUI-launched app inherits launchd's
+// PATH, which contains none of the directories agent CLIs install into.
+await repairPath();
 
 ensureUserDataDir();
 const store = new EventStore(dbPath());

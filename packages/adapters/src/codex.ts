@@ -20,6 +20,7 @@ import {
   type StartSessionInput,
 } from "@divisio/contracts";
 import { PRODUCT_NAME, PRODUCT_SLUG } from "@divisio/shared/brand";
+import { spawnWithEnv } from "@divisio/shared/spawn";
 import { logger } from "@divisio/shared/log";
 import {
   normalizeCodexApprovalRequest,
@@ -80,7 +81,7 @@ export class CodexAdapter implements ProviderAdapter {
 
   async detect(): Promise<DetectResult> {
     try {
-      const proc = Bun.spawn(["codex", "--version"], { stdout: "pipe", stderr: "pipe" });
+      const proc = spawnWithEnv(["codex", "--version"], { stdout: "pipe", stderr: "pipe" });
       const out = await new Response(proc.stdout).text();
       const err = await new Response(proc.stderr).text();
       const code = await proc.exited;

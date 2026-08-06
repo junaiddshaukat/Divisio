@@ -11,6 +11,8 @@ interface Props {
   onClose(): void;
 }
 
+const NEW_PROJECT = "__new__";
+
 export function NewThreadDialog({ lockedProjectId, projects, providers, onCreateProject, onCreate, onClose }: Props) {
   const available = providers.filter((p) => p.available);
   const [projectId, setProjectId] = useState(lockedProjectId ?? projects[0]?.id ?? "");
@@ -21,8 +23,15 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const needsProject = projects.length === 0;
+  /** Chosen explicitly from the project select, or forced when none exist. */
+  const [addingProject, setAddingProject] = useState(false);
+  const needsProject = projects.length === 0 || addingProject;
 
+  /**
+   * Adding a project is deliberately not gated on provider availability.
+   * Coupling them left users who had not installed a CLI yet with no way to do
+   * anything at all — the app looked broken rather than incomplete.
+   */
   const submit = async () => {
     setBusy(true);
     setError(null);
@@ -33,7 +42,13 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
         if (!created) throw new Error("could not create project");
         target = created.id;
       }
-      await onCreate(target, title.trim() || "New thread", provider);
+      // With no usable provider we stop after the project. The user gets a
+      // saved project and clear guidance instead of a disabled button.
+      if (available.length > 0) {
+        await onCreate(target, title.trim() || "New thread", provider);
+      } else {
+        onClose();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -55,18 +70,32 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
               onChange={(e) => setRootPath(e.target.value)}
             />
             <span className="hint">The agent runs with this directory as its working directory.</span>
+            {projects.length > 0 && (
+              <button className="linkish" onClick={() => setAddingProject(false)}>
+                Use an existing project instead
+              </button>
+            )}
           </>
         ) : (
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+          <select
+            value={projectId}
+            onChange={(e) => {
+              if (e.target.value === NEW_PROJECT) setAddingProject(true);
+              else setProjectId(e.target.value);
+            }}
+          >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
               </option>
             ))}
+            <option value={NEW_PROJECT}>＋ Add another project…</option>
           </select>
         )}
 
-        <input placeholder="Thread title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        {available.length > 0 && (
+          <input placeholder="Thread title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        )}
 
         <select value={provider} onChange={(e) => setProvider(e.target.value)}>
           {providers.map((p) => (
@@ -80,7 +109,8 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
         {/* Errors name the fix, not just the failure. */}
         {available.length === 0 && (
           <span className="hint">
-            No provider CLI detected. Install one and make sure it is authenticated, then reopen this dialog.
+            No agent CLI detected on this machine. You can still add the project now — install and sign in to
+            one of the CLIs above, then press Refresh under Providers and start a thread.
           </span>
         )}
         {error && <span className="hint" style={{ color: "var(--destructive-foreground)" }}>{error}</span>}
@@ -91,10 +121,10 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
           </button>
           <button
             className="btn"
-            disabled={busy || (needsProject && !rootPath.trim()) || available.length === 0}
+            disabled={busy || (needsProject && !rootPath.trim()) || (!needsProject && available.length === 0)}
             onClick={() => void submit()}
           >
-            {busy ? "Creating…" : "Create"}
+            {busy ? "Creating…" : available.length === 0 ? "Add project" : "Create"}
           </button>
         </div>
       </div>

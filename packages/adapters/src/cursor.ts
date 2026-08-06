@@ -24,6 +24,7 @@ import {
   type StartSessionInput,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
+import { spawnWithEnv } from "@divisio/shared/spawn";
 import { type CursorNormalizeState, normalizeCursorStreamLine } from "./cursor/normalize.ts";
 
 const log = logger("adapter:cursor");
@@ -60,7 +61,7 @@ export class CursorAdapter implements ProviderAdapter {
 
   async detect(): Promise<DetectResult> {
     try {
-      const proc = Bun.spawn([BINARY, "--version"], { stdout: "pipe", stderr: "pipe" });
+      const proc = spawnWithEnv([BINARY, "--version"], { stdout: "pipe", stderr: "pipe" });
       const out = await new Response(proc.stdout).text();
       const err = await new Response(proc.stderr).text();
       const code = await proc.exited;
@@ -123,6 +124,8 @@ export class CursorAdapter implements ProviderAdapter {
     const proc = Bun.spawn({
       cmd: [BINARY, ...args],
       cwd: session.cwd,
+      // See claude.ts: PATH repair only applies when env is passed explicitly.
+      env: { ...(process.env as Record<string, string>) },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

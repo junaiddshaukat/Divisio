@@ -6,6 +6,7 @@
  */
 
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawnWithEnv } from "@divisio/shared/spawn";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PRODUCT_SLUG } from "@divisio/shared/brand";
@@ -38,7 +39,7 @@ async function git(cwd: string, args: string[], env?: Record<string, string>): P
   stdout: string;
   stderr: string;
 }> {
-  const proc = Bun.spawn(["git", ...args], {
+  const proc = spawnWithEnv(["git", ...args], {
     cwd,
     env: env ? { ...process.env, ...env } : undefined,
     stdout: "pipe",

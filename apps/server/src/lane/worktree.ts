@@ -1,4 +1,5 @@
 import { cp, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { spawnWithEnv } from "@divisio/shared/spawn";
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { PRODUCT_SLUG } from "@divisio/shared/brand";
@@ -49,7 +50,7 @@ export function laneRoot(projectId: string, laneId: string): string {
 }
 
 async function git(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const proc = spawnWithEnv(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();
   return { code: await proc.exited, stdout: stdout.trim(), stderr: stderr.trim() };
@@ -211,7 +212,7 @@ export async function runSetup(
   const env: Record<string, string> = { ...(process.env as Record<string, string>) };
   for (const name of portEnv) env[name] = String(port);
 
-  const proc = Bun.spawn(["sh", "-c", command], {
+  const proc = spawnWithEnv(["sh", "-c", command], {
     cwd: root,
     env,
     stdout: "pipe",
@@ -352,7 +353,7 @@ export async function pushBranch(root: string, remote: string, branch: string): 
 /** `gh` is optional. Its absence degrades the flow, never breaks it. */
 export async function hasGh(): Promise<boolean> {
   try {
-    const proc = Bun.spawn(["gh", "auth", "status"], { stdout: "pipe", stderr: "pipe" });
+    const proc = spawnWithEnv(["gh", "auth", "status"], { stdout: "pipe", stderr: "pipe" });
     return (await proc.exited) === 0;
   } catch {
     return false;
@@ -366,7 +367,7 @@ export async function createPrWithGh(
   body: string,
 ): Promise<{ ok: boolean; url?: string; detail?: string }> {
   // gh uses the user's own credentials; Divisio never sees or proxies them.
-  const proc = Bun.spawn(["gh", "pr", "create", "--base", base, "--title", title, "--body", body], {
+  const proc = spawnWithEnv(["gh", "pr", "create", "--base", base, "--title", title, "--body", body], {
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",

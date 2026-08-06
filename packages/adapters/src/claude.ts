@@ -9,6 +9,7 @@ import {
   type StartSessionInput,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
+import { spawnWithEnv } from "@divisio/shared/spawn";
 import { normalizeClaudeStreamLine } from "./claude/normalize.ts";
 
 const log = logger("adapter:claude");
@@ -60,7 +61,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
   async detect(): Promise<DetectResult> {
     try {
-      const proc = Bun.spawn(["claude", "--version"], { stdout: "pipe", stderr: "pipe" });
+      const proc = spawnWithEnv(["claude", "--version"], { stdout: "pipe", stderr: "pipe" });
       const out = await new Response(proc.stdout).text();
       const code = await proc.exited;
       if (code !== 0) {
@@ -105,6 +106,9 @@ export class ClaudeAdapter implements ProviderAdapter {
     const proc = Bun.spawn({
       cmd: ["claude", ...args],
       cwd: session.cwd,
+      // Explicit env so the daemon's repaired PATH applies; without it Bun
+      // resolves the binary against the environment the process started with.
+      env: { ...(process.env as Record<string, string>) },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
