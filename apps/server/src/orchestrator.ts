@@ -16,6 +16,25 @@ import { existsSync } from "node:fs";
 import { captureCheckpoint, checkpointRef, diffCheckpoints } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
 import { seedPrompt, summaryPrompt, type PacketContext } from "./handoff.ts";
+import type { PairingStatus } from "@divisio/contracts";
+
+/** What the orchestrator needs from pairing, so it does not depend on transport. */
+export interface PairingControls {
+  status(): PairingStatus;
+  createToken(): { url: string; expiresAt: string; fingerprint: string | null };
+  revoke(clientId: string): boolean;
+  revokeAll(): number;
+}
+
+/** Loopback-only daemons report pairing as unavailable rather than half-working. */
+const disabledPairing: PairingControls = {
+  status: () => ({ remote: false, tls: false, address: null, fingerprint: null, clients: [] }),
+  createToken() {
+    throw new CommandError("invalid_payload", "remote access is off; start the daemon with DIVISIO_BIND set");
+  },
+  revoke: () => false,
+  revokeAll: () => 0,
+};
 import {
   allocateBranch,
   allocatePort,
@@ -76,6 +95,8 @@ export class Orchestrator {
     private readonly store: EventStore,
     private readonly registry: AdapterRegistry,
     private readonly bus: Broadcaster,
+    /** Remote pairing. A loopback-only daemon gets a stub that reports disabled. */
+    private readonly pairing: PairingControls = disabledPairing,
   ) {}
 
   async dispatch<C extends CommandName>(cmd: C, payload: CommandPayloads[C]): Promise<CommandResults[C]> {
@@ -116,6 +137,14 @@ export class Orchestrator {
         return await this.openPr(payload);
       case "thread.handoff":
         return await this.handoff(payload);
+      case "pairing.status":
+        return this.pairing.status();
+      case "pairing.createToken":
+        return this.pairing.createToken();
+      case "pairing.revoke":
+        return { revoked: this.pairing.revoke((payload as { clientId: string }).clientId) };
+      case "pairing.revokeAll":
+        return { revoked: this.pairing.revokeAll() };
       default:
         throw new CommandError("unknown_command", `unknown command: ${cmd}`);
     }

@@ -12,6 +12,7 @@ interface Props {
   onLanes(): void;
   laneCount: number;
   view: "thread" | "board";
+  onDevices(): void;
 }
 
 /** Relative time, kept terse the way a dense list needs. */
@@ -23,7 +24,7 @@ function ago(iso: string): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
-export function Sidebar({ projects, threads, activeId, state, onOpen, onNew, onProviders, onLanes, laneCount, view }: Props) {
+export function Sidebar({ projects, threads, activeId, state, onOpen, onNew, onProviders, onLanes, laneCount, view, onDevices }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
@@ -66,7 +67,10 @@ export function Sidebar({ projects, threads, activeId, state, onOpen, onNew, onP
         <span className="meta" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
           {state === "open" ? "connected" : state}
         </span>
-        <button className="linkish" style={{ marginLeft: "auto", fontSize: 11 }} onClick={onProviders}>
+        <button className="linkish" style={{ marginLeft: "auto", fontSize: 11 }} onClick={onDevices}>
+          Devices
+        </button>
+        <button className="linkish" style={{ fontSize: 11 }} onClick={onProviders}>
           Providers
         </button>
       </div>

@@ -51,6 +51,25 @@ A local UI that cannot read the token file is not authorized. There is no "same 
 - Session tokens are individually revocable; a "revoke all clients" action must exist and must terminate live sockets, not just refuse new ones.
 - Restart can mint a fresh pairing token. Treat pairing URLs as secrets: single-use, never logged in persistent analytics, never in shell history.
 
+### How this is implemented
+
+| Rule | Where |
+| --- | --- |
+| Bind policy, TLS, overlay detection | `apps/server/src/pairing/network.ts` |
+| Pairing and session tokens | `apps/server/src/pairing/store.ts` |
+| Handshake checks | `apps/server/src/auth.ts` |
+
+Loopback covers all of `127.0.0.0/8`. Tailscale addresses (`100.64.0.0/10`,
+`fd7a:115c:a1e0::/48`) are treated as already encrypted, so they bind without a
+certificate. Everything else off loopback requires TLS, from a provided
+certificate or a generated self-signed one, and the daemon exits rather than
+serving plaintext.
+
+Only token hashes are stored, in a database separate from the event log —
+events are permanent and replayable, credentials must be revocable and
+forgettable. Revocation closes live sockets with code 4003 rather than only
+refusing the next connection.
+
 ### Verifying these
 
 These rules are testable and belong in the Phase 0 test suite, not in review comments:

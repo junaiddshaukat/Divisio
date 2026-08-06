@@ -20,6 +20,8 @@ const BACKPRESSURE_BYTES = 1_000_000;
 
 export interface SocketData {
   clientId: string;
+  /** Paired-client id when the connection authenticated with a session token. */
+  pairedClientId: string | null;
   threads: Set<string>;
   /** Pending deltas per turn, flushed on a tick. */
   pending: Map<string, { threadId: string; text: string }>;
@@ -57,6 +59,19 @@ export class WsHub {
       environmentId: this.environmentId,
       seq: this.store.head(),
     });
+  }
+
+  /**
+   * Drops every socket belonging to a revoked client.
+   * Revocation that only refuses the next connection leaves an attacker
+   * connected for as long as they keep the socket open.
+   */
+  disconnectClient(pairedClientId: string) {
+    for (const ws of this.clients) {
+      if (ws.data.pairedClientId !== pairedClientId) continue;
+      log.info("closing socket for revoked client", { pairedClientId });
+      ws.close(4003, "revoked");
+    }
   }
 
   close(ws: ServerWebSocket<SocketData>) {

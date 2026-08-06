@@ -3,6 +3,7 @@ import type {
   DiffFileEntry,
   DomainEvent,
   LaneView,
+  PairingStatus,
   PrResult,
   MessageView,
   PermissionMode,
@@ -19,6 +20,7 @@ import { Transcript, type Bubble } from "./components/Transcript.tsx";
 import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
 import { SessionBoard } from "./components/SessionBoard.tsx";
 import { HandoffMenu } from "./components/HandoffMenu.tsx";
+import { PairingPanel } from "./components/PairingPanel.tsx";
 import { TurnDiff } from "./components/TurnDiff.tsx";
 
 const PORT = 4577;
@@ -71,6 +73,7 @@ export function App() {
   /** Set when the new-thread dialog was opened from a lane card. */
   const [laneForNewThread, setLaneForNewThread] = useState<string | null>(null);
   const [handoffBusy, setHandoffBusy] = useState(false);
+  const [pairing, setPairing] = useState<PairingStatus | null>(null);
   const [laneBusy, setLaneBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [diffTurns, setDiffTurns] = useState<Set<string>>(new Set());
@@ -417,6 +420,17 @@ export function App() {
     }
   };
 
+  const openPairing = async () => {
+    const client = clientRef.current;
+    if (!client) return;
+    setPairing(await client.send("pairing.status", {}));
+  };
+
+  const refreshPairing = async () => {
+    const client = clientRef.current;
+    if (client) setPairing(await client.send("pairing.status", {}));
+  };
+
   const createProject = async (name: string, rootPath: string) => {
     const client = clientRef.current;
     if (!client) return null;
@@ -474,6 +488,7 @@ export function App() {
         }}
         onNew={() => setDialog(true)}
         onProviders={() => setMatrixOpen(true)}
+        onDevices={() => void openPairing()}
         onLanes={() => setView("board")}
         laneCount={lanes.filter((l) => l.status !== "archived").length}
         view={view}
@@ -573,6 +588,26 @@ export function App() {
           }}
         />
       )}
+      {pairing && (
+        <PairingPanel
+          status={pairing}
+          onCreateToken={async () => {
+            const client = clientRef.current;
+            if (!client) throw new Error("not connected");
+            return client.send("pairing.createToken", {});
+          }}
+          onRevoke={async (clientId) => {
+            await clientRef.current?.send("pairing.revoke", { clientId });
+            await refreshPairing();
+          }}
+          onRevokeAll={async () => {
+            await clientRef.current?.send("pairing.revokeAll", {});
+            await refreshPairing();
+          }}
+          onClose={() => setPairing(null)}
+        />
+      )}
+
       {matrixOpen && (
         <CapabilityMatrix
           providers={providers}

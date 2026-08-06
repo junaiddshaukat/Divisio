@@ -8,6 +8,10 @@ import { Auth } from "./auth.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { EventStore } from "./store/log.ts";
 import { WsHub, type SocketData } from "./ws.ts";
+import { PairingStore } from "./pairing/store.ts";
+import { InsecureBindError, reachableAddresses, resolveNetwork, type NetworkConfig } from "./pairing/network.ts";
+import { join } from "node:path";
+import { userDataDir } from "@divisio/shared/paths";
 
 const log = logger("daemon");
 
@@ -27,19 +31,79 @@ const devOrigins = (
 await repairPath();
 
 ensureUserDataDir();
+
+// Bind policy first: refusing an unsafe bind must happen before anything opens
+// a socket or a database.
+let network: NetworkConfig;
+try {
+  network = await resolveNetwork();
+} catch (err) {
+  if (err instanceof InsecureBindError) {
+    log.error(err.message);
+    process.exit(1);
+  }
+  throw err;
+}
+
 const store = new EventStore(dbPath());
-const auth = new Auth({ port, extraOrigins: devOrigins });
+const pairing = new PairingStore(join(userDataDir(), "pairing.sqlite"));
+
+const remote = network.hostname !== "127.0.0.1" && network.hostname !== "localhost";
+const scheme = network.tls ? "https" : "http";
+const wsScheme = network.tls ? "wss" : "ws";
+
+const auth = new Auth({
+  port,
+  extraOrigins: [
+    ...devOrigins,
+    // A paired remote client loads the UI from the daemon itself.
+    ...(remote ? [`${scheme}://${network.hostname}:${port}`, ...reachableAddresses().map((a) => `${scheme}://${a}:${port}`)] : []),
+  ],
+  verifyClientToken: (token) => pairing.verifySessionToken(token),
+  allowedHosts: remote ? [network.hostname, ...reachableAddresses()] : [],
+});
 const registry = new AdapterRegistry();
 const hub = new WsHub(store, newId("env"));
-const orchestrator = new Orchestrator(store, registry, hub);
+const pairingControls = {
+  status: () => ({
+    remote,
+    tls: !!network.tls,
+    address: remote ? `${scheme}://${reachableAddresses()[0] ?? network.hostname}:${port}` : null,
+    fingerprint: network.fingerprint,
+    clients: pairing.listClients(),
+  }),
+  createToken: () => {
+    const { token, expiresAt } = pairing.createPairingToken();
+    const address = reachableAddresses()[0] ?? network.hostname;
+    return {
+      url: `${scheme}://${address}:${port}/#pair=${token}`,
+      expiresAt: expiresAt.toISOString(),
+      fingerprint: network.fingerprint,
+    };
+  },
+  revoke: (clientId: string) => pairing.revokeClient(clientId),
+  revokeAll: () => pairing.revokeAll(),
+};
+
+const orchestrator = new Orchestrator(store, registry, hub, pairingControls);
 hub.attach(orchestrator);
 
 const server = Bun.serve<SocketData>({
   port,
-  hostname: "127.0.0.1", // Explicit. Never falls back to 0.0.0.0.
+  // Explicit, and never a fallback: resolveNetwork throws rather than quietly
+  // downgrading an unsafe request.
+  hostname: network.hostname,
+  ...(network.tls ? { tls: network.tls } : {}),
 
   fetch(req, srv) {
     const url = new URL(req.url);
+
+    // Pairing exchange. Deliberately unauthenticated — possession of a valid,
+    // unused, unexpired pairing token IS the authentication, and it is consumed
+    // on first use.
+    if (url.pathname === "/pair" && req.method === "POST") {
+      return handlePair(req);
+    }
 
     if (url.pathname === "/health") {
       return Response.json({ ok: true, product: PRODUCT_NAME, seq: store.head() });
@@ -54,9 +118,20 @@ const server = Bun.serve<SocketData>({
         return new Response("forbidden", { status });
       }
 
+      // Remember which paired client this socket belongs to, so revocation can
+      // find and close it.
+      const presented = req.headers.get("authorization")?.replace(/^Bearer /, "")
+        ?? (req.headers.get("sec-websocket-protocol") ?? "")
+          .split(",")
+          .map((v) => v.trim())
+          .find((v) => v.startsWith("bearer."))
+          ?.slice("bearer.".length);
+      const paired = presented ? auth.clientFor(presented) : null;
+
       const ok = srv.upgrade(req, {
         data: {
           clientId: newId("ses"),
+          pairedClientId: paired?.id ?? null,
           threads: new Set<string>(),
           pending: new Map(),
           timer: null,
@@ -89,17 +164,62 @@ const server = Bun.serve<SocketData>({
   },
 });
 
+async function handlePair(req: Request): Promise<Response> {
+  const host = req.headers.get("host");
+  const bare = host?.replace(/:\d+$/, "") ?? "";
+  const allowed = ["localhost", "127.0.0.1", "::1", "[::1]", network.hostname, ...reachableAddresses()];
+  if (!allowed.includes(bare)) return new Response("forbidden", { status: 403 });
+
+  let body: { token?: string; label?: string };
+  try {
+    body = (await req.json()) as { token?: string; label?: string };
+  } catch {
+    return new Response("bad request", { status: 400 });
+  }
+  if (!body.token) return new Response("bad request", { status: 400 });
+
+  const result = pairing.redeemPairingToken(body.token, body.label ?? "paired client");
+  // One response for expired, reused, and unknown alike: distinguishing them
+  // tells an attacker which guesses were close.
+  if (!result) return new Response("pairing failed", { status: 401 });
+
+  return Response.json({ clientId: result.clientId, token: result.token, protocol: WS_SUBPROTOCOL });
+}
+
+// Revoking must drop live sockets, not merely refuse the next connection.
+pairing.onClientRevoked((clientId) => hub.disconnectClient(clientId));
+
 auth.logStartup();
 log.info(`${PRODUCT_NAME} daemon listening`, {
-  url: `http://127.0.0.1:${server.port}`,
+  url: `${scheme}://${network.hostname}:${server.port}`,
   tokenFile: tokenPath(),
   db: dbPath(),
+  remote,
+  tls: !!network.tls,
 });
+
+if (remote) {
+  const { token, expiresAt } = pairing.createPairingToken();
+  const address = reachableAddresses()[0] ?? network.hostname;
+  // Printed once, to stdout, never into persistent analytics.
+  log.info("remote access enabled — pair a device with this single-use link", {
+    expiresAt: expiresAt.toISOString(),
+    ...(network.fingerprint ? { certificateFingerprint: network.fingerprint } : {}),
+  });
+  console.log(`\n  ${scheme}://${address}:${port}/#pair=${token}`);
+  if (network.fingerprint) {
+    console.log(`  certificate fingerprint: ${network.fingerprint}`);
+    console.log("  Verify this fingerprint on the device before trusting the connection.\n");
+  } else {
+    console.log("");
+  }
+}
 
 async function shutdown(signal: string) {
   log.info("shutting down", { signal });
   await orchestrator.shutdown();
   store.close();
+  pairing.close();
   await server.stop(true);
   process.exit(0);
 }

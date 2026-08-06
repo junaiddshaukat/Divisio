@@ -81,10 +81,10 @@ attention. Phase 2 is complete.
 **Exit criteria**
 
 - [x] Hand off between providers with usable continued context
-- [ ] Pair a second browser on the LAN with a one-time token
+- [x] Pair a second browser on the LAN with a one-time token
 - [x] Desktop app starts daemon without separate terminal
 - [x] Packaged desktop artifact measures under 150 MB (66 MB)
-- [ ] Perf smoke: thread switch and stream paint meet [performance](architecture/performance.md) targets
+- [x] Perf smoke: thread switch and stream paint meet [performance](architecture/performance.md) targets
 
 ## Phase 4 — Ecosystem
 

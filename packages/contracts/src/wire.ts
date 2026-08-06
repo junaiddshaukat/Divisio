@@ -21,6 +21,10 @@ export interface CommandPayloads {
   "approval.respond": { threadId: string; approvalId: string; decision: "approve" | "deny" };
   "provider.detect": Record<string, never>;
   "thread.handoff": { threadId: string; toProvider: string; title?: string };
+  "pairing.status": Record<string, never>;
+  "pairing.createToken": Record<string, never>;
+  "pairing.revoke": { clientId: string };
+  "pairing.revokeAll": Record<string, never>;
   "lane.create": { projectId: string; title: string; base?: string };
   "lane.list": { projectId?: string };
   "lane.archive": { laneId: string; deleteBranch: boolean; force: boolean };
@@ -105,6 +109,10 @@ export interface CommandResults {
   "approval.respond": Record<string, never>;
   "provider.detect": { providers: ProviderView[] };
   "thread.handoff": { thread: ThreadView; summary: string };
+  "pairing.status": PairingStatus;
+  "pairing.createToken": { url: string; expiresAt: string; fingerprint: string | null };
+  "pairing.revoke": { revoked: boolean };
+  "pairing.revokeAll": { revoked: number };
   "lane.create": { lane: LaneView };
   "lane.list": { lanes: LaneView[] };
   "lane.archive": { lane: LaneView };
@@ -117,6 +125,22 @@ export interface CommandResults {
  * `gh` when that is available and authenticated, otherwise push and hand back a
  * compare URL, otherwise report exactly which step failed.
  */
+export interface PairedClient {
+  id: string;
+  label: string;
+  createdAt: string;
+  lastSeenAt: string | null;
+}
+
+export interface PairingStatus {
+  /** False when the daemon is bound to loopback; pairing is meaningless then. */
+  remote: boolean;
+  tls: boolean;
+  address: string | null;
+  fingerprint: string | null;
+  clients: PairedClient[];
+}
+
 export interface PrResult {
   status: "created" | "pushed" | "needs_commit" | "error";
   /** Set when `gh` created the PR. */

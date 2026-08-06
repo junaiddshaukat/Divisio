@@ -907,3 +907,14 @@ button.btn.secondary {
 .topbar .handoff ~ .status {
   margin-left: 0;
 }
+
+.pair-url {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--code-block);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  word-break: break-all;
+  user-select: all;
+}

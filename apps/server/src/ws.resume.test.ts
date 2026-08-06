@@ -14,6 +14,7 @@ function fakeWs(threads: string[] = []): ServerWebSocket<SocketData> & { sent: S
     sent,
     data: {
       clientId: "ses_test",
+    pairedClientId: null,
       threads: new Set(threads),
       pending: new Map(),
       timer: null,

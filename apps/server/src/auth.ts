@@ -32,6 +32,10 @@ export interface AuthConfig {
    * Used by tests so they never touch the developer's live `~/.divisio`.
    */
   token?: string;
+  /** Resolves a paired client's session token. Absent in loopback-only mode. */
+  verifyClientToken?: (token: string) => { id: string } | null;
+  /** Additional Host values to accept, set when bound off loopback. */
+  allowedHosts?: string[];
 }
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
@@ -45,8 +49,13 @@ export class Auth {
   private readonly allowedOrigins: Set<string>;
   private readonly port: number;
 
+  private readonly verifyClientToken: ((token: string) => { id: string } | null) | null;
+  private readonly extraHosts: Set<string>;
+
   constructor(cfg: AuthConfig) {
     this.port = cfg.port;
+    this.verifyClientToken = cfg.verifyClientToken ?? null;
+    this.extraHosts = new Set(cfg.allowedHosts ?? []);
     this.token = cfg.token ?? loadOrCreateToken();
     this.tokenBuf = Buffer.from(this.token, "utf8");
     this.allowedOrigins = new Set([
@@ -66,7 +75,8 @@ export class Auth {
     // 1. Host allowlist — the DNS-rebinding guard. Does not depend on the
     //    browser behaving, which is the entire point.
     const host = req.headers.get("host");
-    if (!host || !LOOPBACK_HOSTS.has(stripPort(host))) return "bad_host";
+    const bare = host ? stripPort(host) : "";
+    if (!host || !(LOOPBACK_HOSTS.has(bare) || this.extraHosts.has(bare))) return "bad_host";
 
     // 2. Origin allowlist. A missing Origin is rejected too: browsers always
     //    send one, and non-browser clients are not granted an origin-free path.
@@ -98,9 +108,16 @@ export class Auth {
       : bearerProto?.slice(BEARER_PROTO_PREFIX.length);
 
     if (!presented) return "no_token";
-    if (!this.verify(presented)) return "bad_token";
+    // The local token, or a paired client's session token. Both are checked in
+    // constant time; a revoked client fails here on its next connection.
+    if (!this.verify(presented) && !this.verifyClientToken?.(presented)) return "bad_token";
 
     return null;
+  }
+
+  /** Identifies which paired client a token belongs to, if any. */
+  clientFor(token: string): { id: string } | null {
+    return this.verifyClientToken?.(token) ?? null;
   }
 
   /** Timing-safe. A plain === leaks the token one byte at a time. */
