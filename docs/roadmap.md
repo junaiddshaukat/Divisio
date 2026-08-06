@@ -92,16 +92,18 @@ attention. Phase 2 is complete.
 
 | Deliverable | Notes |
 | --- | --- |
-| Adapter SDK docs | Templates for Structured / Stream / PTY tiers |
-| PTY template | Fallback path for unknown interactive CLIs |
-| Registry docs | How to publish a community adapter |
+| Adapter SDK docs | Templates for Structured / Stream / PTY tiers — see [adapter SDK](sdk/adapter-sdk.md) |
+| PTY template | Fallback path for unknown interactive CLIs — scaffolded in SDK docs |
+| Registry docs | How to publish a community adapter — in SDK guide |
 | Quota-ready hooks | Multi-profile / limit signals (implementation may be partial) |
 
 **Exit criteria**
 
-- [ ] External contributor can add an adapter against contracts without editing orchestration core
-- [ ] At least one P1 provider beyond P0 is first-party or community
-- [ ] Capability matrix covers community adapters
+- [x] External contributor can add an adapter against contracts without editing orchestration core (SDK guide + `@divisio/adapters/sdk`)
+- [x] At least one P1 provider beyond P0 is first-party or community (Grok Build, Qwen Code, OpenCode)
+- [x] Capability matrix covers community adapters (`source: community` + `@divisio/community-adapters`)
+
+Scaffolded: `docs/sdk/adapter-sdk.md`, `packages/adapters/src/sdk`, `STREAM_ADAPTER_TEMPLATE`, `loadCommunityAdapters`. P1 first-party stream adapters: Grok, Qwen, OpenCode. P2 community: Gemini, Copilot, Antigravity.
 
 ## Out of roadmap (for now)
 

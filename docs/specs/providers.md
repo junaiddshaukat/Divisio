@@ -1,68 +1,59 @@
 # Providers
 
-Divisio drives **already-authenticated** CLIs. Installing Divisio does not replace `claude auth login`, `codex login`, `agent login`, etc.
+Divisio drives **already-authenticated** CLIs. Installing Divisio does not replace `claude auth login`, `codex login`, `cursor-agent login`, `grok` auth, etc.
 
 ## Priority matrix
 
 | Priority | Providers | Phase | Notes |
 | --- | --- | --- | --- |
-| **P0** | Claude Code, Codex, Cursor CLI | 1 | Must ship for Core MVP |
-| **P1** | Grok Build, OpenCode, Antigravity | 2–4 | First-party when stable; else high-value community |
-| **P2** | Kilo Code, Pi, Droid, Gemini CLI, Copilot CLI, … | 4+ | Prefer community adapters via SDK |
+| **P0** | Claude Code, Codex, Cursor CLI | 1 | First-party (`source: builtin`) |
+| **P1** | Grok Build, Qwen Code, OpenCode | 2–4 | First-party stream adapters |
+| **P2** | Gemini CLI, GitHub Copilot, Antigravity | 4 | Community pack `@divisio/community-adapters` |
+| **P2+** | Kilo Code, Pi, Droid, … | 4+ | Prefer external SDK packages |
 | **P3** | Windsurf, Devin CLI, others | 4+ | Likely PTY tier until better protocols exist |
 
-Exact binary names and detect heuristics are locked in code during implementation; docs stay intent-level until then.
-
 ## Prerequisites (illustrative)
-
-Users must install and auth at least one provider before useful work:
 
 | Provider | Typical setup |
 | --- | --- |
 | Codex | Codex CLI + `codex login` |
 | Claude Code | Claude Code CLI + `claude auth login` |
-| Cursor | Cursor CLI + `agent login` |
-| Grok Build | Grok CLI + `grok login` |
-| OpenCode | OpenCode + `opencode auth login` |
-| Antigravity | `agy` CLI authenticated per vendor docs |
+| Cursor | Cursor CLI + `cursor-agent login` |
+| Grok Build | xAI Grok CLI (`grok`) authenticated |
+| Qwen Code | Qwen Code CLI (`qwen`) + ModelScope / vendor auth |
+| OpenCode | `curl -fsSL https://opencode.ai/install \| bash` + `opencode auth login` |
+| Gemini CLI | `npm i -g @google/gemini-cli` + auth |
+| GitHub Copilot | `npm i -g @github/copilot` + GitHub auth |
+| Antigravity | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` → `agy` |
 
 ## Adapter tier expectations
 
-| Provider | Expected tier (initial) | Status |
-| --- | --- | --- |
-| Codex | Structured (`codex app-server`) | Implemented (`CodexAdapter`) |
-| Claude Code | Stream (`--print --output-format stream-json`) | Implemented (`ClaudeAdapter`) |
-| Cursor | Stream (`cursor-agent --print … stream-json`) | Implemented (`CursorAdapter`) |
-| Others | Best available; PTY fallback allowed | — |
+| Provider | Tier | Status | Source |
+| --- | --- | --- | --- |
+| Codex | Structured (`codex app-server`) | `CodexAdapter` | builtin |
+| Claude Code | Stream (`stream-json`) | `ClaudeAdapter` | builtin |
+| Cursor | Stream (`cursor-agent` stream-json) | `CursorAdapter` | builtin |
+| Grok Build | Stream (`streaming-messages-json`) | `GrokAdapter` | builtin |
+| Qwen Code | Stream (`stream-json`) | `QwenAdapter` | builtin |
+| OpenCode | Stream (`opencode run --format json`) | `OpenCodeAdapter` | builtin |
+| Gemini CLI | Stream (`--output-format stream-json`) | `GeminiAdapter` | community |
+| GitHub Copilot | Stream (`--output-format json`) | `CopilotAdapter` | community |
+| Antigravity | Stream (`agy --output-format stream-json`) | `AntigravityAdapter` | community |
 
-### Codex (Structured)
+### Community P2 spawn notes
 
-- Binary: `codex` on PATH; session transport is `codex app-server` (NDJSON JSON-RPC, no `"jsonrpc":"2.0"` field).
-- Handshake: `initialize` → notify `initialized` → `thread/start` or `thread/resume` (resume falls back to start).
-- Turns: `turn/start` with `input: [{ type: "text", text }]`; interrupt via `turn/interrupt`.
-- Approvals: server requests `item/commandExecution/requestApproval` / `item/fileChange/requestApproval` → `approval.requested`; Divisio replies `accept` / `decline`.
-- Capabilities: `sessionResume`, `interruptTurn`, `approvals`, `worktreeAware`. No usage signals yet.
-- Detect: `codex --version`; auth remains `codex login` (BYO CLI).
+- **Gemini:** `gemini -p <prompt> --output-format stream-json [--resume <id>] [--yolo]`
+- **Copilot:** `copilot -p <prompt> --output-format json -s --no-ask-user [--allow-all]`
+- **Antigravity:** `agy -p <prompt> --output-format stream-json [--conversation <id>] [--dangerously-skip-permissions]`
 
-### Claude Code (Stream)
+Load extra community modules with `DIVISIO_ADAPTER_MODULES` or `userdata/adapters.json`. See [Adapter SDK](../sdk/adapter-sdk.md).
 
-- Print mode owns the permission engine — `approvals: false` until a PreToolUse / supervised path exists.
-- Capabilities: `sessionResume`, `interruptTurn`, `worktreeAware`, `usageSignals`.
-
-### Cursor Agent (Stream)
-
-- Binary: prefer `cursor-agent` (not bare `agent` — that is often Grok on PATH).
-- Spawn: `cursor-agent --print --output-format stream-json --stream-partial-output --workspace <cwd> [--resume <id>] <prompt>`.
-- Partial-stream filter: only assistant events with `timestamp_ms` and without `model_call_id` are new text.
-- Approvals: `false` in print mode (CLI-owned). Mediated approvals need ACP (`cursor-agent acp`) later.
-- Capabilities: `sessionResume`, `interruptTurn`, `worktreeAware`. Auth: `cursor-agent login`.
-- Detect: `cursor-agent --version`.
 ## Capability honesty
 
-If a provider cannot interrupt, resume, or emit approvals, the capability matrix must say so. Do not emulate fake approvals in the UI.
+Never fake approvals. Print/headless modes leave permissions with the CLI (`approvals: false`) unless a mediated protocol exists.
 
 ## Related
 
 - [Adapter protocol](../architecture/adapter-protocol.md)
-- [MVP](mvp.md)
+- [Adapter SDK](../sdk/adapter-sdk.md)
 - [Roadmap](../roadmap.md)

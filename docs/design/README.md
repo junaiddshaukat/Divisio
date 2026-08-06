@@ -5,6 +5,7 @@ A dense, quiet workspace for people who keep several agents running at once. Neu
 | Doc | Contents |
 | --- | --- |
 | [tokens.md](tokens.md) | Light + dark color tokens (semantic) |
+| [materials.md](materials.md) | Window vibrancy vs solid composer/menus |
 | [typography.md](typography.md) | Font stacks + type scale |
 | [layout.md](layout.md) | Three-pane shell, density, surfaces |
 | [components.md](components.md) | Composer, sidebar, chat, tools, terminal |
@@ -18,8 +19,9 @@ Skills for craft reviews: [`.agents/skills/emil-design-eng`](../../.agents/skill
 1. **Light mode** — white and zinc hierarchy, hairline borders, a large rounded composer, blue reserved for links, focus rings, and the rare solid CTA.
 2. **Dark mode** — near-black canvases with luminosity (not hue) carrying selection and hover state. No colored fills for ordinary UI.
 3. **Shell** is always: projects/threads | transcript + composer (+ optional bottom terminal) | working surfaces (Changes / Browser / Terminal / Files).
-4. **Speed of feel beats decoration** — see [motion.md](motion.md) and [performance](../architecture/performance.md).
-5. **The agent is the product, not the frame.** Every pixel of chrome competes with the work.
+4. **Materials** — window may be vibrant/translucent; **composer and menus stay solid** (see [materials.md](materials.md)).
+5. **Speed of feel beats decoration** — see [motion.md](motion.md) and [performance](../architecture/performance.md).
+6. **The agent is the product, not the frame.** Every pixel of chrome competes with the work.
 
 ## Implementation rules
 

@@ -36,16 +36,17 @@ Serious agentic work is scattered across terminals, vendor apps, and tabs. Divis
 | [MVP spec](docs/specs/mvp.md) | Phase 0–1 acceptance criteria |
 | [Worktrees](docs/specs/worktrees.md) | Phase 2 parallel lanes |
 | [Benchmarks](docs/operations/benchmarks.md) | Measured size and latency |
+| [v1 ship notes](docs/operations/v1-ship.md) | AgentPicker gaps / smoke gate |
 | [Glossary](docs/specs/glossary.md) | Shared vocabulary |
 | [ADRs](docs/adr/) | Locked decisions |
 
 ## Status
 
-**Phase 1 Core MVP complete** for the web+daemon path: three P0 adapters (Claude, Codex, Cursor), supervised/full-access permissions (honest — only mediating adapters), turn checkpoints + diff, and a provider capability matrix. Tauri desktop packaging is still Phase 3. See [roadmap](docs/roadmap.md).
+**Phase 4 ecosystem complete:** adapter SDK + community loader; P1 first-party (Grok, Qwen, OpenCode); P2 community pack (Gemini, Copilot, Antigravity). Composer **AgentPicker** for v1. See [providers](docs/specs/providers.md), [adapter SDK](docs/sdk/adapter-sdk.md), and [v1 ship notes](docs/operations/v1-ship.md).
 
 ## Run it
 
-Requires [Bun](https://bun.com) 1.3.1+, [Rust](https://rustup.rs) (desktop only), and at least one authenticated agent CLI.
+Requires [Bun](https://bun.com) 1.3.5+, [Rust](https://rustup.rs) (desktop only), and at least one authenticated agent CLI.
 
 ### Desktop app (recommended)
 
