@@ -1,5 +1,8 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": ["packages/*/src/**/*.ts", "apps/server/src/**/*.ts", "apps/web/src/**/*.ts", "apps/web/src/**/*.tsx"],
-  "compilerOptions": { "jsx": "react-jsx", "types": ["bun"] }
+  // The web app is typechecked by apps/web/tsconfig.json, which loads
+  // vite/client for its `?worker` and asset module declarations. Checking it
+  // here too would report those imports as missing under Bun's types.
+  "include": ["packages/*/src/**/*.ts", "apps/server/src/**/*.ts"],
+  "compilerOptions": { "types": ["bun"] }
 }

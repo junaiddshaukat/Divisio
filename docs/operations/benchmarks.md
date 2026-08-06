@@ -30,6 +30,20 @@ On macOS the DMG step runs Finder AppleScript for window cosmetics, which fails
 without automation permission. `CI=true bun run build:desktop` skips that step
 and produces the same artifacts.
 
+## Web bundle
+
+The editor is lazy: Monaco is fetched the first time the file pane opens, so
+users who never open a file do not pay for it.
+
+| What loads | Size | When |
+| --- | --- | --- |
+| App shell (JS + CSS) | **236 KB** | First paint |
+| Monaco + language workers | ~4 MB, split across chunks | First time the file pane opens |
+
+Reproduce with `bun run build`, then read `apps/web/dist/index.html` for what is
+referenced eagerly. A jump in the eager figure means something imported the
+editor at the top level again.
+
 ## Latency — [ADR 0007](../adr/0007-performance-release-gates.md)
 
 Reproduce with `bun apps/server/src/bench.ts`. Exits non-zero when a budget is

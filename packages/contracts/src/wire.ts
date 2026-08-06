@@ -21,6 +21,10 @@ export interface CommandPayloads {
   "approval.respond": { threadId: string; approvalId: string; decision: "approve" | "deny" };
   "provider.detect": Record<string, never>;
   "thread.handoff": { threadId: string; toProvider: string; title?: string };
+  /** Paths are relative to the thread's working directory (lane root or project). */
+  "file.tree": { threadId: string; path?: string };
+  "file.read": { threadId: string; path: string };
+  "file.write": { threadId: string; path: string; content: string };
   "pairing.status": Record<string, never>;
   "pairing.createToken": Record<string, never>;
   "pairing.revoke": { clientId: string };
@@ -109,6 +113,9 @@ export interface CommandResults {
   "approval.respond": Record<string, never>;
   "provider.detect": { providers: ProviderView[] };
   "thread.handoff": { thread: ThreadView; summary: string };
+  "file.tree": { entries: FileTreeEntry[]; path: string };
+  "file.read": { path: string; content: string; size: number; binary: boolean };
+  "file.write": { path: string };
   "pairing.status": PairingStatus;
   "pairing.createToken": { url: string; expiresAt: string; fingerprint: string | null };
   "pairing.revoke": { revoked: boolean };
@@ -125,6 +132,13 @@ export interface CommandResults {
  * `gh` when that is available and authenticated, otherwise push and hand back a
  * compare URL, otherwise report exactly which step failed.
  */
+export interface FileTreeEntry {
+  path: string;
+  name: string;
+  kind: "file" | "directory";
+  size: number | null;
+}
+
 export interface PairedClient {
   id: string;
   label: string;

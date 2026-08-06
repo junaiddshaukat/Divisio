@@ -10,5 +10,6 @@
 | [0006](0006-size-budget-tauri.md) | Install size budget — prefer Tauri shell |
 | [0007](0007-performance-release-gates.md) | Performance targets are release gates |
 | [0008](0008-bun-runtime.md) | Bun as the daemon runtime |
+| [0009](0009-embedded-editor.md) | Embed a full code editor |
 
 New architectural decisions get the next number and link from here.

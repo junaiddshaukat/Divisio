@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DiffFileEntry,
   DomainEvent,
+  FileTreeEntry,
   LaneView,
   PairingStatus,
   PrResult,
@@ -21,6 +22,15 @@ import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
 import { SessionBoard } from "./components/SessionBoard.tsx";
 import { HandoffMenu } from "./components/HandoffMenu.tsx";
 import { PairingPanel } from "./components/PairingPanel.tsx";
+
+/**
+ * Monaco is ~4 MB. Loading it eagerly would delay first paint for every user,
+ * including those who never open a file, and would be felt hardest on a paired
+ * device over LAN. It arrives only when the file pane is first opened.
+ */
+const FilePane = lazy(() =>
+  import("./components/FilePane.tsx").then((m) => ({ default: m.FilePane })),
+);
 import { TurnDiff } from "./components/TurnDiff.tsx";
 
 const PORT = 4577;
@@ -74,6 +84,8 @@ export function App() {
   const [laneForNewThread, setLaneForNewThread] = useState<string | null>(null);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [pairing, setPairing] = useState<PairingStatus | null>(null);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
   const [laneBusy, setLaneBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [diffTurns, setDiffTurns] = useState<Set<string>>(new Set());
@@ -311,6 +323,13 @@ export function App() {
   }, [token, onEvent, refresh, openThread]);
 
   useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setDark(document.documentElement.classList.contains("dark"));
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
     if (state !== "open") return;
     const client = clientRef.current;
     if (!client) return;
@@ -420,6 +439,24 @@ export function App() {
     }
   };
 
+  const listDir = useCallback(async (path: string): Promise<FileTreeEntry[]> => {
+    const client = clientRef.current;
+    if (!client || !activeIdRef.current) return [];
+    return (await client.send("file.tree", { threadId: activeIdRef.current, path })).entries;
+  }, []);
+
+  const readFile = useCallback(async (path: string) => {
+    const client = clientRef.current;
+    if (!client || !activeIdRef.current) throw new Error("not connected");
+    return client.send("file.read", { threadId: activeIdRef.current, path });
+  }, []);
+
+  const writeFileContent = useCallback(async (path: string, content: string) => {
+    const client = clientRef.current;
+    if (!client || !activeIdRef.current) throw new Error("not connected");
+    await client.send("file.write", { threadId: activeIdRef.current, path, content });
+  }, []);
+
   const openPairing = async () => {
     const client = clientRef.current;
     if (!client) return;
@@ -475,8 +512,10 @@ export function App() {
       : []),
   ];
 
+  const showFiles = view === "thread" && !!activeThread && filesOpen;
+
   return (
-    <div className="shell">
+    <div className={`shell${showFiles ? " shell-files" : ""}`}>
       <Sidebar
         projects={projects}
         threads={threads}
@@ -508,18 +547,21 @@ export function App() {
             <span className="crumb">No thread selected</span>
           )}
           {view === "thread" && activeThread && (
-            <HandoffMenu
-              current={activeThread.provider}
-              providers={providers}
-              busy={handoffBusy || !!activeTurn}
-              onHandoff={(kind) => void handoff(kind)}
-            />
-          )}
-          {view === "thread" && activeThread && (
-            <span className="status">
-              <span className={`dot ${activeThread.status}`} />
-              {activeThread.status}
-            </span>
+            <div className="topbar-actions">
+              <button className="icon" aria-pressed={filesOpen} onClick={() => setFilesOpen((v) => !v)}>
+                {filesOpen ? "Hide files" : "Files"}
+              </button>
+              <HandoffMenu
+                current={activeThread.provider}
+                providers={providers}
+                busy={handoffBusy || !!activeTurn}
+                onHandoff={(kind) => void handoff(kind)}
+              />
+              <span className="status">
+                <span className={`dot ${activeThread.status}`} />
+                {activeThread.status}
+              </span>
+            </div>
           )}
         </div>
 
@@ -588,6 +630,27 @@ export function App() {
           }}
         />
       )}
+      {showFiles && activeThread && (
+        <Suspense
+          fallback={
+            <section className="file-pane">
+              <div className="empty">
+                <p>Loading the editor…</p>
+              </div>
+            </section>
+          }
+        >
+          <FilePane
+            threadId={activeThread.id}
+            dark={dark}
+            listDir={listDir}
+            readFile={readFile}
+            writeFile={writeFileContent}
+            onClose={() => setFilesOpen(false)}
+          />
+        </Suspense>
+      )}
+
       {pairing && (
         <PairingPanel
           status={pairing}

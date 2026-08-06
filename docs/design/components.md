@@ -84,7 +84,22 @@ Press feedback: scale ~0.97, 100–160ms — never on keyboard-triggered actions
 
 ## Icons
 
-Thin-stroke, consistent weight (Lucide-class). No multicolor file-type noise — this is an agent command center, not a full IDE.
+Thin-stroke, consistent weight (Lucide-class). No multicolor file-type noise, including in the file tree.
+
+## File pane
+
+An editable Monaco pane opens beside the transcript, with a file tree rooted at
+the thread's working directory — its lane worktree when the thread has one. See
+[ADR 0009](../adr/0009-embedded-editor.md).
+
+| Element | Spec |
+| --- | --- |
+| Tree | Directories first, then files; no file-type colours; `.git`, `node_modules`, and build output hidden |
+| Header | Path, an `unsaved` pill when dirty, and Save |
+| Editor | Monaco, surfaces themed from our tokens, minimap off, ⌘S to save |
+| Binary | Reported as binary; never rendered as text |
+
+Loaded lazily so the editor's weight is paid only by users who open it.
 
 ## Out of MVP chrome
 

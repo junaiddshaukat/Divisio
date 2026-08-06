@@ -16,6 +16,13 @@ import { existsSync } from "node:fs";
 import { captureCheckpoint, checkpointRef, diffCheckpoints } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
 import { seedPrompt, summaryPrompt, type PacketContext } from "./handoff.ts";
+import {
+  FileTooLargeError,
+  PathEscapeError,
+  listDirectory,
+  readTextFile,
+  writeTextFile,
+} from "./files/service.ts";
 import type { PairingStatus } from "@divisio/contracts";
 
 /** What the orchestrator needs from pairing, so it does not depend on transport. */
@@ -137,6 +144,12 @@ export class Orchestrator {
         return await this.openPr(payload);
       case "thread.handoff":
         return await this.handoff(payload);
+      case "file.tree":
+        return await this.fileTree(payload);
+      case "file.read":
+        return await this.fileRead(payload);
+      case "file.write":
+        return await this.fileWrite(payload);
       case "pairing.status":
         return this.pairing.status();
       case "pairing.createToken":
@@ -487,6 +500,60 @@ export class Orchestrator {
     }
 
     return { ...base, status: "created", url: pr.url ?? null, compareUrl: compare, detail: null };
+  }
+
+  /* --------------------------------- files -------------------------------- */
+
+  /**
+   * Files resolve against the thread's working directory, so a lane-bound
+   * thread browses its own worktree rather than the primary checkout.
+   */
+  private rootForThread(threadId: string): string {
+    const thread = this.store.getThread(threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${threadId}`);
+    return this.workdirFor(thread);
+  }
+
+  /** Maps file errors onto command errors without leaking absolute paths. */
+  private fileError(err: unknown): never {
+    if (err instanceof PathEscapeError) {
+      throw new CommandError("invalid_payload", "that path is outside the project");
+    }
+    if (err instanceof FileTooLargeError) {
+      throw new CommandError("invalid_payload", err.message);
+    }
+    const code = (err as { code?: string })?.code;
+    if (code === "ENOENT") throw new CommandError("not_found", "file not found");
+    if (code === "EACCES") throw new CommandError("invalid_payload", "permission denied");
+    throw new CommandError("internal", String(err));
+  }
+
+  private async fileTree(p: CommandPayloads["file.tree"]): Promise<CommandResults["file.tree"]> {
+    const root = this.rootForThread(p.threadId);
+    try {
+      return { entries: await listDirectory(root, p.path ?? ""), path: p.path ?? "" };
+    } catch (err) {
+      this.fileError(err);
+    }
+  }
+
+  private async fileRead(p: CommandPayloads["file.read"]): Promise<CommandResults["file.read"]> {
+    const root = this.rootForThread(p.threadId);
+    try {
+      return await readTextFile(root, p.path);
+    } catch (err) {
+      this.fileError(err);
+    }
+  }
+
+  private async fileWrite(p: CommandPayloads["file.write"]): Promise<CommandResults["file.write"]> {
+    const root = this.rootForThread(p.threadId);
+    try {
+      await writeTextFile(root, p.path, p.content);
+      return { path: p.path };
+    } catch (err) {
+      this.fileError(err);
+    }
   }
 
   /* -------------------------------- handoff ------------------------------- */

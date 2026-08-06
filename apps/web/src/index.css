@@ -918,3 +918,128 @@ button.btn.secondary {
   word-break: break-all;
   user-select: all;
 }
+
+/* ------------------------------- file pane -------------------------------- */
+
+/* The pane is a third column, not a block stacked above the transcript. */
+.shell-files {
+  grid-template-columns: 260px minmax(0, 1fr) minmax(420px, 46vw);
+}
+
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The group owns the right alignment now. */
+.topbar-actions .handoff,
+.topbar-actions .status {
+  margin-left: 0;
+}
+
+.file-pane {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  border-left: 1px solid var(--border);
+  min-width: 0;
+  height: 100%;
+}
+
+.file-tree {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--sidebar);
+  min-width: 0;
+}
+.file-pane-head {
+  height: var(--workspace-topbar-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.file-pane-head .section-label {
+  padding: 0;
+}
+.tree-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 0 12px;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 3px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.tree-row:hover {
+  background: var(--sidebar-row-hover);
+}
+.tree-row[aria-selected="true"] {
+  background: var(--sidebar-row-selected);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.tree-row .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-glyph {
+  width: 10px;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.file-editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--card);
+}
+.file-editor-head {
+  height: var(--workspace-topbar-height);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.file-editor-head .label {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.code-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 1200px) {
+  .shell-files {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+  .file-pane {
+    display: none;
+  }
+}
