@@ -1,0 +1,130 @@
+/*
+ * Design foundation: the scales every component must draw from.
+ *
+ * The previous UI had eleven distinct font sizes and twenty-odd padding
+ * combinations, each chosen in isolation. That is what "vague" looks like from
+ * the inside — nothing lines up because nothing shares a system.
+ *
+ * Rules for anything consuming this file:
+ *   - No raw px for spacing or type. Use the scales below.
+ *   - No raw hex. Use the semantic colour tokens.
+ *   - A new value belongs in the scale, or it does not belong.
+ */
+
+:root {
+  /* --------------------------------- space --------------------------------
+   * 4px base. Dense tools live at 4/6/8/12; 16+ separates regions, not items.
+   */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 24px;
+  --space-8: 32px;
+  --space-9: 48px;
+
+  /* ---------------------------------- type ---------------------------------
+   * Six sizes, each with a role. If a new size seems necessary, the role is
+   * usually the thing that is actually missing.
+   */
+  --text-micro: 10px;   /* keycaps, counters */
+  --text-meta: 11px;    /* timestamps, secondary labels */
+  --text-ui: 12px;      /* controls, sidebar rows, dense chrome */
+  --text-body: 13px;    /* chat prose, editor chrome */
+  --text-lead: 15px;    /* section titles, thread title */
+  --text-display: 24px; /* empty-state headline only */
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65; /* chat prose only — long-form reading */
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* --------------------------------- icons ---------------------------------
+   * One stroke width and two sizes. Mixed icon weights are the fastest way to
+   * make an interface look assembled from parts.
+   */
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-stroke: 1.75;
+
+  /* --------------------------- semantic geometry ---------------------------
+   * Named insets, not ad-hoc padding. Spacing drift is as visible as colour
+   * drift, and almost nobody tokenises it — which is why panels that should
+   * align quietly stop aligning.
+   */
+  --inset-row: 10px;      /* horizontal padding inside a list row */
+  --inset-panel: 8px;     /* padding around a panel's content */
+  --inset-floating: 12px; /* menus, popovers, tooltips */
+
+  /* -------------------------------- controls ------------------------------- */
+  --control-height-sm: 26px;
+  --control-height-md: 30px;
+  --control-height-lg: 36px;
+  --row-height: 30px;
+
+  /* -------------------------------- elevation ------------------------------
+   * Three levels. Borders carry structure; shadow is reserved for things that
+   * genuinely float above the page.
+   */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.18);
+
+  /* --------------------------------- motion --------------------------------
+   * Fast enough to feel like a response, not an animation. Nothing on a
+   * high-frequency path animates at all (ADR 0007).
+   */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --duration-instant: 80ms;
+  --duration-fast: 140ms;
+  --duration-slow: 220ms;
+}
+
+.dark {
+  /* Shadows need more opacity on dark surfaces to read at all. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------------------------------- icons ---------------------------------
+ * Every lucide icon inherits these, so size and stroke stay uniform without
+ * each call site repeating props.
+ */
+.icon,
+svg.lucide {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  stroke-width: var(--icon-stroke);
+  flex-shrink: 0;
+}
+.icon-md {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+/* --------------------------------- a11y ---------------------------------- */
+
+/* Soft focus — quiet hairline, not a loud glow (menus/composer handle their own). */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--ring) 60%, transparent);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

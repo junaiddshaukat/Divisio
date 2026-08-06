@@ -1,0 +1,273 @@
+/*
+ * Sidebar: New thread CTA, icon nav, folder projects,
+ * single-line threads with relative time. Frosted against the ambient wash.
+ */
+
+.sidebar {
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+  -webkit-backdrop-filter: blur(40px) saturate(1.4);
+  backdrop-filter: blur(40px) saturate(1.4);
+}
+
+/* Light mode: solid zinc well — blur only on desktop dark vibrancy. */
+html:not(.dark) .sidebar {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html.desktop-vibrancy:not(.dark) .sidebar {
+  background: rgba(244, 244, 245, 0.94);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+  backdrop-filter: blur(20px) saturate(1.1);
+}
+
+/* Overlay titlebar: traffic lights sit over the sidebar — leave room + drag. */
+html.desktop-vibrancy .sidebar-head {
+  padding-top: calc(var(--space-4) + 36px);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  flex-shrink: 0;
+}
+
+.sidebar-new {
+  width: 100%;
+  justify-content: flex-start;
+  height: 36px;
+  border-radius: var(--radius-md);
+  font-weight: var(--weight-medium);
+}
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 var(--space-3) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: var(--space-4);
+}
+
+.sidebar-section-label {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
+  color: var(--muted-foreground);
+  letter-spacing: 0.01em;
+}
+
+.sidebar-empty {
+  margin: var(--space-3) var(--space-4);
+  font-size: var(--text-meta);
+  line-height: var(--leading-normal);
+  color: var(--muted-foreground);
+}
+
+/* --------------------------------- nav row -------------------------------- */
+
+.nav-row,
+.project-head,
+.thread-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.nav-row {
+  height: 32px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-ui);
+  font-weight: var(--weight-medium);
+  color: var(--muted-foreground);
+}
+.nav-row:hover { background: var(--sidebar-row-hover); color: var(--foreground); }
+.nav-row[aria-current="true"] {
+  background: var(--sidebar-row-selected);
+  color: var(--foreground);
+}
+.nav-label { flex: 1; }
+.nav-kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  line-height: 1.2;
+}
+
+.nav-count {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  color: var(--muted-foreground);
+  min-width: 14px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------- project head ------------------------------ */
+
+.project-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 2px;
+}
+
+.project-head {
+  height: 30px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-ui);
+  font-weight: var(--weight-medium);
+  color: var(--foreground);
+}
+.project-head:hover { background: var(--sidebar-row-hover); }
+.project-head svg { color: var(--muted-foreground); flex-shrink: 0; }
+.project-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------- thread row ------------------------------- */
+
+.thread-row {
+  height: 30px;
+  padding: 0 10px 0 calc(var(--space-4) + 18px);
+  gap: 8px;
+  align-items: center;
+}
+.thread-row:hover { background: var(--sidebar-row-hover); }
+.thread-row[aria-current="true"] {
+  background: var(--sidebar-row-selected);
+}
+
+.thread-row .status-dot {
+  width: 6px;
+  height: 6px;
+  margin: 0;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.thread-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-ui);
+  font-weight: var(--weight-normal);
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+}
+
+.thread-time {
+  font-size: var(--text-micro);
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  line-height: 1;
+}
+
+/* -------------------------------- status dot ------------------------------ */
+
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--muted-foreground);
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* -------------------------------- sidebar foot ----------------------------- */
+
+.sidebar-foot {
+  border-top: 1px solid var(--border);
+  padding: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-shrink: 0;
+}
+.sidebar-foot-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  height: 40px;
+}
+.sidebar-foot-btn:hover { background: var(--sidebar-row-hover); }
+.sidebar-foot-btn .lucide { color: var(--muted-foreground); flex-shrink: 0; }
+.sidebar-foot-title {
+  font-size: var(--text-ui);
+  font-weight: var(--weight-medium);
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-foot-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--muted-foreground);
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+.sidebar-foot-status .status-dot { margin: 0; width: 6px; height: 6px; }
+.sidebar-foot-status.is-online {
+  color: var(--success, #10b981);
+  border-color: color-mix(in srgb, var(--success, #10b981) 35%, transparent);
+  background: color-mix(in srgb, var(--success, #10b981) 12%, transparent);
+}
+
+/* Native vibrancy already blurs the wallpaper — skip stacked CSS blur on chrome. */
+html.desktop-vibrancy .sidebar,
+html.desktop-vibrancy .topbar,
+html.desktop-vibrancy .right-panel,
+html.desktop-vibrancy .terminal-dock {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

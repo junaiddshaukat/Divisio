@@ -1,0 +1,155 @@
+/*
+ * Transcript timeline. Messages are prose; tool activity is a compact log.
+ * Keeping those two visually distinct is most of what makes a long agent
+ * thread skimmable.
+ */
+
+.transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-7) 0 var(--space-5);
+}
+
+.thread-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.msg-user {
+  align-self: flex-end;
+  max-width: 82%;
+  background: var(--user-bubble);
+  border-radius: var(--radius-user-message);
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Assistant prose sits flush on the canvas — a second bubble halves the width
+   available to code and makes long answers harder to read, not easier. */
+.msg-assistant {
+  font-size: var(--text-body);
+  line-height: var(--leading-relaxed);
+  word-break: break-word;
+}
+.msg-assistant.streaming::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--muted-foreground);
+  animation: caret 1s steps(1, end) infinite;
+}
+@keyframes caret { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .msg-assistant.streaming::after { animation: none; } }
+
+/* -------------------------------- work log -------------------------------- */
+
+.work-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.work-row { border-top: 1px solid var(--border); }
+.work-row:first-child { border-top: 0; }
+
+.work-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: 0;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-meta);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.work-head:disabled { cursor: default; }
+.work-head:hover:not(:disabled) { background: var(--accent); }
+.work-head > svg { color: var(--muted-foreground); }
+
+.work-chevron {
+  width: 12px;
+  display: inline-flex;
+  color: var(--muted-foreground);
+}
+.work-chevron svg { width: 12px; height: 12px; }
+
+.work-name {
+  font-weight: var(--weight-medium);
+  flex-shrink: 0;
+}
+
+/* The dimmed preview is what makes a collapsed row worth reading at all. */
+.work-detail {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-ok { color: var(--success); width: 12px; height: 12px; }
+.work-failed { color: var(--destructive); width: 12px; height: 12px; }
+.work-row.is-failed .work-name { color: var(--destructive-foreground); }
+
+.work-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--info);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 700ms linear infinite;
+  flex-shrink: 0;
+}
+
+.work-output {
+  margin: 0;
+  padding: var(--space-4) var(--space-5) var(--space-4) var(--space-8);
+  background: var(--code-block);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  line-height: var(--leading-normal);
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted-foreground);
+}
+
+.work-more {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--muted);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--text-micro);
+  cursor: pointer;
+}
+.work-more:hover { color: var(--foreground); }
+.work-more svg { width: 12px; height: 12px; }

@@ -1,0 +1,193 @@
+/*
+ * Status tones. Colour is reserved for meaning: act now, in motion, broken.
+ * A resting thread is deliberately uncoloured — if everything is coloured,
+ * nothing reads as urgent.
+ */
+
+.tone-attention { color: var(--warning-foreground); }
+.tone-busy { color: var(--info); }
+.tone-ready { color: var(--success); }
+.tone-error { color: var(--destructive-foreground); }
+.tone-idle { color: var(--muted-foreground); }
+
+.dot-attention { background: var(--warning); }
+.dot-busy { background: var(--info); }
+.dot-ready { background: var(--success); }
+.dot-error { background: var(--destructive); }
+.dot-idle { background: var(--muted-foreground); opacity: 0.5; }
+
+/*
+ * Stepped rather than smoothly interpolated: a pulse at six frames per phase is
+ * indistinguishable from one at every vsync, and a sidebar full of them stops
+ * costing a repaint per frame.
+ */
+@keyframes tone-pulse {
+  0%, 40% { opacity: 1; animation-timing-function: steps(6); }
+  50%, 90% { opacity: 0.45; animation-timing-function: steps(6); }
+  100% { opacity: 1; }
+}
+.is-pulsing { animation: tone-pulse 2s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .is-pulsing { animation: none; }
+}
+
+/* ------------------------------- attention -------------------------------- */
+
+.attention-stack {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 340px;
+}
+
+.attention-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  background: var(--popover);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.attention-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.attention-main:hover { background: var(--accent); }
+.attention-main > svg { color: var(--warning-foreground); }
+
+.attention-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.attention-reason {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--warning-foreground);
+}
+.attention-title {
+  font-size: var(--text-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attention-more {
+  margin: 0;
+  text-align: right;
+  font-size: var(--text-meta);
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 860px) {
+  .attention-stack { left: var(--space-4); right: var(--space-4); max-width: none; bottom: 80px; }
+}
+
+/* --------------------------------- board ---------------------------------- */
+
+.lane-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lane-branch svg { width: 11px; height: 11px; }
+
+.lane-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  min-width: 0;
+}
+.lane-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.lane-card-head .label {
+  font-size: var(--text-ui);
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lane-card-head .meta {
+  font-size: var(--text-micro);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.lane-card-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}
+
+.lane-thread {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-meta);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.lane-thread:hover { background: var(--accent); }
+.lane-thread .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-thread .meta { font-size: var(--text-micro); color: var(--muted-foreground); }
+.lane-thread .status-dot { margin-top: 0; }
+
+.board-column-title {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+.board-count {
+  font-size: var(--text-micro);
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-radius: 999px;
+  padding: 0 var(--space-3);
+}
+.board-empty { font-size: var(--text-meta); color: var(--muted-foreground); padding: var(--space-2); }

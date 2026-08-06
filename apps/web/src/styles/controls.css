@@ -1,0 +1,303 @@
+/*
+ * Control primitives. Every button, icon button, pill, and input in the app
+ * resolves to one of these — no component defines its own padding or height.
+ */
+
+/* ---------------------------------- button -------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: var(--text-ui);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  /* Beat legacy `button.btn { background: var(--primary) }` in index.css */
+  background: var(--card);
+  color: var(--foreground);
+  transition:
+    background-color var(--duration-instant) linear,
+    border-color var(--duration-instant) linear,
+    color var(--duration-instant) linear,
+    opacity var(--duration-instant) linear;
+}
+
+.btn-sm { height: var(--control-height-sm); padding: 0 var(--space-4); }
+.btn-md { height: var(--control-height-md); padding: 0 var(--space-5); }
+.btn-lg { height: var(--control-height-lg); padding: 0 var(--space-6); font-size: var(--text-body); }
+
+button.btn.btn-primary,
+.btn.btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: transparent;
+}
+button.btn.btn-primary:hover:not(:disabled),
+.btn.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+button.btn.btn-secondary,
+.btn.btn-secondary {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+button.btn.btn-secondary:hover:not(:disabled),
+.btn.btn-secondary:hover:not(:disabled) {
+  background: var(--sidebar-row-hover);
+  color: var(--foreground);
+  opacity: 1;
+}
+
+button.btn.btn-ghost,
+.btn.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted-foreground);
+}
+button.btn.btn-ghost:hover:not(:disabled),
+.btn.btn-ghost:hover:not(:disabled) {
+  background: var(--sidebar-row-hover);
+  color: var(--foreground);
+  opacity: 1;
+}
+
+button.btn.btn-danger,
+.btn.btn-danger {
+  background: transparent;
+  border-color: var(--destructive);
+  color: var(--destructive-foreground);
+}
+button.btn.btn-danger:hover:not(:disabled),
+.btn.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--destructive) 12%, transparent);
+  color: var(--destructive-foreground);
+  opacity: 1;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Pointer only: a keyboard-triggered action that shrinks reads as a glitch. */
+@media (hover: hover) {
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+}
+
+.btn-spinner {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 600ms linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* -------------------------------- icon button ------------------------------ */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color var(--duration-instant) linear, color var(--duration-instant) linear;
+}
+.icon-btn-sm { width: var(--control-height-sm); height: var(--control-height-sm); }
+.icon-btn-md { width: var(--control-height-md); height: var(--control-height-md); }
+.icon-btn-lg { width: var(--control-height-lg); height: var(--control-height-lg); }
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.icon-btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ----------------------------------- pill ---------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 20px;
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.pill svg { width: 11px; height: 11px; }
+
+.pill-success {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+.pill-warning {
+  color: var(--warning-foreground);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.pill-danger {
+  color: var(--destructive-foreground);
+  border-color: color-mix(in srgb, var(--destructive) 35%, transparent);
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+}
+.pill-info {
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 35%, transparent);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+}
+
+/* ---------------------------------- inputs --------------------------------- */
+
+.field {
+  height: var(--control-height-md);
+  padding: 0 var(--space-4);
+  background: var(--card);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-ui);
+  outline: 0;
+  transition: border-color var(--duration-instant) linear;
+}
+.field:focus { border-color: var(--ring); }
+.field::placeholder { color: var(--muted-foreground); }
+
+/* Custom select with optional icon + detail line. */
+.menu-select {
+  position: relative;
+  width: 100%;
+}
+.menu-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
+  text-align: left;
+  min-height: var(--control-height-md);
+  height: auto;
+  padding: 6px var(--space-4);
+}
+.menu-select-trigger:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.menu-select-value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1;
+}
+.menu-select-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.menu-select-label {
+  font-size: var(--text-ui);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-select-detail {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-select-chevron {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.menu-select-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--composer-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+}
+.menu-select-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.menu-select-option:hover:not(:disabled),
+.menu-select-option.selected {
+  background: var(--sidebar-row-hover);
+}
+.menu-select-option:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Capability matrix ticks: a glyph for yes, a dash for no — never colour alone. */
+.cap-yes { color: var(--success); }
+.cap-no { color: var(--muted-foreground); opacity: 0.6; }
+
+/* The git menu trigger is a <summary>, so it cannot be an IconButton. */
+.git-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  list-style: none;
+}
+.git-menu-trigger::-webkit-details-marker { display: none; }
+.git-menu-trigger:hover { background: var(--accent); color: var(--foreground); }
