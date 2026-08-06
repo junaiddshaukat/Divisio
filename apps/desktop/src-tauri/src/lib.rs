@@ -243,6 +243,7 @@ fn bootstrap_daemon(app: &AppHandle) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_dialog::init())
     .manage(DaemonState {
       child: Mutex::new(None),
       token: Mutex::new(None),

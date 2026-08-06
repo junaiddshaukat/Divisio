@@ -100,6 +100,9 @@ export class Client {
         // port, or a desktop shell that adopted one. Report that once, by name,
         // instead of letting every feature fail separately with
         // "unknown command" wherever the user happens to click.
+        // Only usable when the daemon is new enough to advertise. An older one
+        // sends nothing here, which is precisely the case that needs catching —
+        // so the authoritative check is the `unknown_command` reply below.
         if (frame.commands) {
           const advertised = new Set(frame.commands);
           const missing = REQUIRED_COMMANDS.filter((c) => !advertised.has(c));
@@ -139,6 +142,15 @@ export class Client {
       }
 
       case "err": {
+        // A daemon that does not know a command we require is an older build,
+        // whatever it claims at connect. This catches the stale-daemon case
+        // that cannot advertise its commands at all.
+        if (frame.code === "unknown_command") {
+          const name = frame.message.replace(/^unknown command:\s*/, "").trim();
+          if ((REQUIRED_COMMANDS as readonly string[]).includes(name)) {
+            this.handlers.onIncompatible([name]);
+          }
+        }
         const p = this.pending.get(frame.id);
         if (p) {
           this.pending.delete(frame.id);

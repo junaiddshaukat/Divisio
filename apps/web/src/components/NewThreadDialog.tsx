@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { pickDirectory, canPickDirectory } from "../platform.ts";
 import type { ProjectView, ProviderView } from "@divisio/contracts";
 
 interface Props {
@@ -64,11 +65,33 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
         {needsProject ? (
           <>
             <input placeholder="Project name" value={name} onChange={(e) => setName(e.target.value)} />
-            <input
-              placeholder="/absolute/path/to/repo"
-              value={rootPath}
-              onChange={(e) => setRootPath(e.target.value)}
-            />
+            <div className="path-row">
+              <input
+                placeholder="/absolute/path/to/repo"
+                value={rootPath}
+                onChange={(e) => setRootPath(e.target.value)}
+              />
+              {/*
+                A native picker only exists in the desktop shell. Browsers
+                cannot hand back a real filesystem path, so the paired-device
+                case keeps the text field rather than showing a control that
+                would silently do nothing.
+              */}
+              {canPickDirectory() && (
+                <button
+                  className="btn ghost"
+                  onClick={async () => {
+                    const chosen = await pickDirectory();
+                    if (chosen) {
+                      setRootPath(chosen);
+                      if (!name.trim()) setName(chosen.split("/").filter(Boolean).pop() ?? "");
+                    }
+                  }}
+                >
+                  Choose…
+                </button>
+              )}
+            </div>
             <span className="hint">The agent runs with this directory as its working directory.</span>
             {projects.length > 0 && (
               <button className="linkish" onClick={() => setAddingProject(false)}>
