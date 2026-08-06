@@ -18,6 +18,8 @@ export interface CommandPayloads {
   "turn.send": { threadId: string; text: string };
   "turn.interrupt": { threadId: string; turnId: string };
   "turn.diff": { threadId: string; turnId: string };
+  /** Restores the working tree to the state before or after a turn. */
+  "turn.restore": { threadId: string; turnId: string; phase: "pre" | "post" };
   "approval.respond": { threadId: string; approvalId: string; decision: "approve" | "deny" };
   "provider.detect": Record<string, never>;
   "thread.handoff": { threadId: string; toProvider: string; title?: string };
@@ -111,6 +113,11 @@ export interface CommandResults {
     detail?: string;
   };
   "approval.respond": Record<string, never>;
+  "turn.restore": {
+    status: "restored" | "skipped" | "missing" | "error";
+    files: DiffFileEntry[];
+    detail?: string;
+  };
   "provider.detect": { providers: ProviderView[] };
   "thread.handoff": { thread: ThreadView; summary: string };
   "file.tree": { entries: FileTreeEntry[]; path: string };

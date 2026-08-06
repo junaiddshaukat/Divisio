@@ -157,3 +157,93 @@ export async function diffCheckpoints(
     status: "ready",
   };
 }
+
+export interface RestoreResult {
+  status: "restored" | "skipped" | "missing" | "error";
+  /** Ref holding the state that was replaced, so the restore itself is undoable. */
+  undoRef: string | null;
+  files: DiffFileEntry[];
+  detail?: string;
+}
+
+/**
+ * Restores the working tree to a checkpoint.
+ *
+ * Destructive by nature: it overwrites whatever is in the tree now. Two things
+ * make that survivable, and both are deliberate.
+ *
+ * The current state is captured to its own ref first, so a restore can itself
+ * be undone — a checkpoint feature that can lose work is worse than none,
+ * because it invites people to rely on it.
+ *
+ * HEAD is never moved and no commit is created. Restoring changes files only,
+ * leaving branch and history exactly as the user left them.
+ */
+export async function restoreCheckpoint(
+  cwd: string,
+  ref: string,
+  undoLabel: string,
+): Promise<RestoreResult> {
+  if (!(await isGitRepo(cwd))) {
+    return { status: "skipped", undoRef: null, files: [], detail: "not a git repository" };
+  }
+
+  const target = await git(cwd, ["rev-parse", "--verify", `${ref}^{commit}`]);
+  if (target.code !== 0) {
+    return { status: "missing", undoRef: null, files: [], detail: "checkpoint not found" };
+  }
+
+  // Snapshot what we are about to overwrite, before touching anything.
+  const undo = await captureCheckpoint(cwd, undoLabel, "restore", "pre");
+  if (undo.status === "error") {
+    return {
+      status: "error",
+      undoRef: null,
+      files: [],
+      detail: `refusing to restore without a recovery point: ${undo.detail ?? "capture failed"}`,
+    };
+  }
+
+  // What the restore will change, computed before it happens so the answer
+  // describes the actual effect rather than the result.
+  const preview = await git(cwd, ["diff", "--name-status", target.stdout]);
+  const files: DiffFileEntry[] = [];
+  for (const line of preview.stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const [statusRaw, ...rest] = line.split("\t");
+    const char = (statusRaw?.[0] ?? "?") as DiffFileEntry["status"];
+    const path = rest.join("\t");
+    if (path) files.push({ path, status: ["A", "M", "D", "R"].includes(char) ? char : "?" });
+  }
+
+  // Materialise the checkpoint tree into the working directory without moving
+  // HEAD. `checkout <tree> -- .` updates tracked paths from the checkpoint.
+  const applied = await git(cwd, ["checkout", target.stdout, "--", "."]);
+  if (applied.code !== 0) {
+    return {
+      status: "error",
+      undoRef: undo.ref,
+      files: [],
+      detail: applied.stderr || "restore failed",
+    };
+  }
+
+  // `git diff` does not list untracked files, so a file the agent created after
+  // the checkpoint survives the checkout above. Remove those explicitly, or the
+  // restored tree merely overlaps the checkpoint instead of matching it.
+  //
+  // `--exclude-standard` keeps ignored paths out of this: node_modules, .env,
+  // and build output were never in the checkpoint either, and deleting them
+  // would be destructive in a way the user never asked for.
+  const untracked = await git(cwd, ["ls-files", "--others", "--exclude-standard"]);
+  for (const path of untracked.stdout.split("\n")) {
+    const name = path.trim();
+    if (!name) continue;
+    const inCheckpoint = await git(cwd, ["cat-file", "-e", `${target.stdout}:${name}`]);
+    if (inCheckpoint.code === 0) continue;
+    await rm(join(cwd, name), { force: true }).catch(() => undefined);
+    if (!files.some((f) => f.path === name)) files.push({ path: name, status: "D" });
+  }
+
+  return { status: "restored", undoRef: undo.ref, files };
+}

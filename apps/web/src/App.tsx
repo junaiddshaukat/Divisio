@@ -552,6 +552,27 @@ export function App() {
     await client.send("file.write", { threadId: activeIdRef.current, path, content });
   }, []);
 
+  /** Restores the tree to the state before a turn, then refreshes the diff. */
+  const restoreTurn = useCallback(async (turnId: string) => {
+    const client = clientRef.current;
+    if (!client || !activeIdRef.current) return;
+    setError(null);
+    try {
+      const result = await client.send("turn.restore", {
+        threadId: activeIdRef.current,
+        turnId,
+        phase: "pre",
+      });
+      if (result.status !== "restored") {
+        setError(result.detail ?? `restore ${result.status}`);
+        return;
+      }
+      setDiffView(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
   const openPairing = async () => {
     const client = clientRef.current;
     if (!client) return;
@@ -802,6 +823,7 @@ export function App() {
       {diffView && (
         <TurnDiff
           {...diffView}
+          {...(diffView.turnId.startsWith("trn_") ? { onRestore: restoreTurn } : {})}
           onClose={() => setDiffView(null)}
         />
       )}

@@ -13,7 +13,7 @@ import type { AdapterRegistry } from "@divisio/adapters";
 import { newId } from "@divisio/shared/ids";
 import { logger } from "@divisio/shared/log";
 import { existsSync } from "node:fs";
-import { captureCheckpoint, checkpointRef, diffCheckpoints } from "./checkpoint/store.ts";
+import { captureCheckpoint, checkpointRef, diffCheckpoints, restoreCheckpoint } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
 import { seedPrompt, summaryPrompt, type PacketContext } from "./handoff.ts";
 import {
@@ -128,6 +128,8 @@ export class Orchestrator {
         return await this.interrupt(payload);
       case "turn.diff":
         return await this.turnDiff(payload);
+      case "turn.restore":
+        return await this.restoreTurn(payload);
       case "approval.respond":
         return await this.respondApproval(payload);
       case "provider.detect":
@@ -500,6 +502,40 @@ export class Orchestrator {
     }
 
     return { ...base, status: "created", url: pr.url ?? null, compareUrl: compare, detail: null };
+  }
+
+  /**
+   * Restores the tree to a turn's checkpoint.
+   *
+   * Refused while a turn is running: the agent has the working tree open, and
+   * changing files underneath it produces a state neither side understands.
+   */
+  private async restoreTurn(p: CommandPayloads["turn.restore"]): Promise<CommandResults["turn.restore"]> {
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+
+    if (this.sessions.get(p.threadId)?.activeTurnId) {
+      throw new CommandError("session_busy", "stop the running turn before restoring");
+    }
+
+    const ref = checkpointRef(p.threadId, p.turnId, p.phase);
+    const result = await restoreCheckpoint(this.workdirFor(thread), ref, p.threadId);
+
+    if (result.status === "restored") {
+      log.info("restored checkpoint", {
+        threadId: p.threadId,
+        turnId: p.turnId,
+        phase: p.phase,
+        files: result.files.length,
+        undoRef: result.undoRef,
+      });
+    }
+
+    return {
+      status: result.status,
+      files: result.files,
+      ...(result.detail ? { detail: result.detail } : {}),
+    };
   }
 
   /* --------------------------------- files -------------------------------- */
