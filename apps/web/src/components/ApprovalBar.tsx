@@ -1,4 +1,6 @@
 import type { PermissionMode } from "@divisio/contracts";
+import { Button } from "./ui/Button.tsx";
+import { LockIcon } from "./ui/icons.ts";
 
 export interface PendingApproval {
   approvalId: string;
@@ -21,12 +23,12 @@ export function ApprovalBar({ pending, onRespond }: Props) {
         <span className="approval-summary">{pending.summary}</span>
       </div>
       <div className="actions">
-        <button className="btn danger" onClick={() => onRespond("deny")}>
+        <Button variant="danger" size="sm" onClick={() => onRespond("deny")}>
           Deny
-        </button>
-        <button className="btn" onClick={() => onRespond("approve")}>
+        </Button>
+        <Button variant="primary" size="sm" onClick={() => onRespond("approve")}>
           Approve
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -40,17 +42,22 @@ interface ModeProps {
 
 export function PermissionModeSelect({ mode, canMediate, onChange }: ModeProps) {
   if (!canMediate) {
-    return <span className="pill warn">CLI-managed permissions</span>;
+    return (
+      <span className="perm-pill" title="This agent’s CLI manages its own tool approvals">
+        <LockIcon />
+        CLI managed
+      </span>
+    );
   }
   return (
     <select
-      className="mode-select"
+      className={`perm-select${mode === "full_access" ? " elevated" : ""}`}
       value={mode}
       title={mode === "full_access" ? "Higher risk: mutating tools auto-approve" : "Approve mutating tools"}
       onChange={(e) => onChange(e.target.value as PermissionMode)}
     >
-      <option value="supervised">supervised</option>
-      <option value="full_access">full access</option>
+      <option value="supervised">Supervised</option>
+      <option value="full_access">Full access</option>
     </select>
   );
 }

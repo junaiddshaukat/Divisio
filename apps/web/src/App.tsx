@@ -13,15 +13,20 @@ import type {
   ThreadView,
 } from "@divisio/contracts";
 import { Client, type ConnectionState } from "./client.ts";
+import { useFiles } from "./hooks/useFiles.ts";
+import { useAttention } from "./hooks/useAttention.ts";
+import { AttentionToasts } from "./components/AttentionToasts.tsx";
 import { ApprovalBar, type PendingApproval } from "./components/ApprovalBar.tsx";
-import { CapabilityMatrix } from "./components/CapabilityMatrix.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
+import type { WorkEntry } from "./components/WorkEntries.tsx";
 import { Transcript, type Bubble } from "./components/Transcript.tsx";
 import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
 import { SessionBoard } from "./components/SessionBoard.tsx";
-import { HandoffMenu } from "./components/HandoffMenu.tsx";
-import { PairingPanel } from "./components/PairingPanel.tsx";
+import { ThreadTopbar } from "./components/ThreadTopbar.tsx";
+import { Button, IconButton } from "./components/ui/Button.tsx";
+import { CloseIcon, MenuIcon, SearchIcon } from "./components/ui/icons.ts";
+import { SettingsShell, type SettingsSection } from "./components/SettingsShell.tsx";
 
 /**
  * Monaco is ~4 MB, so it is not in the first-paint bundle — that would delay
@@ -48,6 +53,23 @@ function prefetchEditor() {
   });
 }
 import { TurnDiff } from "./components/TurnDiff.tsx";
+import { ChangesPane, type ChangesScope } from "./components/ChangesPane.tsx";
+import { BranchStrip } from "./components/BranchStrip.tsx";
+import { BrowserPane } from "./components/BrowserPane.tsx";
+import { CommandPalette, type PaletteAction } from "./components/CommandPalette.tsx";
+import { GitActionsControl } from "./components/GitActionsControl.tsx";
+import { RightPanel, type RightSurfaceId } from "./components/RightPanel.tsx";
+import { RightSurfacePicker, type RightSurface } from "./components/RightSurfacePicker.tsx";
+import {
+  clampLeft,
+  clampTerminal,
+  LEFT_DEFAULT,
+  loadTerminalHeight,
+  loadWidth,
+  saveTerminalHeight,
+  saveWidth,
+  TERMINAL_DEFAULT,
+} from "./panelPrefs.ts";
 
 const PORT = 4577;
 const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
@@ -138,10 +160,10 @@ export function App() {
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [streaming, setStreaming] = useState<{ turnId: string; text: string } | null>(null);
   const [activeTurn, setActiveTurn] = useState<string | null>(null);
-  const [tools, setTools] = useState<string[]>([]);
+  const [work, setWork] = useState<WorkEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState(false);
-  const [matrixOpen, setMatrixOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
   const [lanes, setLanes] = useState<LaneView[]>([]);
   const [view, setView] = useState<"thread" | "board">("thread");
   /** Set when the new-thread dialog was opened from a lane card. */
@@ -149,14 +171,44 @@ export function App() {
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [incompatible, setIncompatible] = useState<string[] | null>(null);
   const [pairing, setPairing] = useState<PairingStatus | null>(null);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [rightSurface, setRightSurface] = useState<RightSurfaceId | null>(null);
+  /** Bottom dock under the composer — the only terminal. */
+  const [terminalDock, setTerminalDock] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState(() => loadTerminalHeight(TERMINAL_DEFAULT));
+
+  useEffect(() => {
+    const onResize = () => setTerminalHeight((h) => clampTerminal(h));
+    window.addEventListener("resize", onResize);
+    onResize();
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [leftWidth, setLeftWidth] = useState(() => clampLeft(loadWidth("left", LEFT_DEFAULT)));
   /** Sidebar is an overlay below tablet width; this drives it. */
   const [navOpen, setNavOpen] = useState(false);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
   const [laneBusy, setLaneBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
-  const [diffTurns, setDiffTurns] = useState<Set<string>>(new Set());
+  /** turnId → files from checkpoint; hydrated from snapshot + live events. */
+  const [diffByTurn, setDiffByTurn] = useState<Map<string, DiffFileEntry[]>>(new Map());
+  const [changesBusy, setChangesBusy] = useState(false);
+  const [changesScope, setChangesScope] = useState<ChangesScope>("working");
+  const [gitStatus, setGitStatus] = useState<{
+    dirty: boolean;
+    branch: string | null;
+    laneId: string | null;
+    hasRemote: boolean;
+    git: boolean;
+  } | null>(null);
+  const [changesView, setChangesView] = useState<{
+    turnId: string | null;
+    files: DiffFileEntry[];
+    patch: string | null;
+    status: string;
+    detail?: string;
+    preferredPath?: string;
+    branch?: string | null;
+  } | null>(null);
   const [diffView, setDiffView] = useState<{
     turnId: string;
     files: DiffFileEntry[];
@@ -239,14 +291,26 @@ export function App() {
     if (!client) return;
     setActiveId(threadId);
     setStreaming(null);
-    setTools([]);
+    setWork([]);
     setError(null);
     setPendingApproval(null);
-    setDiffTurns(new Set());
+    setDiffByTurn(new Map());
+    setChangesView(null);
+    setGitStatus(null);
     client.subscribe([threadId]);
     const snap = await client.send("thread.snapshot", { threadId });
     setMessages(snap.messages);
     setThreads((prev) => prev.map((t) => (t.id === snap.thread.id ? snap.thread : t)));
+    const next = new Map<string, DiffFileEntry[]>();
+    for (const d of snap.diffs) {
+      if (d.files.length > 0) next.set(d.turnId, d.files);
+    }
+    setDiffByTurn(next);
+    try {
+      setGitStatus(await client.send("thread.gitStatus", { threadId }));
+    } catch {
+      setGitStatus(null);
+    }
   }, []);
 
   const onEvent = useCallback(
@@ -270,7 +334,7 @@ export function App() {
         case "turn.started":
           if (p["threadId"] === activeIdRef.current) {
             setActiveTurn(String(p["turnId"]));
-            setTools([]);
+            setWork([]);
             setPendingApproval(null);
           }
           break;
@@ -291,7 +355,33 @@ export function App() {
           }
           break;
         case "tool.started":
-          if (p["threadId"] === activeIdRef.current) setTools((t) => [...t, String(p["name"])]);
+          if (p["threadId"] === activeIdRef.current) {
+            setWork((w) => [
+              ...w,
+              {
+                id: String(p["toolCallId"] ?? `${w.length}`),
+                name: String(p["name"] ?? "tool"),
+                status: "running",
+                ...(p["input"] ? { detail: String(p["input"]).slice(0, 400) } : {}),
+              },
+            ]);
+          }
+          break;
+        case "tool.finished":
+          if (p["threadId"] === activeIdRef.current) {
+            const id = String(p["toolCallId"] ?? "");
+            setWork((w) =>
+              w.map((e) =>
+                e.id === id
+                  ? {
+                      ...e,
+                      status: p["ok"] === false ? "failed" : "ok",
+                      ...(p["output"] ? { output: String(p["output"]).slice(0, 4000) } : {}),
+                    }
+                  : e,
+              ),
+            );
+          }
           break;
         case "approval.requested":
           if (p["threadId"] === activeIdRef.current) {
@@ -312,7 +402,17 @@ export function App() {
           break;
         case "turn.diff_ready":
           if (p["threadId"] === activeIdRef.current) {
-            setDiffTurns((prev) => new Set(prev).add(String(p["turnId"])));
+            const turnId = String(p["turnId"]);
+            const files = (Array.isArray(p["files"]) ? p["files"] : []) as DiffFileEntry[];
+            setDiffByTurn((prev) => {
+              const next = new Map(prev);
+              next.set(turnId, files);
+              return next;
+            });
+            void clientRef.current
+              ?.send("thread.gitStatus", { threadId: String(p["threadId"]) })
+              .then(setGitStatus)
+              .catch(() => undefined);
           }
           break;
         case "session.status":
@@ -425,10 +525,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
     const sync = () => setDark(document.documentElement.classList.contains("dark"));
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
     media.addEventListener("change", sync);
-    return () => media.removeEventListener("change", sync);
+    window.addEventListener("divisio:theme", sync);
+    return () => {
+      media.removeEventListener("change", sync);
+      window.removeEventListener("divisio:theme", sync);
+    };
   }, []);
 
   useEffect(() => {
@@ -439,15 +543,60 @@ export function App() {
     void refreshProviders();
   }, [state, refresh, refreshProviders]);
 
-  const send = async (text: string) => {
+  const send = async (
+    text: string,
+    model: string | null,
+    images: Array<{ name: string; mimeType: string; dataBase64: string }> = [],
+  ) => {
     const client = clientRef.current;
     if (!client || !activeId) return;
     setError(null);
     try {
-      const res = await client.send("turn.send", { threadId: activeId, text });
+      const res = await client.send("turn.send", {
+        threadId: activeId,
+        text,
+        ...(model ? { model } : {}),
+        ...(images.length ? { images } : {}),
+      });
       setActiveTurn(res.turnId);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
+    }
+  };
+
+  const setThreadAgent = async (next: {
+    provider: string;
+    model: string | null;
+    viaHandoff: boolean;
+  }) => {
+    const client = clientRef.current;
+    if (!client || !activeId) return;
+    setError(null);
+    if (next.viaHandoff) {
+      const created = await handoff(next.provider);
+      if (created && next.model) {
+        try {
+          const res = await client.send("thread.setProvider", {
+            threadId: created.id,
+            provider: next.provider,
+            model: next.model,
+          });
+          setThreads((prev) => prev.map((t) => (t.id === res.thread.id ? res.thread : t)));
+        } catch {
+          /* handoff already succeeded; model is best-effort */
+        }
+      }
+      return;
+    }
+    try {
+      const res = await client.send("thread.setProvider", {
+        threadId: activeId,
+        provider: next.provider,
+        model: next.model,
+      });
+      setThreads((prev) => prev.map((t) => (t.id === res.thread.id ? res.thread : t)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -487,21 +636,114 @@ export function App() {
     }
   };
 
-  const showDiff = async (turnId: string) => {
+  const showDiff = async (turnId: string, path?: string) => {
     const client = clientRef.current;
     if (!client || !activeId) return;
+    setRightSurface("changes");
+    setChangesScope("turn");
+    setChangesBusy(true);
     try {
       const res = await client.send("turn.diff", { threadId: activeId, turnId });
-      setDiffView({
+      setChangesView({
         turnId,
         files: res.files,
         patch: res.patch,
         status: res.status,
         detail: res.detail,
+        ...(path ? { preferredPath: path } : {}),
       });
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setChangesBusy(false);
     }
+  };
+
+  const loadScopedDiff = useCallback(async (scope: "working" | "branch") => {
+    const client = clientRef.current;
+    const threadId = activeIdRef.current;
+    if (!client || !threadId) return;
+    setChangesBusy(true);
+    try {
+      const res = await client.send("thread.diff", { threadId, scope });
+      setChangesView({
+        turnId: null,
+        files: res.files,
+        patch: res.patch,
+        status: res.status,
+        detail: res.detail,
+        branch: res.branch,
+      });
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setChangesBusy(false);
+    }
+  }, []);
+
+  const refreshGitStatus = useCallback(async () => {
+    const client = clientRef.current;
+    const threadId = activeIdRef.current;
+    if (!client || !threadId) {
+      setGitStatus(null);
+      return;
+    }
+    try {
+      setGitStatus(await client.send("thread.gitStatus", { threadId }));
+    } catch {
+      setGitStatus(null);
+    }
+  }, []);
+
+  const openSurface = (surface: RightSurface | "picker") => {
+    setRightSurface(surface);
+    if (surface === "changes") {
+      setChangesScope("working");
+      void loadScopedDiff("working");
+      void refreshGitStatus();
+    }
+  };
+
+  const closeRight = () => {
+    setRightSurface(null);
+    setChangesView(null);
+  };
+
+  const commitThread = async (message: string, paths?: string[]) => {
+    const client = clientRef.current;
+    if (!client || !activeId) return { ok: false, detail: "not connected" };
+    const res = await client.send("thread.commit", {
+      threadId: activeId,
+      message,
+      ...(paths?.length ? { paths } : {}),
+    });
+    await refreshGitStatus();
+    if (rightSurface === "changes" && changesScope === "working") void loadScopedDiff("working");
+    return res;
+  };
+
+  const pushThread = async () => {
+    const client = clientRef.current;
+    if (!client || !activeId) return { ok: false, detail: "not connected" };
+    const res = await client.send("thread.push", { threadId: activeId });
+    await refreshGitStatus();
+    return res;
+  };
+
+  const openThreadPr = async (title: string, commitMessage?: string) => {
+    const client = clientRef.current;
+    if (!client || !activeThread?.laneId) {
+      return { status: "error", url: null, compareUrl: null, branch: "", detail: "thread has no lane" };
+    }
+    const result = await client.send("lane.openPr", {
+      laneId: activeThread.laneId,
+      title,
+      body: "Opened from Divisio.",
+      ...(commitMessage ? { commitMessage } : {}),
+    });
+    await refresh(client);
+    await refreshGitStatus();
+    return result;
   };
 
   const createThread = async (projectId: string, title: string, provider: string) => {
@@ -526,7 +768,7 @@ export function App() {
    */
   const handoff = async (toProvider: string) => {
     const client = clientRef.current;
-    if (!client || !activeId) return;
+    if (!client || !activeId) return null;
     setHandoffBusy(true);
     setError(null);
     try {
@@ -534,30 +776,17 @@ export function App() {
       await refresh(client);
       setView("thread");
       await openThread(res.thread.id);
+      return res.thread;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return null;
     } finally {
       setHandoffBusy(false);
     }
   };
 
-  const listDir = useCallback(async (path: string): Promise<FileTreeEntry[]> => {
-    const client = clientRef.current;
-    if (!client || !activeIdRef.current) return [];
-    return (await client.send("file.tree", { threadId: activeIdRef.current, path })).entries;
-  }, []);
-
-  const readFile = useCallback(async (path: string) => {
-    const client = clientRef.current;
-    if (!client || !activeIdRef.current) throw new Error("not connected");
-    return client.send("file.read", { threadId: activeIdRef.current, path });
-  }, []);
-
-  const writeFileContent = useCallback(async (path: string, content: string) => {
-    const client = clientRef.current;
-    if (!client || !activeIdRef.current) throw new Error("not connected");
-    await client.send("file.write", { threadId: activeIdRef.current, path, content });
-  }, []);
+  const files = useFiles(clientRef, activeIdRef);
+  const attention = useAttention(threads, activeId);
 
   /** Restores the tree to the state before a turn, then refreshes the diff. */
   const restoreTurn = useCallback(async (turnId: string) => {
@@ -574,6 +803,7 @@ export function App() {
         setError(result.detail ?? `restore ${result.status}`);
         return;
       }
+      setChangesView(null);
       setDiffView(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -607,11 +837,22 @@ export function App() {
     [],
   );
 
+  const openSettings = useCallback((section: SettingsSection = "providers") => {
+    setSettingsOpen(section);
+  }, []);
+
   const openPairing = async () => {
     const client = clientRef.current;
     if (!client) return;
     setPairing(await client.send("pairing.status", {}));
+    openSettings("connections");
   };
+
+  const ensurePairing = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) return;
+    setPairing(await client.send("pairing.status", {}));
+  }, []);
 
   const refreshPairing = async () => {
     const client = clientRef.current;
@@ -625,6 +866,65 @@ export function App() {
     await refresh(client);
     return res.project;
   };
+
+  const previewUrl = useMemo(() => {
+    if (!activeThread?.laneId) return "http://127.0.0.1:3000";
+    const lane = lanes.find((l) => l.id === activeThread.laneId);
+    return lane ? `http://127.0.0.1:${lane.port}` : "http://127.0.0.1:3000";
+  }, [activeThread, lanes]);
+
+  const paletteActions: PaletteAction[] = useMemo(() => {
+    const acts: PaletteAction[] = [
+      { id: "new", label: "New thread", group: "Thread", run: () => setDialog(true) },
+      { id: "board", label: "Open board", group: "Navigate", run: () => { setSettingsOpen(null); setView("board"); } },
+      { id: "providers", label: "Providers", group: "Navigate", run: () => openSettings("providers") },
+      { id: "settings", label: "Settings", group: "Navigate", run: () => openSettings("providers") },
+      {
+        id: "devices",
+        label: "Devices",
+        group: "Navigate",
+        run: () => {
+          void openPairing();
+        },
+      },
+      {
+        id: "source-control",
+        label: "Source Control settings",
+        group: "Navigate",
+        run: () => openSettings("sourceControl"),
+      },
+    ];
+    if (activeThread) {
+      acts.push(
+        { id: "surf", label: "Open a surface…", group: "Surfaces", run: () => openSurface("picker") },
+        { id: "changes", label: "Changes", group: "Surfaces", run: () => openSurface("changes") },
+        { id: "files", label: "Files", group: "Surfaces", run: () => openSurface("files") },
+        { id: "browser", label: "Browser", group: "Surfaces", run: () => openSurface("browser") },
+        {
+          id: "term-dock",
+          label: terminalDock ? "Hide terminal" : "Show terminal",
+          group: "Surfaces",
+          run: () => setTerminalDock((v) => !v),
+        },
+      );
+    }
+    return acts;
+  }, [activeThread, terminalDock, openSettings]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--left-w", `${leftWidth}px`);
+  }, [leftWidth]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (pairingState === "pairing") {
     return (
@@ -671,15 +971,18 @@ export function App() {
       text: m.text,
       key: `${m.turnId}:${m.role}`,
       turnId: m.turnId,
-      showDiff: m.role === "assistant" && diffTurns.has(m.turnId),
+      ...(m.role === "assistant" && diffByTurn.has(m.turnId)
+        ? { changedFiles: diffByTurn.get(m.turnId) }
+        : {}),
     })),
-    ...(tools.length > 0 && activeTurn ? [{ kind: "tools" as const, text: tools.join(", "), key: "tools" }] : []),
+    ...(work.length > 0 ? [{ kind: "work" as const, text: "", key: "work", work }] : []),
     ...(streaming && streaming.text.length > 0
       ? [{ kind: "streaming" as const, text: streaming.text, key: "streaming" }]
       : []),
   ];
 
-  const showFiles = view === "thread" && !!activeThread && filesOpen;
+  const showRight = view === "thread" && !!activeThread && rightSurface !== null;
+  const inSettings = settingsOpen !== null;
 
   if (incompatible) {
     return (
@@ -698,10 +1001,46 @@ export function App() {
   }
 
   return (
-    <div className={`shell${showFiles ? " shell-files" : ""}`} data-nav={navOpen ? "open" : "closed"}>
+    <div
+      className={`shell${inSettings ? " shell-settings" : showRight ? " shell-right" : ""}`}
+      data-nav={navOpen ? "open" : "closed"}
+      style={{ ["--left-w" as string]: `${leftWidth}px` }}
+    >
+      {inSettings ? (
+        <SettingsShell
+          key={settingsOpen}
+          providers={providers}
+          pairing={pairing}
+          connectionState={state}
+          initialSection={settingsOpen}
+          onClose={() => setSettingsOpen(null)}
+          onRefreshProviders={() => void refreshProviders()}
+          onEnsurePairing={ensurePairing}
+          onLoadToolchain={async () => {
+            const client = clientRef.current;
+            if (!client) throw new Error("not connected");
+            return client.send("toolchain.status", {});
+          }}
+          onCreateToken={async () => {
+            const client = clientRef.current;
+            if (!client) throw new Error("not connected");
+            return client.send("pairing.createToken", {});
+          }}
+          onRevoke={async (clientId) => {
+            await clientRef.current?.send("pairing.revoke", { clientId });
+            await refreshPairing();
+          }}
+          onRevokeAll={async () => {
+            await clientRef.current?.send("pairing.revokeAll", {});
+            await refreshPairing();
+          }}
+        />
+      ) : (
+        <>
       <Sidebar
         projects={projects}
         threads={threads}
+        lanes={lanes}
         activeId={activeId}
         state={state}
         onOpen={(id) => {
@@ -710,59 +1049,99 @@ export function App() {
           void openThread(id);
         }}
         onNew={() => setDialog(true)}
-        onProviders={() => setMatrixOpen(true)}
+        onProviders={() => openSettings("providers")}
+        onSettings={() => openSettings("providers")}
         onDevices={() => void openPairing()}
+        onSearch={() => setPaletteOpen(true)}
         onLanes={() => {
           setView("board");
           setNavOpen(false);
         }}
         laneCount={lanes.filter((l) => l.status !== "archived").length}
         view={view}
+        onResizeWidth={(w) => {
+          setLeftWidth(clampLeft(w));
+          saveWidth("left", clampLeft(w));
+        }}
+        width={leftWidth}
       />
       {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}
 
       <main className="main">
-        <div className="topbar">
-          <button className="icon nav-toggle" onClick={() => setNavOpen((v) => !v)} aria-label="Menu">
-            ☰
-          </button>
-          {view === "board" ? (
-            <span className="crumb">
-              <strong>Board</strong> — parallel lanes
-            </span>
-          ) : activeThread ? (
-            <span className="crumb">
-              {projects.find((p) => p.id === activeThread.projectId)?.name ?? "project"} /{" "}
-              <strong>{activeThread.title}</strong>
-            </span>
-          ) : (
-            <span className="crumb">No thread selected</span>
-          )}
-          {view === "thread" && activeThread && (
-            <div className="topbar-actions">
-              <button className="icon" aria-pressed={filesOpen} onClick={() => setFilesOpen((v) => !v)}>
-                {filesOpen ? "Hide files" : "Files"}
-              </button>
-              <button
-                className="icon"
-                aria-pressed={terminalOpen}
-                onClick={() => setTerminalOpen((v) => !v)}
-              >
-                Terminal
-              </button>
-              <HandoffMenu
-                current={activeThread.provider}
-                providers={providers}
-                busy={handoffBusy || !!activeTurn}
-                onHandoff={(kind) => void handoff(kind)}
-              />
-              <span className="status">
-                <span className={`dot ${activeThread.status}`} />
-                {activeThread.status}
-              </span>
+        {view === "board" ? (
+          <header className="topbar">
+            <IconButton
+              label="Menu"
+              icon={<MenuIcon />}
+              size="sm"
+              className="nav-toggle"
+              onClick={() => setNavOpen((v) => !v)}
+            />
+            <div className="crumb">
+              <span className="crumb-thread">Board</span>
+              <span className="crumb-sep">·</span>
+              <span className="crumb-project">parallel lanes</span>
             </div>
-          )}
-        </div>
+            <div className="topbar-actions">
+              <IconButton
+                label="Search (\u2318K)"
+                icon={<SearchIcon />}
+                size="sm"
+                onClick={() => setPaletteOpen(true)}
+              />
+            </div>
+          </header>
+        ) : activeThread ? (
+          <ThreadTopbar
+            thread={activeThread}
+            projectName={projects.find((p) => p.id === activeThread.projectId)?.name ?? "project"}
+            providers={providers}
+            rightSurface={rightSurface}
+            terminalDock={terminalDock}
+            busy={!!activeTurn}
+            handoffBusy={handoffBusy}
+            dirty={!!gitStatus?.dirty}
+            workdir={
+              activeThread.laneId
+                ? (lanes.find((l) => l.id === activeThread.laneId)?.root ?? null)
+                : (projects.find((p) => p.id === activeThread.projectId)?.rootPath ?? null)
+            }
+            onNav={() => setNavOpen((v) => !v)}
+            onPalette={() => setPaletteOpen(true)}
+            onSurface={(surface) => openSurface(surface)}
+            onCloseSurface={closeRight}
+            onToggleDock={() => setTerminalDock((v) => !v)}
+            onHandoff={(kind) => void handoff(kind)}
+            onHint={(msg) => setError(msg)}
+            gitActions={
+              gitStatus?.git ? (
+                <GitActionsControl
+                  dirty={!!gitStatus.dirty}
+                  hasRemote={!!gitStatus.hasRemote}
+                  canPr={!!activeThread.laneId}
+                  busy={!!activeTurn}
+                  onCommit={(msg) => commitThread(msg)}
+                  onPush={pushThread}
+                  onOpenPr={activeThread.laneId ? openThreadPr : undefined}
+                />
+              ) : undefined
+            }
+          />
+        ) : (
+          <header className="topbar">
+            <IconButton
+              label="Menu"
+              icon={<MenuIcon />}
+              size="sm"
+              className="nav-toggle"
+              onClick={() => setNavOpen((v) => !v)}
+            />
+            <div className="crumb">
+              <span className="crumb-project">No thread selected</span>
+            </div>
+          </header>
+        )}
+
 
         {view === "board" ? (
           <SessionBoard
@@ -784,50 +1163,228 @@ export function App() {
             }}
           />
         ) : activeThread ? (
-          <>
-            <Transcript bubbles={bubbles} onShowDiff={(turnId) => void showDiff(turnId)} />
-            {error && <div className="banner">{error}</div>}
-            {pendingApproval && (
-              <ApprovalBar pending={pendingApproval} onRespond={(d) => void respondApproval(d)} />
+          <div className="thread-column">
+            {messages.length === 0 && !streaming && !activeTurn ? (
+              <div className="draft-stack">
+                <div className="draft-spacer" aria-hidden />
+                <div className="draft-hero">
+                  <h1 className="draft-headline">What should we build?</h1>
+                </div>
+                {error && <div className="banner">{error}</div>}
+                <BranchStrip
+                  envLabel={
+                    activeThread.laneId
+                      ? (lanes.find((l) => l.id === activeThread.laneId)?.title ?? "Lane")
+                      : "Local"
+                  }
+                  branch={gitStatus?.branch ?? lanes.find((l) => l.id === activeThread.laneId)?.branch ?? null}
+                  workdirHint={
+                    activeThread.laneId
+                      ? (lanes.find((l) => l.id === activeThread.laneId)?.root ?? null)
+                      : (projects.find((p) => p.id === activeThread.projectId)?.rootPath ?? null)
+                  }
+                  dirty={!!gitStatus?.dirty}
+                />
+                <Composer
+                  busy={!!activeTurn || handoffBusy}
+                  provider={activeThread.provider}
+                  model={activeThread.model ?? null}
+                  providers={providers}
+                  permissionMode={activeThread.permissionMode ?? "supervised"}
+                  hasHistory={false}
+                  hero
+                  onSend={(text, model, images) => void send(text, model, images)}
+                  onInterrupt={interrupt}
+                  onPermissionMode={(m) => void setPermissionMode(m)}
+                  onAgentSelect={(next) => void setThreadAgent(next)}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="thread-body">
+                  <Transcript
+                    bubbles={bubbles}
+                    onOpenChanges={(turnId, path) => void showDiff(turnId, path)}
+                  />
+                  {error && <div className="banner">{error}</div>}
+                  {pendingApproval && (
+                    <ApprovalBar pending={pendingApproval} onRespond={(d) => void respondApproval(d)} />
+                  )}
+                </div>
+                <BranchStrip
+                  envLabel={
+                    activeThread.laneId
+                      ? (lanes.find((l) => l.id === activeThread.laneId)?.title ?? "Lane")
+                      : "Local"
+                  }
+                  branch={gitStatus?.branch ?? lanes.find((l) => l.id === activeThread.laneId)?.branch ?? null}
+                  workdirHint={
+                    activeThread.laneId
+                      ? (lanes.find((l) => l.id === activeThread.laneId)?.root ?? null)
+                      : (projects.find((p) => p.id === activeThread.projectId)?.rootPath ?? null)
+                  }
+                  dirty={!!gitStatus?.dirty}
+                />
+                <Composer
+                  busy={!!activeTurn || handoffBusy}
+                  provider={activeThread.provider}
+                  model={activeThread.model ?? null}
+                  providers={providers}
+                  permissionMode={activeThread.permissionMode ?? "supervised"}
+                  hasHistory={messages.length > 0}
+                  onSend={(text, model, images) => void send(text, model, images)}
+                  onInterrupt={interrupt}
+                  onPermissionMode={(m) => void setPermissionMode(m)}
+                  onAgentSelect={(next) => void setThreadAgent(next)}
+                />
+              </>
             )}
-            {terminalOpen && (
+            {/* Terminal docks under the prompt. */}
+            {terminalDock && (
               <Suspense fallback={<div className="terminal-dock terminal-loading">Starting terminal…</div>}>
-                <div className="terminal-dock">
+                <div className="terminal-dock" style={{ height: terminalHeight }}>
+                  <div
+                    className="terminal-resize"
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Resize terminal"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      const startY = e.clientY;
+                      const startH = terminalHeight;
+                      const el = e.currentTarget;
+                      el.setPointerCapture(e.pointerId);
+                      const move = (ev: PointerEvent) => {
+                        const next = clampTerminal(startH + (startY - ev.clientY));
+                        setTerminalHeight(next);
+                      };
+                      const up = (ev: PointerEvent) => {
+                        el.releasePointerCapture(ev.pointerId);
+                        window.removeEventListener("pointermove", move);
+                        window.removeEventListener("pointerup", up);
+                        saveTerminalHeight(clampTerminal(startH + (startY - (ev as PointerEvent).clientY)));
+                      };
+                      window.addEventListener("pointermove", move);
+                      window.addEventListener("pointerup", up);
+                    }}
+                  />
                   <div className="terminal-head">
                     <span className="section-label">Terminal</span>
-                    <button className="icon" onClick={() => setTerminalOpen(false)} title="Close terminal">
-                      ✕
-                    </button>
+                    <IconButton
+                      label="Close terminal"
+                      icon={<CloseIcon />}
+                      size="sm"
+                      onClick={() => setTerminalDock(false)}
+                    />
                   </div>
-                  {/* Keyed by thread: switching threads must not leave a shell
-                      attached to the previous working directory. */}
                   <TerminalPane key={activeThread.id} dark={dark} {...terminalApi} />
                 </div>
               </Suspense>
             )}
-            <Composer
-              busy={!!activeTurn}
-              provider={activeThread.provider}
-              providers={providers}
-              permissionMode={activeThread.permissionMode ?? "supervised"}
-              onSend={send}
-              onInterrupt={interrupt}
-              onPermissionMode={(m) => void setPermissionMode(m)}
-            />
-          </>
+          </div>
         ) : (
-          <div className="empty">
-            <h1>What should we build?</h1>
-            <p>
-              Divisio drives the coding agents you already pay for. Add a project directory, start a thread, and
-              the agent runs under your own CLI login.
-            </p>
-            <button className="btn" onClick={() => setDialog(true)}>
+          <div className="empty quiet">
+            <h1>Pick a thread</h1>
+            <p>Or start a new one — Divisio runs agents under your own CLI logins.</p>
+            <Button variant="primary" onClick={() => setDialog(true)}>
               New thread
-            </button>
+            </Button>
           </div>
         )}
       </main>
+
+      {showRight && activeThread && rightSurface && (
+        <RightPanel
+          surface={rightSurface}
+          dirtyHint={!!gitStatus?.dirty || diffByTurn.size > 0}
+          onClose={closeRight}
+        >
+          {rightSurface === "picker" && (
+            <RightSurfacePicker
+              hasDiffHint={diffByTurn.size > 0 || !!gitStatus?.dirty}
+              onPick={openSurface}
+            />
+          )}
+          {rightSurface === "changes" && (
+            <ChangesPane
+              scope={changesScope}
+              turnId={changesView?.turnId ?? null}
+              turnOptions={[...diffByTurn.keys()].map((id, i) => ({
+                turnId: id,
+                label: `Turn ${i + 1} (${id.slice(0, 8)})`,
+              }))}
+              files={changesView?.files ?? []}
+              patch={changesView?.patch ?? null}
+              status={changesView?.status ?? (changesBusy ? "loading" : "ready")}
+              detail={changesView?.detail}
+              busy={changesBusy}
+              preferredPath={changesView?.preferredPath ?? null}
+              branch={changesView?.branch ?? gitStatus?.branch ?? null}
+              onScopeChange={(scope) => {
+                setChangesScope(scope);
+                if (scope === "working" || scope === "branch") {
+                  void loadScopedDiff(scope);
+                  return;
+                }
+                const latest = [...diffByTurn.keys()].at(-1);
+                if (latest) void showDiff(latest);
+              }}
+              onTurnChange={(turnId) => void showDiff(turnId)}
+              {...(changesScope === "turn" && changesView?.turnId?.startsWith("trn_")
+                ? { onRestore: restoreTurn }
+                : {})}
+              onCommit={commitThread}
+            />
+          )}
+          {rightSurface === "files" && (
+            <Suspense
+              fallback={
+                <section className="file-pane">
+                  <div className="empty">
+                    <p>Loading the editor…</p>
+                  </div>
+                </section>
+              }
+            >
+              <FilePane
+                threadId={activeThread.id}
+                dark={dark}
+                listDir={files.listDir}
+                readFile={files.readFile}
+                writeFile={files.writeFile}
+                onClose={closeRight}
+              />
+            </Suspense>
+          )}
+          {rightSurface === "browser" && <BrowserPane suggestedUrl={previewUrl} onClose={closeRight} />}
+        </RightPanel>
+      )}
+        </>
+      )}
+
+      <AttentionToasts
+        items={attention.items}
+        onOpen={(id) => {
+          setSettingsOpen(null);
+          setView("thread");
+          void openThread(id);
+        }}
+        onDismiss={attention.dismiss}
+      />
+
+      <CommandPalette
+        open={paletteOpen}
+        actions={paletteActions}
+        onClose={() => setPaletteOpen(false)}
+        projects={projects}
+        threads={threads}
+        lanes={lanes}
+        onOpenThread={(id) => {
+          setView("thread");
+          setSettingsOpen(null);
+          void openThread(id);
+        }}
+      />
 
       {dialog && (
         <NewThreadDialog
@@ -844,54 +1401,7 @@ export function App() {
           }}
         />
       )}
-      {showFiles && activeThread && (
-        <Suspense
-          fallback={
-            <section className="file-pane">
-              <div className="empty">
-                <p>Loading the editor…</p>
-              </div>
-            </section>
-          }
-        >
-          <FilePane
-            threadId={activeThread.id}
-            dark={dark}
-            listDir={listDir}
-            readFile={readFile}
-            writeFile={writeFileContent}
-            onClose={() => setFilesOpen(false)}
-          />
-        </Suspense>
-      )}
 
-      {pairing && (
-        <PairingPanel
-          status={pairing}
-          onCreateToken={async () => {
-            const client = clientRef.current;
-            if (!client) throw new Error("not connected");
-            return client.send("pairing.createToken", {});
-          }}
-          onRevoke={async (clientId) => {
-            await clientRef.current?.send("pairing.revoke", { clientId });
-            await refreshPairing();
-          }}
-          onRevokeAll={async () => {
-            await clientRef.current?.send("pairing.revokeAll", {});
-            await refreshPairing();
-          }}
-          onClose={() => setPairing(null)}
-        />
-      )}
-
-      {matrixOpen && (
-        <CapabilityMatrix
-          providers={providers}
-          onClose={() => setMatrixOpen(false)}
-          onRefresh={() => void refreshProviders()}
-        />
-      )}
       {diffView && (
         <TurnDiff
           {...diffView}
@@ -921,9 +1431,9 @@ function TokenGate({ onSubmit }: { onSubmit(token: string): void }) {
           onKeyDown={(e) => e.key === "Enter" && value.trim() && onSubmit(value.trim())}
         />
         <div className="actions">
-          <button className="btn" disabled={!value.trim()} onClick={() => onSubmit(value.trim())}>
+          <Button variant="primary" size="sm" disabled={!value.trim()} onClick={() => onSubmit(value.trim())}>
             Connect
-          </button>
+          </Button>
         </div>
       </div>
     </div>

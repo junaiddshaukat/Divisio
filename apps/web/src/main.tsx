@@ -1,18 +1,26 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import { applyThemePreference, loadTheme } from "./themePrefs.ts";
 import "./index.css";
 
-/** Theme resolves from the OS by default; MVP ships `system`. */
-const dark = window.matchMedia("(prefers-color-scheme: dark)");
-const apply = (isDark: boolean) => document.documentElement.classList.toggle("dark", isDark);
-apply(dark.matches);
-dark.addEventListener("change", (e) => {
-  // Flash-guard: snap colors instead of tweening them through mud.
-  document.documentElement.classList.add("no-transitions");
-  apply(e.matches);
-  requestAnimationFrame(() => document.documentElement.classList.remove("no-transitions"));
+// Color mode: System / Light / Dark (see themePrefs.ts). Apply before React paints.
+applyThemePreference();
+
+const media = window.matchMedia("(prefers-color-scheme: dark)");
+media.addEventListener("change", () => {
+  // Only chase the OS when the user asked for System.
+  if (loadTheme() === "system") applyThemePreference("system");
 });
+
+// Desktop shell: native AppKit vibrancy paints the wallpaper behind a clear webview.
+const isDesktop =
+  "__TAURI_INTERNALS__" in window ||
+  "__TAURI__" in window ||
+  /Tauri/i.test(navigator.userAgent);
+if (isDesktop) {
+  document.documentElement.classList.add("desktop-vibrancy");
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

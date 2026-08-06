@@ -1,5 +1,16 @@
 import { useMemo, useState } from "react";
 import type { LaneView, PrResult, ProjectView, ThreadView } from "@divisio/contracts";
+import { statusOf } from "../status.ts";
+import { Button, IconButton } from "./ui/Button.tsx";
+import {
+  ArchiveIcon,
+  BranchIcon,
+  DiffIcon,
+  NewIcon,
+  PullRequestIcon,
+  ThreadIcon,
+} from "./ui/icons.ts";
+import { MenuSelect } from "./MenuSelect.tsx";
 
 interface Props {
   lanes: LaneView[];
@@ -24,7 +35,7 @@ type Column = "blocked" | "working" | "idle" | "setup";
 const COLUMNS: { key: Column; label: string; hint: string }[] = [
   { key: "blocked", label: "Needs you", hint: "Waiting on approval or stopped by an error" },
   { key: "working", label: "Working", hint: "An agent is running a turn" },
-  { key: "idle", label: "Ready", hint: "Idle and waiting for a prompt" },
+  { key: "idle", label: "Idle", hint: "Waiting for a prompt" },
   { key: "setup", label: "Preparing", hint: "Installing dependencies" },
 ];
 
@@ -119,22 +130,24 @@ export function SessionBoard({
     <div className="board">
       <div className="board-head">
         <div className="board-create">
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <MenuSelect
+            aria-label="Project"
+            className="board-project-select"
+            value={projectId}
+            options={projects.map((p) => ({ value: p.id, label: p.name }))}
+            onChange={setProjectId}
+            disabled={projects.length === 0}
+          />
           <input
+            className="field"
             placeholder="What is this lane for?"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !busy && void create()}
           />
-          <button className="btn" disabled={busy || !projectId} onClick={() => void create()}>
+          <Button variant="primary" icon={<NewIcon />} disabled={busy || !projectId} onClick={() => void create()}>
             New lane
-          </button>
+          </Button>
         </div>
         {error && <span className="hint danger">{error}</span>}
       </div>
@@ -164,21 +177,26 @@ export function SessionBoard({
                       <span className="label">{lane.title}</span>
                       <span className="meta">:{lane.port}</span>
                     </div>
-                    <code className="lane-branch">{lane.branch}</code>
+                    <span className="lane-branch"><BranchIcon />{lane.branch.replace(/^divisio\//, "")}</span>
 
                     {lane.status === "error" && lane.detail && (
                       <span className="hint danger">{lane.detail}</span>
                     )}
 
                     {laneThreads.length === 0 ? (
-                      <button className="linkish" onClick={() => onNewThread(lane.id)}>
-                        Start a thread here
-                      </button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<ThreadIcon />}
+                        onClick={() => onNewThread(lane.id)}
+                      >
+                        Start a thread
+                      </Button>
                     ) : (
                       <div className="lane-threads">
                         {laneThreads.map((t) => (
                           <button key={t.id} className="lane-thread" onClick={() => onOpenThread(t.id)}>
-                            <span className={`dot ${t.status}`} />
+                            <span className={`status-dot dot-${statusOf(t.status).tone}${statusOf(t.status).pulse ? " is-pulsing" : ""}`} />
                             <span className="label">{t.title}</span>
                             <span className="meta">{t.status}</span>
                           </button>
@@ -197,13 +215,14 @@ export function SessionBoard({
                             e.key === "Enter" && commitMessage.trim() && void openPr(lane, commitMessage)
                           }
                         />
-                        <button
-                          className="btn"
+                        <Button
+                          variant="primary"
+                          size="sm"
                           disabled={!commitMessage.trim() || prBusy === lane.id}
                           onClick={() => void openPr(lane, commitMessage)}
                         >
                           Commit &amp; PR
-                        </button>
+                        </Button>
                       </div>
                     )}
 
@@ -224,29 +243,39 @@ export function SessionBoard({
                     )}
 
                     <div className="lane-card-actions">
-                      <button className="icon" disabled={lane.status !== "ready"} onClick={() => onDiff(lane.id)}>
+                      <Button
+                        size="sm"
+                        icon={<DiffIcon />}
+                        disabled={lane.status !== "ready"}
+                        onClick={() => onDiff(lane.id)}
+                      >
                         Diff
-                      </button>
-                      <button
-                        className="icon"
-                        disabled={lane.status !== "ready" || prBusy === lane.id}
+                      </Button>
+                      <Button
+                        size="sm"
+                        icon={<PullRequestIcon />}
+                        loading={prBusy === lane.id}
+                        disabled={lane.status !== "ready"}
                         onClick={() => void openPr(lane)}
                       >
-                        {prBusy === lane.id ? "Opening…" : "PR"}
-                      </button>
+                        PR
+                      </Button>
                       {confirming === lane.id ? (
                         <>
-                          <button className="btn danger" onClick={() => void archive(lane, true)}>
+                          <Button variant="danger" size="sm" onClick={() => void archive(lane, true)}>
                             Discard &amp; archive
-                          </button>
-                          <button className="icon" onClick={() => setConfirming(null)}>
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>
                             Cancel
-                          </button>
+                          </Button>
                         </>
                       ) : (
-                        <button className="icon" onClick={() => void archive(lane, false)}>
-                          Archive
-                        </button>
+                        <IconButton
+                          label="Archive lane"
+                          icon={<ArchiveIcon />}
+                          size="sm"
+                          onClick={() => void archive(lane, false)}
+                        />
                       )}
                     </div>
                     {confirming === lane.id && (

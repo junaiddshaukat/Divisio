@@ -1,12 +1,16 @@
 import { useEffect, useRef } from "react";
+import type { DiffFileEntry } from "@divisio/contracts";
 import { Markdown } from "./Markdown.tsx";
+import { WorkEntries, type WorkEntry } from "./WorkEntries.tsx";
 
 export interface Bubble {
-  kind: "user" | "assistant" | "streaming" | "tools";
+  kind: "user" | "assistant" | "streaming" | "work";
+  work?: WorkEntry[];
   text: string;
   key: string;
   turnId?: string;
-  showDiff?: boolean;
+  /** Files changed in this turn's checkpoint, when known. */
+  changedFiles?: DiffFileEntry[];
 }
 
 /**
@@ -16,10 +20,10 @@ export interface Bubble {
  */
 export function Transcript({
   bubbles,
-  onShowDiff,
+  onOpenChanges,
 }: {
   bubbles: Bubble[];
-  onShowDiff?(turnId: string): void;
+  onOpenChanges?(turnId: string, path?: string): void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -45,16 +49,16 @@ export function Transcript({
           // User text stays literal: it is what they typed, and rendering
           // their own markdown would mangle pasted snippets.
           if (b.kind === "user") return <div key={b.key} className="msg-user">{b.text}</div>;
-          if (b.kind === "tools") return <div key={b.key} className="tool">tools: {b.text}</div>;
+          if (b.kind === "work") return <WorkEntries key={b.key} entries={b.work ?? []} />;
           return (
             <div key={b.key} className={`msg-assistant${b.kind === "streaming" ? " streaming" : ""}`}>
               <Markdown source={b.text} />
-              {b.showDiff && b.turnId && onShowDiff && (
-                <div className="msg-actions">
-                  <button className="linkish" onClick={() => onShowDiff(b.turnId!)}>
-                    Diff
-                  </button>
-                </div>
+              {b.changedFiles && b.changedFiles.length > 0 && b.turnId && onOpenChanges && (
+                <ChangedFilesChip
+                  turnId={b.turnId}
+                  files={b.changedFiles}
+                  onOpen={onOpenChanges}
+                />
               )}
             </div>
           );
@@ -62,4 +66,46 @@ export function Transcript({
       </div>
     </div>
   );
+}
+
+function ChangedFilesChip({
+  turnId,
+  files,
+  onOpen,
+}: {
+  turnId: string;
+  files: DiffFileEntry[];
+  onOpen(turnId: string, path?: string): void;
+}) {
+  const preview = files.slice(0, 3);
+  return (
+    <div className="changed-files-card">
+      <button className="changed-files-summary" onClick={() => onOpen(turnId)}>
+        {files.length} changed file{files.length === 1 ? "" : "s"}
+      </button>
+      <div className="changed-files-chips">
+        {preview.map((f) => (
+          <button
+            key={f.path}
+            className="file-chip"
+            title={f.path}
+            onClick={() => onOpen(turnId, f.path)}
+          >
+            <span className={`diff-status status-${f.status}`}>{f.status}</span>
+            {basename(f.path)}
+          </button>
+        ))}
+        {files.length > 3 && (
+          <button className="file-chip more" onClick={() => onOpen(turnId)}>
+            +{files.length - 3} more
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function basename(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i >= 0 ? path.slice(i + 1) : path;
 }

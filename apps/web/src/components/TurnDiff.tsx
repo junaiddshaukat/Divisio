@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { DiffFileEntry } from "@divisio/contracts";
+import { DiffHunkView } from "./DiffHunkView.tsx";
+import { Button } from "./ui/Button.tsx";
 
 interface Props {
   turnId: string;
@@ -49,11 +51,7 @@ export function TurnDiff({ turnId, files, patch, status, detail, onRestore, onCl
             ))}
           </ul>
         )}
-        {patch && (
-          <pre className="diff-patch">
-            <code>{patch}</code>
-          </pre>
-        )}
+        {patch && <DiffHunkView patch={patch} />}
         <div className="actions">
           {onRestore && status === "ready" && (
             confirming ? (
@@ -66,22 +64,22 @@ export function TurnDiff({ turnId, files, patch, status, detail, onRestore, onCl
                 <span className="hint danger">
                   Overwrite the working tree with the state before this turn?
                 </span>
-                <button className="btn danger" disabled={busy} onClick={() => void restore()}>
+                <Button variant="danger" size="sm" disabled={busy} onClick={() => void restore()}>
                   {busy ? "Restoring…" : "Restore"}
-                </button>
-                <button className="btn ghost" onClick={() => setConfirming(false)}>
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
                   Cancel
-                </button>
+                </Button>
               </>
             ) : (
-              <button className="btn ghost" onClick={() => setConfirming(true)}>
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
                 Restore this turn
-              </button>
+              </Button>
             )
           )}
-          <button className="btn" onClick={onClose}>
+          <Button variant="primary" size="sm" onClick={onClose}>
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

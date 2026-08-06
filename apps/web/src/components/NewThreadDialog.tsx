@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { pickDirectory, canPickDirectory } from "../platform.ts";
 import type { ProjectView, ProviderView } from "@divisio/contracts";
+import { MenuSelect } from "./MenuSelect.tsx";
+import { ProviderMark } from "./ProviderMark.tsx";
+import { Button } from "./ui/Button.tsx";
 
 interface Props {
   /** Set when creating into a specific lane; the project is then not a choice. */
@@ -27,6 +30,27 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
   /** Chosen explicitly from the project select, or forced when none exist. */
   const [addingProject, setAddingProject] = useState(false);
   const needsProject = projects.length === 0 || addingProject;
+
+  const projectOptions = useMemo(
+    () => [
+      ...projects.map((p) => ({ value: p.id, label: p.name })),
+      { value: NEW_PROJECT, label: "Add another project…" },
+    ],
+    [projects],
+  );
+
+  const providerOptions = useMemo(
+    () =>
+      providers.map((p) => ({
+        value: p.kind,
+        label: p.label,
+        // Available agents: name + logo only. Keep install hints for unavailable.
+        detail: p.available ? undefined : (p.detail ?? "unavailable"),
+        disabled: !p.available,
+        icon: <ProviderMark kind={p.kind} />,
+      })),
+    [providers],
+  );
 
   /**
    * Adding a project is deliberately not gated on provider availability.
@@ -64,9 +88,15 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
 
         {needsProject ? (
           <>
-            <input placeholder="Project name" value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              className="field"
+              placeholder="Project name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
             <div className="path-row">
               <input
+                className="field"
                 placeholder="/absolute/path/to/repo"
                 value={rootPath}
                 onChange={(e) => setRootPath(e.target.value)}
@@ -78,8 +108,9 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
                 would silently do nothing.
               */}
               {canPickDirectory() && (
-                <button
-                  className="btn ghost"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={async () => {
                     const chosen = await pickDirectory();
                     if (chosen) {
@@ -89,45 +120,44 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
                   }}
                 >
                   Choose…
-                </button>
+                </Button>
               )}
             </div>
             <span className="hint">The agent runs with this directory as its working directory.</span>
             {projects.length > 0 && (
-              <button className="linkish" onClick={() => setAddingProject(false)}>
+              <button type="button" className="linkish" onClick={() => setAddingProject(false)}>
                 Use an existing project instead
               </button>
             )}
           </>
         ) : (
-          <select
+          <MenuSelect
+            aria-label="Project"
             value={projectId}
-            onChange={(e) => {
-              if (e.target.value === NEW_PROJECT) setAddingProject(true);
-              else setProjectId(e.target.value);
+            options={projectOptions}
+            onChange={(next) => {
+              if (next === NEW_PROJECT) setAddingProject(true);
+              else setProjectId(next);
             }}
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-            <option value={NEW_PROJECT}>＋ Add another project…</option>
-          </select>
+          />
         )}
 
         {available.length > 0 && (
-          <input placeholder="Thread title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <input
+            className="field"
+            placeholder="Thread title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
         )}
 
-        <select value={provider} onChange={(e) => setProvider(e.target.value)}>
-          {providers.map((p) => (
-            <option key={p.kind} value={p.kind} disabled={!p.available}>
-              {p.label}
-              {p.available ? ` · ${p.tier}${p.version ? ` · ${p.version}` : ""}` : ` · ${p.detail ?? "unavailable"}`}
-            </option>
-          ))}
-        </select>
+        <MenuSelect
+          aria-label="Agent"
+          value={provider}
+          options={providerOptions}
+          onChange={setProvider}
+          disabled={available.length === 0}
+        />
 
         {/* Errors name the fix, not just the failure. */}
         {available.length === 0 && (
@@ -139,16 +169,17 @@ export function NewThreadDialog({ lockedProjectId, projects, providers, onCreate
         {error && <span className="hint" style={{ color: "var(--destructive-foreground)" }}>{error}</span>}
 
         <div className="actions">
-          <button className="btn ghost" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
             disabled={busy || (needsProject && !rootPath.trim()) || (!needsProject && available.length === 0)}
             onClick={() => void submit()}
           >
             {busy ? "Creating…" : available.length === 0 ? "Add project" : "Create"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

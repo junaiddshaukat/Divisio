@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FileTreeEntry } from "@divisio/contracts";
 import { CodeEditor } from "./CodeEditor.tsx";
+import { Button, IconButton, Pill } from "./ui/Button.tsx";
+import { ChevronDownIcon, ChevronRightIcon, CloseIcon, FileIcon, SaveIcon } from "./ui/icons.ts";
 
 interface Props {
   threadId: string;
@@ -93,8 +95,11 @@ export function FilePane({ threadId, dark, listDir, readFile, writeFile, onClose
           onClick={() => (entry.kind === "directory" ? void toggle(entry.path) : void openFile(entry.path))}
         >
           <span className="tree-glyph">
-            {entry.kind === "directory" ? (open.has(entry.path) ? "▾" : "▸") : ""}
+            {entry.kind === "directory" ? (
+              open.has(entry.path) ? <ChevronDownIcon /> : <ChevronRightIcon />
+            ) : null}
           </span>
+          {entry.kind === "file" && <FileIcon />}
           <span className="label">{entry.name}</span>
         </button>
         {entry.kind === "directory" && open.has(entry.path) && renderLevel(entry.path, depth + 1)}
@@ -107,9 +112,7 @@ export function FilePane({ threadId, dark, listDir, readFile, writeFile, onClose
       <div className="file-tree">
         <div className="file-pane-head">
           <span className="section-label">Files</span>
-          <button className="icon" onClick={onClose} title="Close files">
-            ✕
-          </button>
+          <IconButton label="Close files" icon={<CloseIcon />} size="sm" onClick={onClose} />
         </div>
         <div className="tree-scroll">{renderLevel("", 0)}</div>
       </div>
@@ -119,10 +122,17 @@ export function FilePane({ threadId, dark, listDir, readFile, writeFile, onClose
           <>
             <div className="file-editor-head">
               <code className="label">{file.path}</code>
-              {dirty && <span className="pill warn">unsaved</span>}
-              <button className="btn" disabled={!dirty || saving || file.binary} onClick={() => void save()}>
-                {saving ? "Saving…" : "Save"}
-              </button>
+              {dirty && <Pill tone="warning">unsaved</Pill>}
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<SaveIcon />}
+                loading={saving}
+                disabled={!dirty || file.binary}
+                onClick={() => void save()}
+              >
+                Save
+              </Button>
             </div>
             {error && <div className="banner">{error}</div>}
             {file.binary ? (

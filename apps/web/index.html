@@ -8,6 +8,57 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      /*
+       * Last-resort error reporter.
+       *
+       * If the bundle fails to parse, fails to load, or throws before React
+       * mounts, the window would otherwise be an unexplained blank rectangle.
+       * This runs before the module script and turns any of those into text on
+       * screen — a blank screen of death tells the user nothing and tells us
+       * less.
+       */
+      (function () {
+        var shown = false;
+        function report(kind, detail) {
+          if (shown) return;
+          shown = true;
+          var root = document.getElementById("root") || document.body;
+          root.innerHTML =
+            '<div style="font:13px/1.5 -apple-system,system-ui,sans-serif;color:#f1f3f7;' +
+            'background:#0e0e0e;padding:24px;height:100vh;box-sizing:border-box;overflow:auto">' +
+            '<h1 style="font-size:16px;margin:0 0 8px">Divisio failed to start</h1>' +
+            '<p style="color:#a3a3a3;margin:0 0 16px">' + kind + '</p>' +
+            '<pre style="white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,monospace;' +
+            'background:rgba(255,255,255,.06);padding:12px;border-radius:8px;margin:0">' +
+            String(detail).replace(/[&<>]/g, function (c) {
+              return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c];
+            }) +
+            '</pre></div>';
+        }
+        window.addEventListener("error", function (e) {
+          // Resource errors (a missing chunk) have no `error` object.
+          if (e.target && e.target !== window && e.target.src) {
+            report("A required file could not be loaded.", e.target.src);
+          } else {
+            report("An error occurred while starting.", (e.error && e.error.stack) || e.message);
+          }
+        }, true);
+        window.addEventListener("unhandledrejection", function (e) {
+          report("A startup step failed.", (e.reason && e.reason.stack) || e.reason);
+        });
+        // Nothing mounted after a generous delay means a silent failure.
+        setTimeout(function () {
+          var root = document.getElementById("root");
+          if (root && root.childElementCount === 0) {
+            report(
+              "The interface did not mount. This is usually a stale or broken build.",
+              "Try: bun run build:desktop"
+            );
+          }
+        }, 5000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
