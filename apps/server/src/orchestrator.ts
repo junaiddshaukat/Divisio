@@ -15,6 +15,28 @@ import { logger } from "@divisio/shared/log";
 import { existsSync } from "node:fs";
 import { captureCheckpoint, checkpointRef, diffCheckpoints } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
+import {
+  allocateBranch,
+  allocatePort,
+  copyCarryOver,
+  createWorktree,
+  diffLane,
+  headSha,
+  isDirty,
+  isGitRepo,
+  laneRoot,
+  loadLaneConfig,
+  pruneWorktrees,
+  removeWorktree,
+  runSetup,
+} from "./lane/worktree.ts";
+
+/**
+ * Ceiling on concurrently active lanes. Each lane runs its own provider
+ * process and its own MCP servers, so this bounds real machine load, not
+ * bookkeeping. See docs/specs/worktrees.md.
+ */
+const MAX_ACTIVE_LANES = 4;
 
 const log = logger("orchestrator");
 
@@ -72,6 +94,14 @@ export class Orchestrator {
         return await this.respondApproval(payload);
       case "provider.detect":
         return await this.detect();
+      case "lane.create":
+        return await this.createLane(payload);
+      case "lane.list":
+        return { lanes: this.store.listLanes((payload as { projectId?: string }).projectId) };
+      case "lane.archive":
+        return await this.archiveLane(payload);
+      case "lane.diff":
+        return await this.laneDiff(payload);
       default:
         throw new CommandError("unknown_command", `unknown command: ${cmd}`);
     }
@@ -103,12 +133,35 @@ export class Orchestrator {
     if (!this.registry.get(p.provider)) {
       throw new CommandError("provider_unavailable", `no adapter for provider: ${p.provider}`);
     }
+    if (p.laneId) {
+      const lane = this.store.getLane(p.laneId);
+      if (!lane) throw new CommandError("not_found", `no such lane: ${p.laneId}`);
+      if (lane.projectId !== p.projectId) {
+        throw new CommandError("invalid_payload", "lane belongs to a different project");
+      }
+      if (lane.status !== "ready") {
+        throw new CommandError("session_busy", `lane is ${lane.status}, not ready`);
+      }
+      const adapter = this.registry.get(p.provider);
+      // A lane means the provider runs with cwd set to a worktree. An adapter
+      // that has not declared it can handle that must not be started there.
+      if (adapter && !adapter.capabilities.worktreeAware) {
+        throw new CommandError("provider_unavailable", `${p.provider} does not support worktrees`);
+      }
+    }
+
     const threadId = newId("thr");
     this.commit([
       {
         type: "thread.created",
         threadId,
-        payload: { threadId, projectId: p.projectId, title: p.title, provider: p.provider },
+        payload: {
+          threadId,
+          projectId: p.projectId,
+          title: p.title,
+          provider: p.provider,
+          ...(p.laneId ? { laneId: p.laneId } : {}),
+        },
       },
     ]);
     const thread = this.store.getThread(threadId);
@@ -141,6 +194,183 @@ export class Orchestrator {
     const thread = this.store.getThread(p.threadId);
     if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
     return { thread, messages: this.store.listMessages(p.threadId), seq: this.store.head() };
+  }
+
+  /* --------------------------------- lanes -------------------------------- */
+
+  /**
+   * Resolves the working directory for a thread: its lane root when bound to a
+   * lane, otherwise the project's primary checkout.
+   */
+  private workdirFor(thread: { projectId: string; laneId: string | null }): string {
+    if (thread.laneId) {
+      const lane = this.store.getLane(thread.laneId);
+      if (lane && lane.status !== "archived") return lane.root;
+    }
+    const project = this.store.getProject(thread.projectId);
+    if (!project) throw new CommandError("not_found", `no such project: ${thread.projectId}`);
+    return project.rootPath;
+  }
+
+  private async createLane(p: CommandPayloads["lane.create"]): Promise<CommandResults["lane.create"]> {
+    const project = this.store.getProject(p.projectId);
+    if (!project) throw new CommandError("not_found", `no such project: ${p.projectId}`);
+
+    if (!(await isGitRepo(project.rootPath))) {
+      throw new CommandError(
+        "invalid_payload",
+        "parallel lanes need a git repository — this project is a plain directory",
+      );
+    }
+
+    const active = this.store.listLanes(p.projectId).filter((l) => l.status !== "archived");
+    if (active.length >= MAX_ACTIVE_LANES) {
+      throw new CommandError(
+        "session_busy",
+        `lane limit reached (${MAX_ACTIVE_LANES}); archive a lane before starting another`,
+      );
+    }
+
+    // Reconcile worktrees deleted outside the app before adding another.
+    await pruneWorktrees(project.rootPath);
+
+    const base = p.base ?? (await headSha(project.rootPath));
+    if (!base) {
+      throw new CommandError("invalid_payload", "repository has no commits to branch from");
+    }
+
+    const laneId = newId("lane");
+    const branch = await allocateBranch(project.rootPath, p.title);
+    const port = allocatePort(this.store.activeLanePorts());
+
+    let created;
+    try {
+      created = await createWorktree(project.rootPath, p.projectId, laneId, branch, base);
+    } catch (err) {
+      throw new CommandError("internal", String(err instanceof Error ? err.message : err));
+    }
+
+    this.commit([
+      {
+        type: "lane.created",
+        threadId: null,
+        payload: {
+          laneId,
+          projectId: p.projectId,
+          title: p.title,
+          branch: created.branch,
+          baseSha: created.baseSha,
+          root: created.root,
+          port,
+        },
+      },
+    ]);
+
+    // Carry-over and setup run in the background: a fresh worktree has no
+    // dependencies, and blocking the command until `bun install` finishes
+    // would look like the UI had hung.
+    void this.prepareLane(laneId, project.rootPath, created.root, port);
+
+    const lane = this.store.getLane(laneId);
+    if (!lane) throw new CommandError("internal", "lane projection missing after append");
+    return { lane };
+  }
+
+  private async prepareLane(laneId: string, projectRoot: string, root: string, port: number) {
+    try {
+      const config = await loadLaneConfig(projectRoot);
+      const carried = await copyCarryOver(projectRoot, root, config.carryOver);
+      log.info("lane carry-over", { laneId, copied: carried.copied.length, skipped: carried.skipped.length });
+
+      if (config.setup) {
+        const result = await runSetup(root, config.setup, port, config.portEnv);
+        if (!result.ok) {
+          this.commit([
+            {
+              type: "lane.status",
+              threadId: null,
+              payload: {
+                laneId,
+                status: "error",
+                detail: `setup failed: ${result.output.trim().split("\n").slice(-3).join(" ")}`,
+              },
+            },
+          ]);
+          return;
+        }
+      }
+
+      this.commit([
+        { type: "lane.status", threadId: null, payload: { laneId, status: "ready" } },
+      ]);
+    } catch (err) {
+      this.commit([
+        {
+          type: "lane.status",
+          threadId: null,
+          payload: { laneId, status: "error", detail: String(err) },
+        },
+      ]);
+    }
+  }
+
+  private async archiveLane(p: CommandPayloads["lane.archive"]): Promise<CommandResults["lane.archive"]> {
+    const lane = this.store.getLane(p.laneId);
+    if (!lane) throw new CommandError("not_found", `no such lane: ${p.laneId}`);
+    const project = this.store.getProject(lane.projectId);
+    if (!project) throw new CommandError("not_found", "lane project missing");
+
+    const dirty = await isDirty(lane.root).catch(() => false);
+    if (dirty && !p.force) {
+      // Refuse rather than silently discard. The caller must confirm knowing
+      // there is uncommitted work.
+      throw new CommandError(
+        "invalid_payload",
+        "lane has uncommitted changes; confirm to archive and discard them",
+      );
+    }
+
+    // Snapshot before destroying, so the work survives the directory.
+    if (dirty) {
+      const capture = await captureCheckpoint(lane.root, p.laneId, "archive", "pre");
+      log.info("captured lane before archive", { laneId: p.laneId, status: capture.status, ref: capture.ref });
+    }
+
+    // Stop any sessions still bound to this lane before the tree disappears.
+    for (const thread of this.store.listThreads().filter((t) => t.laneId === p.laneId)) {
+      const live = this.sessions.get(thread.id);
+      if (!live) continue;
+      await this.registry.get(live.provider)?.stopSession(live.handle).catch(() => undefined);
+      this.sessions.delete(thread.id);
+    }
+
+    try {
+      await removeWorktree(project.rootPath, lane.root, lane.branch, p.deleteBranch, p.force || dirty);
+    } catch (err) {
+      throw new CommandError("internal", String(err instanceof Error ? err.message : err));
+    }
+
+    this.commit([
+      {
+        type: "lane.archived",
+        threadId: null,
+        payload: { laneId: p.laneId, branchDeleted: p.deleteBranch, hadUncommittedChanges: dirty },
+      },
+    ]);
+
+    const updated = this.store.getLane(p.laneId);
+    if (!updated) throw new CommandError("internal", "lane projection missing after archive");
+    return { lane: updated };
+  }
+
+  private async laneDiff(p: CommandPayloads["lane.diff"]): Promise<CommandResults["lane.diff"]> {
+    const lane = this.store.getLane(p.laneId);
+    if (!lane) throw new CommandError("not_found", `no such lane: ${p.laneId}`);
+    if (lane.status === "archived") {
+      return { files: [], patch: null, status: "skipped" };
+    }
+    const result = await diffLane(lane.root, lane.baseSha);
+    return { files: result.files, patch: result.patch, status: result.status };
   }
 
   private async detect(): Promise<CommandResults["provider.detect"]> {
@@ -180,8 +410,10 @@ export class Orchestrator {
 
     this.commit([{ type: "session.status", threadId, payload: { threadId, status: "connecting" } }]);
 
+    // Lane-bound threads run inside their worktree; unbound threads run in the
+    // primary checkout, which is the pre-lane behaviour.
     const handle = await adapter.startSession(
-      { threadId, cwd: project.rootPath, permissionMode: thread.permissionMode },
+      { threadId, cwd: this.workdirFor(thread), permissionMode: thread.permissionMode },
       (event) => this.onRuntimeEvent(threadId, event),
     );
 
@@ -224,8 +456,10 @@ export class Orchestrator {
       },
     ]);
 
-    if (project) {
-      const pre = await captureCheckpoint(project.rootPath, p.threadId, turnId, "pre");
+    if (project && thread) {
+      // Checkpoint the tree the agent will actually edit. Refs are shared
+      // across worktrees, so a lane checkpoint is readable from anywhere.
+      const pre = await captureCheckpoint(this.workdirFor(thread), p.threadId, turnId, "pre");
       this.commit([
         {
           type: "checkpoint.captured",
@@ -321,7 +555,7 @@ export class Orchestrator {
       return { turnId: p.turnId, files: [], patch: null, status: "missing", detail: "no diff for turn" };
     }
 
-    const diff = await diffCheckpoints(project.rootPath, stored.fromRef, stored.toRef);
+    const diff = await diffCheckpoints(this.workdirFor(thread), stored.fromRef, stored.toRef);
     return {
       turnId: p.turnId,
       files: diff.files,
@@ -338,9 +572,9 @@ export class Orchestrator {
   private async finalizeCheckpoints(threadId: string, turnId: string) {
     const thread = this.store.getThread(threadId);
     const project = thread ? this.store.getProject(thread.projectId) : null;
-    if (!project) return;
+    if (!project || !thread) return;
 
-    const post = await captureCheckpoint(project.rootPath, threadId, turnId, "post");
+    const post = await captureCheckpoint(this.workdirFor(thread), threadId, turnId, "post");
     this.commit([
       {
         type: "checkpoint.captured",
@@ -360,7 +594,7 @@ export class Orchestrator {
     if (post.status !== "ready") return;
 
     const fromRef = checkpointRef(threadId, turnId, "pre");
-    const diff = await diffCheckpoints(project.rootPath, fromRef, post.ref);
+    const diff = await diffCheckpoints(this.workdirFor(thread), fromRef, post.ref);
     if (diff.status === "ready") {
       this.commit([
         {

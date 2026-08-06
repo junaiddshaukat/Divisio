@@ -7,6 +7,8 @@ import {
   type DomainEvent,
   type EventType,
   type NewEvent,
+  type LaneStatus,
+  type LaneView,
   type PermissionMode,
   type SessionStatus,
 } from "@divisio/contracts";
@@ -28,6 +30,42 @@ function toSessionStatus(value: string): SessionStatus {
   if ((SESSION_STATUSES as readonly string[]).includes(value)) return value as SessionStatus;
   log.warn("unknown session status in projection", { value });
   return "closed";
+}
+
+interface LaneRow {
+  id: string;
+  project_id: string;
+  title: string;
+  branch: string;
+  base_sha: string;
+  root: string;
+  port: number;
+  status: string;
+  detail: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const LANE_STATUSES: readonly LaneStatus[] = ["preparing", "ready", "error", "archived"];
+
+function toLaneStatus(value: string): LaneStatus {
+  return (LANE_STATUSES as readonly string[]).includes(value) ? (value as LaneStatus) : "error";
+}
+
+function toLaneView(r: LaneRow): LaneView {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    title: r.title,
+    branch: r.branch,
+    baseSha: r.base_sha,
+    root: r.root,
+    port: r.port,
+    status: toLaneStatus(r.status),
+    detail: r.detail,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
 }
 
 /** Unknown modes fall back to the safe end of the range, never to full access. */
@@ -83,6 +121,14 @@ export class EventStore {
         role text not null, text text not null, at text not null,
         primary key (turn_id, role)
       );
+      create table if not exists lanes (
+        id text primary key, project_id text not null references projects(id),
+        title text not null, branch text not null, base_sha text not null,
+        root text not null, port integer not null, status text not null,
+        detail text, created_at text not null, updated_at text not null
+      );
+      create index if not exists lanes_project on lanes(project_id, updated_at);
+
       create table if not exists turn_diffs (
         thread_id text not null, turn_id text not null,
         from_ref text not null, to_ref text not null,
@@ -92,6 +138,7 @@ export class EventStore {
     `);
     // Existing DBs created before permission_mode / turn_diffs — additive migrate.
     this.ensureColumn("threads", "permission_mode", "text not null default 'supervised'");
+    this.ensureColumn("threads", "lane_id", "text");
   }
 
   private ensureColumn(table: string, column: string, ddl: string) {
@@ -202,13 +249,19 @@ export class EventStore {
         break;
       }
       case "thread.created": {
-        const p = e.payload as { threadId: string; projectId: string; title: string; provider: string };
+        const p = e.payload as {
+          threadId: string;
+          projectId: string;
+          title: string;
+          provider: string;
+          laneId?: string;
+        };
         this.db
           .query(
-            `insert or replace into threads (id, project_id, title, provider, status, permission_mode, created_at, updated_at)
-             values (?, ?, ?, ?, 'ready', 'supervised', ?, ?)`,
+            `insert or replace into threads (id, project_id, title, provider, status, permission_mode, lane_id, created_at, updated_at)
+             values (?, ?, ?, ?, 'ready', 'supervised', ?, ?, ?)`,
           )
-          .run(p.threadId, p.projectId, p.title, p.provider, e.at, e.at);
+          .run(p.threadId, p.projectId, p.title, p.provider, p.laneId ?? null, e.at, e.at);
         break;
       }
       case "thread.permission_mode_set": {
@@ -243,6 +296,34 @@ export class EventStore {
         this.touch(p.threadId, e.at);
         break;
       }
+      case "lane.created": {
+        const p = e.payload as {
+          laneId: string; projectId: string; title: string; branch: string;
+          baseSha: string; root: string; port: number;
+        };
+        this.db
+          .query(
+            `insert or replace into lanes
+             (id, project_id, title, branch, base_sha, root, port, status, detail, created_at, updated_at)
+             values (?, ?, ?, ?, ?, ?, ?, 'preparing', null, ?, ?)`,
+          )
+          .run(p.laneId, p.projectId, p.title, p.branch, p.baseSha, p.root, p.port, e.at, e.at);
+        break;
+      }
+      case "lane.status": {
+        const p = e.payload as { laneId: string; status: string; detail?: string };
+        this.db
+          .query("update lanes set status = ?, detail = ?, updated_at = ? where id = ?")
+          .run(p.status, p.detail ?? null, e.at, p.laneId);
+        break;
+      }
+      case "lane.archived": {
+        const p = e.payload as { laneId: string };
+        this.db
+          .query("update lanes set status = 'archived', updated_at = ? where id = ?")
+          .run(e.at, p.laneId);
+        break;
+      }
       case "session.status": {
         const p = e.payload as { threadId: string; status: string };
         this.db.query("update threads set status = ?, updated_at = ? where id = ?").run(p.status, e.at, p.threadId);
@@ -263,7 +344,11 @@ export class EventStore {
    */
   rebuildProjections(): number {
     const run = this.db.transaction(() => {
-      this.db.exec("delete from turn_diffs; delete from messages; delete from threads; delete from projects;");
+      // Every projection table, or a rebuild silently keeps stale rows and
+      // the "projections are disposable" property stops being true.
+      this.db.exec(
+        "delete from turn_diffs; delete from messages; delete from lanes; delete from threads; delete from projects;",
+      );
       let n = 0;
       let cursor = 0;
       for (;;) {
@@ -301,11 +386,12 @@ export class EventStore {
           provider: string;
           status: string;
           permission_mode: string;
+          lane_id: string | null;
           updated_at: string;
         },
         []
       >(
-        "select id, project_id, title, provider, status, permission_mode, updated_at from threads order by updated_at desc",
+        "select id, project_id, title, provider, status, permission_mode, lane_id, updated_at from threads order by updated_at desc",
       )
       .all()
       .map((r) => ({
@@ -317,6 +403,7 @@ export class EventStore {
         // consumer of `.status` — comparisons stop type-checking and the field
         // becomes unusable without anyone noticing.
         status: toSessionStatus(r.status),
+        laneId: r.lane_id,
         permissionMode: toPermissionMode(r.permission_mode),
         updatedAt: r.updated_at,
       }));
@@ -335,6 +422,31 @@ export class EventStore {
       toRef: row.to_ref,
       files: JSON.parse(row.files_json) as Array<{ path: string; status: string }>,
     };
+  }
+
+  listLanes(projectId?: string): LaneView[] {
+    const sql = projectId
+      ? "select * from lanes where project_id = ? order by created_at desc"
+      : "select * from lanes order by created_at desc";
+    const rows = projectId
+      ? this.db.query<LaneRow, [string]>(sql).all(projectId)
+      : this.db.query<LaneRow, []>(sql).all();
+    return rows.map(toLaneView);
+  }
+
+  getLane(laneId: string): LaneView | null {
+    const row = this.db.query<LaneRow, [string]>("select * from lanes where id = ?").get(laneId);
+    return row ? toLaneView(row) : null;
+  }
+
+  /** Ports held by lanes that are not archived, so allocation never collides. */
+  activeLanePorts(): Set<number> {
+    return new Set(
+      this.db
+        .query<{ port: number }, []>("select port from lanes where status != 'archived'")
+        .all()
+        .map((r) => r.port),
+    );
   }
 
   getThread(threadId: string) {

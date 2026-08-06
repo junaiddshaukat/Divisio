@@ -616,3 +616,76 @@ button.btn.secondary {
     transition: none !important;
   }
 }
+
+/* ------------------------------ lane board -------------------------------- */
+
+.lane-board {
+  width: min(680px, 100%);
+}
+
+.lane-create {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.lane-create input {
+  flex: 1;
+}
+
+.lane-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.lane-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.lane-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lane-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.lane-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.lane-meta code {
+  font-family: var(--font-mono);
+}
+
+.lane-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 240px;
+}
+
+.hint.danger {
+  color: var(--destructive-foreground);
+}

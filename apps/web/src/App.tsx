@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DiffFileEntry,
   DomainEvent,
+  LaneView,
   MessageView,
   PermissionMode,
   ProjectView,
@@ -15,6 +16,7 @@ import { Composer } from "./components/Composer.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Transcript, type Bubble } from "./components/Transcript.tsx";
 import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
+import { LaneBoard } from "./components/LaneBoard.tsx";
 import { TurnDiff } from "./components/TurnDiff.tsx";
 
 const PORT = 4577;
@@ -62,6 +64,9 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState(false);
   const [matrixOpen, setMatrixOpen] = useState(false);
+  const [lanes, setLanes] = useState<LaneView[]>([]);
+  const [laneBoard, setLaneBoard] = useState(false);
+  const [laneBusy, setLaneBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [diffTurns, setDiffTurns] = useState<Set<string>>(new Set());
   const [diffView, setDiffView] = useState<{
@@ -82,6 +87,40 @@ export function App() {
     const list = await client.send("project.list", {});
     setProjects(list.projects);
     setThreads(list.threads);
+    const laneList = await client.send("lane.list", {});
+    setLanes(laneList.lanes);
+  }, []);
+
+  const createLane = useCallback(async (projectId: string, title: string) => {
+    const client = clientRef.current;
+    if (!client) return;
+    setLaneBusy(true);
+    try {
+      await client.send("lane.create", { projectId, title });
+      await refresh(client);
+    } finally {
+      setLaneBusy(false);
+    }
+  }, []);
+
+  /** Reuses the turn diff viewer; a lane diff is the same shape of data. */
+  const showLaneDiff = useCallback(async (laneId: string) => {
+    const client = clientRef.current;
+    if (!client) return;
+    const lane = await client.send("lane.diff", { laneId });
+    setDiffView({
+      turnId: laneId,
+      files: lane.files,
+      patch: lane.patch,
+      status: lane.status,
+    });
+  }, []);
+
+  const archiveLane = useCallback(async (laneId: string, deleteBranch: boolean, force: boolean) => {
+    const client = clientRef.current;
+    if (!client) return;
+    await client.send("lane.archive", { laneId, deleteBranch, force });
+    await refresh(client);
   }, []);
 
   const refreshProviders = useCallback(async () => {
@@ -383,6 +422,8 @@ export function App() {
         onOpen={(id) => void openThread(id)}
         onNew={() => setDialog(true)}
         onProviders={() => setMatrixOpen(true)}
+        onLanes={() => setLaneBoard(true)}
+        laneCount={lanes.filter((l) => l.status !== "archived").length}
       />
       <main className="main">
         <div className="topbar">
@@ -442,6 +483,19 @@ export function App() {
           onClose={() => setDialog(false)}
         />
       )}
+      {laneBoard && (
+        <LaneBoard
+          lanes={lanes}
+          projects={projects}
+          threads={threads}
+          busy={laneBusy}
+          onCreate={createLane}
+          onArchive={archiveLane}
+          onDiff={(laneId) => void showLaneDiff(laneId)}
+          onClose={() => setLaneBoard(false)}
+        />
+      )}
+
       {matrixOpen && (
         <CapabilityMatrix
           providers={providers}

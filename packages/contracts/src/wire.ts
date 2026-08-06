@@ -6,13 +6,13 @@
  * unresolvable when two clients are attached to the same thread.
  */
 
-import type { DiffFileEntry, DomainEvent, PermissionMode, SessionStatus } from "./events.ts";
+import type { DiffFileEntry, DomainEvent, LaneStatus, PermissionMode, SessionStatus } from "./events.ts";
 
 export interface CommandPayloads {
   "session.resume": { since: number; threads: string[] };
   "project.create": { name: string; rootPath: string };
   "project.list": Record<string, never>;
-  "thread.create": { projectId: string; title: string; provider: string };
+  "thread.create": { projectId: string; title: string; provider: string; laneId?: string };
   "thread.snapshot": { threadId: string };
   "thread.setPermissionMode": { threadId: string; mode: PermissionMode };
   "turn.send": { threadId: string; text: string };
@@ -20,6 +20,10 @@ export interface CommandPayloads {
   "turn.diff": { threadId: string; turnId: string };
   "approval.respond": { threadId: string; approvalId: string; decision: "approve" | "deny" };
   "provider.detect": Record<string, never>;
+  "lane.create": { projectId: string; title: string; base?: string };
+  "lane.list": { projectId?: string };
+  "lane.archive": { laneId: string; deleteBranch: boolean; force: boolean };
+  "lane.diff": { laneId: string };
 }
 
 export type CommandName = keyof CommandPayloads;
@@ -37,8 +41,24 @@ export interface ThreadView {
   title: string;
   provider: string;
   status: SessionStatus;
+  /** Null when the thread runs in the primary checkout. */
+  laneId: string | null;
   /** Default supervised. Controls whether Divisio mediates provider approvals. */
   permissionMode: PermissionMode;
+  updatedAt: string;
+}
+
+export interface LaneView {
+  id: string;
+  projectId: string;
+  title: string;
+  branch: string;
+  baseSha: string;
+  root: string;
+  port: number;
+  status: LaneStatus;
+  detail: string | null;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -77,6 +97,10 @@ export interface CommandResults {
   };
   "approval.respond": Record<string, never>;
   "provider.detect": { providers: ProviderView[] };
+  "lane.create": { lane: LaneView };
+  "lane.list": { lanes: LaneView[] };
+  "lane.archive": { lane: LaneView };
+  "lane.diff": { files: DiffFileEntry[]; patch: string | null; status: "ready" | "skipped" | "error" };
 }
 
 /* ---------------------------------- frames --------------------------------- */
