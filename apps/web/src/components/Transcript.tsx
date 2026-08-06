@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Markdown } from "./Markdown.tsx";
 
 export interface Bubble {
   kind: "user" | "assistant" | "streaming" | "tools";
@@ -41,11 +42,13 @@ export function Transcript({
     <div className="transcript" ref={ref}>
       <div className="thread-inner">
         {bubbles.map((b) => {
+          // User text stays literal: it is what they typed, and rendering
+          // their own markdown would mangle pasted snippets.
           if (b.kind === "user") return <div key={b.key} className="msg-user">{b.text}</div>;
           if (b.kind === "tools") return <div key={b.key} className="tool">tools: {b.text}</div>;
           return (
             <div key={b.key} className={`msg-assistant${b.kind === "streaming" ? " streaming" : ""}`}>
-              {b.text}
+              <Markdown source={b.text} />
               {b.showDiff && b.turnId && onShowDiff && (
                 <div className="msg-actions">
                   <button className="linkish" onClick={() => onShowDiff(b.turnId!)}>

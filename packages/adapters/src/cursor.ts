@@ -20,6 +20,7 @@ import {
   type EmitRuntimeEvent,
   type ProviderAdapter,
   type SendTurnInput,
+  type PermissionMode,
   type SessionHandle,
   type StartSessionInput,
 } from "@divisio/contracts";
@@ -38,6 +39,8 @@ interface Session extends SessionHandle {
   cwd: string;
   emit: EmitRuntimeEvent;
   nativeId: string | null;
+  /** Divisio's mode for this thread, mapped onto the CLI's own gate. */
+  permissionMode: PermissionMode;
 }
 
 const CAPABILITIES: AdapterCapabilities = {
@@ -86,6 +89,7 @@ export class CursorAdapter implements ProviderAdapter {
   async startSession(input: StartSessionInput, emit: EmitRuntimeEvent): Promise<SessionHandle> {
     const session: Session = {
       threadId: input.threadId,
+      permissionMode: input.permissionMode ?? "supervised",
       nativeId: input.resumeId ?? null,
       proc: null,
       cwd: input.cwd,
@@ -112,6 +116,11 @@ export class CursorAdapter implements ProviderAdapter {
       "--workspace",
       session.cwd,
     ];
+
+    // Without this the CLI refuses mutating commands in print mode, so a
+    // full-access thread could talk but never change a file. Supervised threads
+    // deliberately omit it and the CLI's own gate applies.
+    if (session.permissionMode === "full_access") args.push("--force");
     if (session.nativeId) args.push("--resume", session.nativeId);
     args.push(turn.text);
 

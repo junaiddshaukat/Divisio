@@ -22,6 +22,7 @@
     "build:daemon": "bun run --cwd apps/desktop build:daemon"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.1",
     "@types/bun": "latest",
     "typescript": "^5.9.3"
   }
