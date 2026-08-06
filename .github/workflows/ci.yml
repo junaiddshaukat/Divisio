@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch makes the older run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Pinned deliberately: Bun moves fast, and an unpinned runtime turns
+          # an unrelated upstream release into a red build on someone's PR.
+          bun-version: 1.3.1
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: |
+          bunx tsc --noEmit -p tsconfig.json
+          bunx tsc --noEmit -p apps/web/tsconfig.json
+
+      - name: Test
+        # No provider CLI is installed here, so adapter tests must run against
+        # fixtures and mock peers rather than a real agent. Any test that needs
+        # a live CLI belongs behind a separate, manually triggered job.
+        run: bun test
+
+      - name: Build web
+        run: bun run build

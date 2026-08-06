@@ -7,10 +7,33 @@ import {
   type DomainEvent,
   type EventType,
   type NewEvent,
+  type PermissionMode,
+  type SessionStatus,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
 
 const log = logger("store");
+
+const SESSION_STATUSES: readonly SessionStatus[] = [
+  "connecting", "ready", "running", "awaiting_approval", "stopping", "error", "closed",
+];
+
+/**
+ * Narrows a status string read back from SQLite.
+ *
+ * An unrecognised value means the row was written by a newer daemon; treat the
+ * session as closed rather than trusting an unknown state machine value.
+ */
+function toSessionStatus(value: string): SessionStatus {
+  if ((SESSION_STATUSES as readonly string[]).includes(value)) return value as SessionStatus;
+  log.warn("unknown session status in projection", { value });
+  return "closed";
+}
+
+/** Unknown modes fall back to the safe end of the range, never to full access. */
+function toPermissionMode(value: string): PermissionMode {
+  return value === "full_access" ? "full_access" : "supervised";
+}
 
 /**
  * Append-only event log plus the projections derived from it.
@@ -290,10 +313,11 @@ export class EventStore {
         projectId: r.project_id,
         title: r.title,
         provider: r.provider,
-        status: r.status as never,
-        permissionMode: (r.permission_mode === "full_access" ? "full_access" : "supervised") as
-          | "supervised"
-          | "full_access",
+        // Narrowed, not cast to `never`. A `never` here silently poisons every
+        // consumer of `.status` — comparisons stop type-checking and the field
+        // becomes unusable without anyone noticing.
+        status: toSessionStatus(r.status),
+        permissionMode: toPermissionMode(r.permission_mode),
         updatedAt: r.updated_at,
       }));
   }

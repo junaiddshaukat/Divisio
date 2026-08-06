@@ -24,7 +24,7 @@ import {
   type StartSessionInput,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
-import { normalizeCursorStreamLine } from "./cursor/normalize.ts";
+import { type CursorNormalizeState, normalizeCursorStreamLine } from "./cursor/normalize.ts";
 
 const log = logger("adapter:cursor");
 
@@ -135,7 +135,7 @@ export class CursorAdapter implements ProviderAdapter {
   private async pump(session: Session, proc: TurnProcess, turnId: string) {
     let assistantText = "";
     let buffer = "";
-    let normState = { nativeId: session.nativeId, seenPartial: false };
+    let normState: CursorNormalizeState = { nativeId: session.nativeId, seenPartial: false };
 
     try {
       const reader = proc.stdout.getReader();

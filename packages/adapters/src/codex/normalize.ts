@@ -49,9 +49,12 @@ export function normalizeCodexNotification(
 
     case "item/agentMessage/delta": {
       const delta = typeof p["delta"] === "string" ? p["delta"] : "";
-      if (delta && next.turnId) {
+      // Capture before reassigning `next` — the reassignment discards the
+      // narrowing the guard just established.
+      const deltaTurnId = next.turnId;
+      if (delta && deltaTurnId) {
         next = { ...next, assistantText: next.assistantText + delta };
-        events.push({ type: "assistant.delta", turnId: next.turnId, text: delta });
+        events.push({ type: "assistant.delta", turnId: deltaTurnId, text: delta });
       }
       break;
     }
