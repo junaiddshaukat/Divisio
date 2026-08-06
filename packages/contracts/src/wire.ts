@@ -24,6 +24,10 @@ export interface CommandPayloads {
   "provider.detect": Record<string, never>;
   "thread.handoff": { threadId: string; toProvider: string; title?: string };
   /** Paths are relative to the thread's working directory (lane root or project). */
+  "terminal.open": { threadId: string; cols: number; rows: number };
+  "terminal.input": { sessionId: string; data: string };
+  "terminal.resize": { sessionId: string; cols: number; rows: number };
+  "terminal.close": { sessionId: string };
   "file.tree": { threadId: string; path?: string };
   "file.read": { threadId: string; path: string };
   "file.write": { threadId: string; path: string; content: string };
@@ -120,6 +124,10 @@ export interface CommandResults {
   };
   "provider.detect": { providers: ProviderView[] };
   "thread.handoff": { thread: ThreadView; summary: string };
+  "terminal.open": { sessionId: string };
+  "terminal.input": Record<string, never>;
+  "terminal.resize": Record<string, never>;
+  "terminal.close": Record<string, never>;
   "file.tree": { entries: FileTreeEntry[]; path: string };
   "file.read": { path: string; content: string; size: number; binary: boolean };
   "file.write": { path: string };
@@ -213,6 +221,23 @@ export interface DeltaFrame {
   text: string;
 }
 
+/**
+ * Terminal output. Like assistant deltas this is a transport-only frame: it is
+ * high-frequency, and replaying a shell session from an append-only log is
+ * neither useful nor affordable.
+ */
+export interface TerminalFrame {
+  t: "term";
+  sessionId: string;
+  data: string;
+}
+
+export interface TerminalExitFrame {
+  t: "term.exit";
+  sessionId: string;
+  exitCode: number;
+}
+
 export interface ReadyFrame {
   t: "ready";
   protocol: string;
@@ -226,7 +251,14 @@ export interface SubFrame {
 }
 
 export type ClientFrame = ReqFrame | SubFrame;
-export type ServerFrame = ResFrame | ErrFrame | EvtFrame | DeltaFrame | ReadyFrame;
+export type ServerFrame =
+  | ResFrame
+  | ErrFrame
+  | EvtFrame
+  | DeltaFrame
+  | TerminalFrame
+  | TerminalExitFrame
+  | ReadyFrame;
 
 /* ---------------------------------- errors --------------------------------- */
 

@@ -1283,3 +1283,37 @@ button.btn.secondary {
 .dark .hljs-number, .dark .hljs-symbol, .dark .hljs-attr { color: #fbbf24; }
 .dark .hljs-title, .dark .hljs-name, .dark .hljs-section, .dark .hljs-title\.function_ { color: #60a5fa; }
 .dark .hljs-built_in, .dark .hljs-class .hljs-title { color: #22d3ee; }
+
+/* -------------------------------- terminal -------------------------------- */
+
+.terminal-dock {
+  flex-shrink: 0;
+  height: min(320px, 40vh);
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+  min-height: 0;
+}
+.terminal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.terminal-head .section-label { padding: 0; }
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+}
+.terminal-loading {
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+/* xterm sets its own background; keep it on our surface token. */
+.terminal-host .xterm-viewport { background: transparent !important; }

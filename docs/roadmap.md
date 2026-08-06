@@ -76,7 +76,7 @@ attention. Phase 2 is complete.
 | Provider handoff | Continue thread context on another adapter |
 | Desktop shell | Tauri wraps local web + daemon sidecar; artifact &lt; 150 MB |
 | Pairing / LAN | Token-gated remote client over local network or Tailscale |
-| Terminals panel | Keep live processes visible beside chat |
+| Terminals panel | Keep live processes visible beside chat — done, docked under the transcript |
 
 **Exit criteria**
 

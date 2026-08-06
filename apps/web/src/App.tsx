@@ -32,6 +32,10 @@ import { PairingPanel } from "./components/PairingPanel.tsx";
  * spinner. Fast start and an instant editor, instead of trading one for the other.
  */
 const loadFilePane = () => import("./components/FilePane.tsx");
+// xterm carries its own CSS and addons; same reasoning as the editor.
+const TerminalPane = lazy(() =>
+  import("./components/TerminalPane.tsx").then((m) => ({ default: m.TerminalPane })),
+);
 const FilePane = lazy(() => loadFilePane().then((m) => ({ default: m.FilePane })));
 
 let editorPrefetched = false;
@@ -145,6 +149,7 @@ export function App() {
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [pairing, setPairing] = useState<PairingStatus | null>(null);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   /** Sidebar is an overlay below tablet width; this drives it. */
   const [navOpen, setNavOpen] = useState(false);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
@@ -573,6 +578,33 @@ export function App() {
     }
   }, []);
 
+  const terminalApi = useMemo(
+    () => ({
+      open: async (cols: number, rows: number) => {
+        const client = clientRef.current;
+        if (!client || !activeIdRef.current) throw new Error("not connected");
+        const res = await client.send("terminal.open", {
+          threadId: activeIdRef.current,
+          cols,
+          rows,
+        });
+        return res.sessionId;
+      },
+      input: (sessionId: string, data: string) => {
+        void clientRef.current?.send("terminal.input", { sessionId, data }).catch(() => undefined);
+      },
+      resize: (sessionId: string, cols: number, rows: number) => {
+        void clientRef.current?.send("terminal.resize", { sessionId, cols, rows }).catch(() => undefined);
+      },
+      close: (sessionId: string) => {
+        void clientRef.current?.send("terminal.close", { sessionId }).catch(() => undefined);
+      },
+      subscribe: (sessionId: string, onData: (d: string) => void, onExit: (c: number) => void) =>
+        clientRef.current?.onTerminal(sessionId, { data: onData, exit: onExit }) ?? (() => {}),
+    }),
+    [],
+  );
+
   const openPairing = async () => {
     const client = clientRef.current;
     if (!client) return;
@@ -693,6 +725,13 @@ export function App() {
               <button className="icon" aria-pressed={filesOpen} onClick={() => setFilesOpen((v) => !v)}>
                 {filesOpen ? "Hide files" : "Files"}
               </button>
+              <button
+                className="icon"
+                aria-pressed={terminalOpen}
+                onClick={() => setTerminalOpen((v) => !v)}
+              >
+                Terminal
+              </button>
               <HandoffMenu
                 current={activeThread.provider}
                 providers={providers}
@@ -732,6 +771,21 @@ export function App() {
             {error && <div className="banner">{error}</div>}
             {pendingApproval && (
               <ApprovalBar pending={pendingApproval} onRespond={(d) => void respondApproval(d)} />
+            )}
+            {terminalOpen && (
+              <Suspense fallback={<div className="terminal-dock terminal-loading">Starting terminal…</div>}>
+                <div className="terminal-dock">
+                  <div className="terminal-head">
+                    <span className="section-label">Terminal</span>
+                    <button className="icon" onClick={() => setTerminalOpen(false)} title="Close terminal">
+                      ✕
+                    </button>
+                  </div>
+                  {/* Keyed by thread: switching threads must not leave a shell
+                      attached to the previous working directory. */}
+                  <TerminalPane key={activeThread.id} dark={dark} {...terminalApi} />
+                </div>
+              </Suspense>
             )}
             <Composer
               busy={!!activeTurn}

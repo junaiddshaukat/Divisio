@@ -544,6 +544,11 @@ export class Orchestrator {
    * Files resolve against the thread's working directory, so a lane-bound
    * thread browses its own worktree rather than the primary checkout.
    */
+  /** Public because terminals resolve the same directory the agent works in. */
+  workdirForThread(threadId: string): string {
+    return this.rootForThread(threadId);
+  }
+
   private rootForThread(threadId: string): string {
     const thread = this.store.getThread(threadId);
     if (!thread) throw new CommandError("not_found", `no such thread: ${threadId}`);

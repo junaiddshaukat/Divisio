@@ -19,6 +19,7 @@ function fakeWs(threads: string[] = []): ServerWebSocket<SocketData> & { sent: S
       pending: new Map(),
       timer: null,
       catchUp: false,
+    terminals: new Set<string>(),
     } satisfies SocketData,
     send(data: string) {
       sent.push(JSON.parse(data) as ServerFrame);

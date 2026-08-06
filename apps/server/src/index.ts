@@ -8,6 +8,8 @@ import { Auth } from "./auth.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { EventStore } from "./store/log.ts";
 import { WsHub, type SocketData } from "./ws.ts";
+import { TerminalManager, terminalsAvailable } from "./terminal/pty.ts";
+import { newId as newTerminalId } from "@divisio/shared/ids";
 import { PairingStore } from "./pairing/store.ts";
 import { InsecureBindError, reachableAddresses, resolveNetwork, type NetworkConfig } from "./pairing/network.ts";
 import { dirname, join, normalize } from "node:path";
@@ -89,6 +91,60 @@ const pairingControls = {
 const orchestrator = new Orchestrator(store, registry, hub, pairingControls);
 hub.attach(orchestrator);
 
+/**
+ * Terminals are owned by the socket that opened them, not by the thread, so
+ * they are handled here rather than in the orchestrator: a shell is a live
+ * attachment to one client, not shared state derived from the event log.
+ */
+const terminals = new TerminalManager({
+  onData: (sessionId, data) => hub.terminalData(sessionId, data),
+  onExit: (sessionId, exitCode) => hub.terminalExit(sessionId, exitCode),
+});
+
+hub.onSocketGone = (sessionId) => terminals.get(sessionId)?.kill();
+
+hub.terminals = async (ws, cmd, payload) => {
+  switch (cmd) {
+    case "terminal.open": {
+      const p = payload as { threadId: string; cols: number; rows: number };
+      if (!terminalsAvailable()) {
+        throw new Error("terminals are unavailable on this machine (node-pty could not load)");
+      }
+      const thread = store.getThread(p.threadId);
+      if (!thread) throw new Error(`no such thread: ${p.threadId}`);
+      // Same working directory the agent uses, so the shell and the agent see
+      // the same tree — a lane-bound thread gets its worktree.
+      const cwd = orchestrator.workdirForThread(p.threadId);
+      const sessionId = newTerminalId("ses");
+      terminals.open(sessionId, p.threadId, cwd, p.cols, p.rows);
+      ws.data.terminals.add(sessionId);
+      return { sessionId };
+    }
+    case "terminal.input": {
+      const p = payload as { sessionId: string; data: string };
+      // Ownership check: a socket may only write to a shell it opened.
+      if (!ws.data.terminals.has(p.sessionId)) throw new Error("unknown terminal session");
+      terminals.get(p.sessionId)?.write(p.data);
+      return {};
+    }
+    case "terminal.resize": {
+      const p = payload as { sessionId: string; cols: number; rows: number };
+      if (!ws.data.terminals.has(p.sessionId)) throw new Error("unknown terminal session");
+      terminals.get(p.sessionId)?.resize(p.cols, p.rows);
+      return {};
+    }
+    case "terminal.close": {
+      const p = payload as { sessionId: string };
+      if (!ws.data.terminals.has(p.sessionId)) throw new Error("unknown terminal session");
+      terminals.get(p.sessionId)?.kill();
+      ws.data.terminals.delete(p.sessionId);
+      return {};
+    }
+    default:
+      throw new Error(`unknown terminal command: ${cmd}`);
+  }
+};
+
 const server = Bun.serve<SocketData>({
   port,
   // Explicit, and never a fallback: resolveNetwork throws rather than quietly
@@ -137,6 +193,7 @@ const server = Bun.serve<SocketData>({
           pending: new Map(),
           timer: null,
           catchUp: false,
+          terminals: new Set<string>(),
         } satisfies SocketData,
         // Do NOT set Sec-WebSocket-Protocol here. Bun echoes the negotiated
         // subprotocol itself; setting it too emits the header twice and strict
@@ -263,6 +320,7 @@ if (remote) {
 
 async function shutdown(signal: string) {
   log.info("shutting down", { signal });
+  terminals.closeAll();
   await orchestrator.shutdown();
   store.close();
   pairing.close();

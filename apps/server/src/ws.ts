@@ -27,6 +27,8 @@ export interface SocketData {
   pending: Map<string, { threadId: string; text: string }>;
   timer: ReturnType<typeof setTimeout> | null;
   catchUp: boolean;
+  /** Terminals opened by this socket, closed when it goes away. */
+  terminals: Set<string>;
 }
 
 export interface WsHubOptions {
@@ -47,6 +49,10 @@ export class WsHub {
   }
 
   private orchestrator!: Orchestrator;
+  /** Installed by the daemon; handles terminal.* with the owning socket. */
+  terminals:
+    | ((ws: ServerWebSocket<SocketData>, cmd: string, payload: unknown) => Promise<unknown>)
+    | null = null;
   attach(orchestrator: Orchestrator) {
     this.orchestrator = orchestrator;
   }
@@ -76,8 +82,13 @@ export class WsHub {
 
   close(ws: ServerWebSocket<SocketData>) {
     if (ws.data.timer) clearTimeout(ws.data.timer);
+    // A shell outlives its socket otherwise, holding a process per refresh.
+    for (const sessionId of ws.data.terminals) this.onSocketGone?.(sessionId);
     this.clients.delete(ws);
   }
+
+  /** Set by the daemon so a closed socket takes its terminals with it. */
+  onSocketGone: ((sessionId: string) => void) | null = null;
 
   /* ------------------------------ broadcasting ----------------------------- */
 
@@ -126,6 +137,25 @@ export class WsHub {
     ws.data.pending.clear();
   }
 
+  /**
+   * Terminal output goes only to the socket that owns the session. Unlike
+   * domain events, a shell is not shared state — another client watching a
+   * thread has no business seeing keystrokes typed into it.
+   */
+  terminalData(sessionId: string, data: string) {
+    for (const ws of this.clients) {
+      if (ws.data.terminals.has(sessionId)) this.send(ws, { t: "term", sessionId, data });
+    }
+  }
+
+  terminalExit(sessionId: string, exitCode: number) {
+    for (const ws of this.clients) {
+      if (!ws.data.terminals.has(sessionId)) continue;
+      ws.data.terminals.delete(sessionId);
+      this.send(ws, { t: "term.exit", sessionId, exitCode });
+    }
+  }
+
   private send(ws: ServerWebSocket<SocketData>, frame: ServerFrame) {
     try {
       ws.send(JSON.stringify(frame));
@@ -159,6 +189,19 @@ export class WsHub {
     // Resume is handled here, not in the orchestrator: it is a transport concern.
     if (frame.cmd === "session.resume") {
       this.resume(ws, frame.id, frame.payload as { since: number; threads: string[] });
+      return;
+    }
+
+    // Terminal commands need the socket, since a shell belongs to one client
+    // rather than to the thread.
+    if (frame.cmd.startsWith("terminal.")) {
+      try {
+        const payload = await this.terminals!(ws, frame.cmd, frame.payload);
+        this.send(ws, { t: "res", id: frame.id, payload: payload as never });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.send(ws, { t: "err", id: frame.id, code: "internal", message, retryable: false });
+      }
       return;
     }
 

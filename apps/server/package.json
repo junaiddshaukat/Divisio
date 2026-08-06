@@ -10,6 +10,7 @@
   "dependencies": {
     "@divisio/adapters": "workspace:*",
     "@divisio/contracts": "workspace:*",
-    "@divisio/shared": "workspace:*"
+    "@divisio/shared": "workspace:*",
+    "node-pty": "^1.1.0"
   }
 }

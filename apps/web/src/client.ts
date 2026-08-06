@@ -17,6 +17,8 @@ import type {
 
 export type ConnectionState = "connecting" | "open" | "closed";
 
+type TerminalSink = { data(chunk: string): void; exit(code: number): void };
+
 interface Handlers {
   onEvent(event: DomainEvent): void;
   onDelta(threadId: string, turnId: string, text: string): void;
@@ -37,6 +39,8 @@ export class Client {
   private seq = 0;
   private threads: string[] = [];
   private retry = 0;
+  /** Terminal output is routed per session rather than broadcast. */
+  private readonly terminalSinks = new Map<string, TerminalSink>();
   private closedByUser = false;
 
   constructor(
@@ -104,6 +108,14 @@ export class Client {
         this.handlers.onDelta(frame.threadId, frame.turnId, frame.text);
         return;
 
+      case "term":
+        this.terminalSinks.get(frame.sessionId)?.data(frame.data);
+        return;
+
+      case "term.exit":
+        this.terminalSinks.get(frame.sessionId)?.exit(frame.exitCode);
+        return;
+
       case "res": {
         const p = this.pending.get(frame.id);
         if (p) {
@@ -159,6 +171,11 @@ export class Client {
         if (this.pending.delete(id)) reject(new Error(`${cmd} timed out`));
       }, 30_000);
     });
+  }
+
+  onTerminal(sessionId: string, sink: TerminalSink): () => void {
+    this.terminalSinks.set(sessionId, sink);
+    return () => this.terminalSinks.delete(sessionId);
   }
 
   close() {

@@ -101,6 +101,15 @@ the thread's working directory — its lane worktree when the thread has one. Se
 
 Loaded lazily so the editor's weight is paid only by users who open it.
 
+## Terminal
+
+A pty-backed terminal docks under the transcript, sharing the thread's working
+directory so the shell and the agent see the same tree. Output is a
+transport-only frame like assistant deltas — replaying a shell session from an
+append-only log is neither useful nor affordable — and is delivered only to the
+socket that opened it, since a shell is a live attachment rather than shared
+state.
+
 ## Out of MVP chrome
 
 - Marketing “Upgrade to Pro” blocks — omit, or replace with GitHub connect later
