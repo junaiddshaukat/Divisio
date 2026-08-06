@@ -12,6 +12,11 @@ import {
   isGitRepo,
   loadLaneConfig,
   removeWorktree,
+  commitAll,
+  compareUrl,
+  defaultBaseBranch,
+  getRemote,
+  parseGitHubSlug,
 } from "./worktree.ts";
 
 /**
@@ -182,5 +187,57 @@ describe("ports and config", () => {
     expect(config.carryOver).toEqual([".env.test"]);
     expect(config.setup).toBe("echo hi");
     expect(config.portEnv).toEqual(["APP_PORT"]);
+  });
+});
+
+describe("delivery", () => {
+  test("parses owner/repo from both remote URL forms", () => {
+    expect(parseGitHubSlug("git@github.com:acme/widgets.git")).toBe("acme/widgets");
+    expect(parseGitHubSlug("https://github.com/acme/widgets.git")).toBe("acme/widgets");
+    expect(parseGitHubSlug("https://github.com/acme/widgets")).toBe("acme/widgets");
+    // Anything unrecognised degrades to "no compare link" rather than a wrong one.
+    expect(parseGitHubSlug("git@gitlab.com:acme/widgets.git")).toBeNull();
+    expect(parseGitHubSlug("https://example.com/acme/widgets.git")).toBeNull();
+  });
+
+  test("compare URL encodes branch names containing slashes", () => {
+    const url = compareUrl("acme/widgets", "main", "divisio/add-search");
+    expect(url).toContain("acme/widgets/compare/main...divisio%2Fadd-search");
+    expect(url).toContain("expand=1");
+  });
+
+  test("no remote is reported rather than assumed", async () => {
+    const branch = await allocateBranch(primary, "noremote");
+    const created = await createWorktree(primary, "prj_1", "lane_1", branch, "HEAD");
+    expect(await getRemote(created.root)).toBeNull();
+  });
+
+  test("remote is read from the lane worktree", async () => {
+    await git(primary, ["remote", "add", "origin", "git@github.com:acme/widgets.git"]);
+    const branch = await allocateBranch(primary, "withremote");
+    const created = await createWorktree(primary, "prj_1", "lane_1", branch, "HEAD");
+
+    const remote = await getRemote(created.root);
+    expect(remote?.name).toBe("origin");
+    expect(remote?.slug).toBe("acme/widgets");
+  });
+
+  test("commitAll records the lane's work and clears the dirty flag", async () => {
+    const branch = await allocateBranch(primary, "commit");
+    const created = await createWorktree(primary, "prj_1", "lane_1", branch, "HEAD");
+    await writeFile(join(created.root, "app.txt"), "agent work\n");
+    expect(await isDirty(created.root)).toBe(true);
+
+    const result = await commitAll(created.root, "agent: update app");
+    expect(result.ok).toBe(true);
+    expect(await isDirty(created.root)).toBe(false);
+    expect(await git(created.root, ["log", "-1", "--pretty=%s"])).toBe("agent: update app");
+  });
+
+  test("default base branch falls back when the remote has no HEAD ref", async () => {
+    await git(primary, ["remote", "add", "origin", "git@github.com:acme/widgets.git"]);
+    const branch = await allocateBranch(primary, "base");
+    const created = await createWorktree(primary, "prj_1", "lane_1", branch, "HEAD");
+    expect(await defaultBaseBranch(created.root, "origin")).toBe("main");
   });
 });

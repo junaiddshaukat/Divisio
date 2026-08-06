@@ -24,6 +24,12 @@ export interface CommandPayloads {
   "lane.list": { projectId?: string };
   "lane.archive": { laneId: string; deleteBranch: boolean; force: boolean };
   "lane.diff": { laneId: string };
+  /**
+   * `commitMessage` is required only when the lane has uncommitted work. A PR
+   * cannot be opened from an unrecorded working tree, and silently committing
+   * on the user's behalf would be worse than asking.
+   */
+  "lane.openPr": { laneId: string; title: string; body: string; commitMessage?: string };
 }
 
 export type CommandName = keyof CommandPayloads;
@@ -101,6 +107,22 @@ export interface CommandResults {
   "lane.list": { lanes: LaneView[] };
   "lane.archive": { lane: LaneView };
   "lane.diff": { files: DiffFileEntry[]; patch: string | null; status: "ready" | "skipped" | "error" };
+  "lane.openPr": PrResult;
+}
+
+/**
+ * Opening a PR degrades in stages rather than failing outright: create it with
+ * `gh` when that is available and authenticated, otherwise push and hand back a
+ * compare URL, otherwise report exactly which step failed.
+ */
+export interface PrResult {
+  status: "created" | "pushed" | "needs_commit" | "error";
+  /** Set when `gh` created the PR. */
+  url: string | null;
+  /** Set when we pushed but could not create the PR — open this in a browser. */
+  compareUrl: string | null;
+  branch: string;
+  detail: string | null;
 }
 
 /* ---------------------------------- frames --------------------------------- */

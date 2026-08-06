@@ -149,7 +149,7 @@ New event types, all at `v: 1`, following the [ADR 0004](../adr/0004-event-sourc
 | `lane.list` | Board data |
 | `lane.archive` | `{ laneId, deleteBranch, force }` — `force` required when dirty |
 | `lane.diff` | Lane branch against its recorded base |
-| `lane.openPr` | `{ laneId, title, body }` |
+| `lane.openPr` | `{ laneId, title, body, commitMessage? }` — `commitMessage` is required only when the lane is dirty; the daemon never commits unasked |
 
 ## Non-git projects
 
@@ -168,6 +168,7 @@ Single-lane only. Lane creation returns a clear reason rather than a generic fai
 | W-7 | Checkpoint diff works identically inside a lane and in the primary checkout |
 | W-8 | Lane creation beyond the concurrency ceiling queues instead of spawning |
 | W-9 | A PR opens from a finished lane without `gh` being mandatory |
+| W-10 | A dirty lane reports `needs_commit` rather than committing on the user's behalf |
 
 ## Open questions
 

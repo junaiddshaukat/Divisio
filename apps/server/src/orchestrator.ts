@@ -18,10 +18,17 @@ import type { EventStore } from "./store/log.ts";
 import {
   allocateBranch,
   allocatePort,
+  commitAll,
+  compareUrl,
   copyCarryOver,
+  createPrWithGh,
   createWorktree,
+  defaultBaseBranch,
   diffLane,
+  getRemote,
+  hasGh,
   headSha,
+  pushBranch,
   isDirty,
   isGitRepo,
   laneRoot,
@@ -102,6 +109,8 @@ export class Orchestrator {
         return await this.archiveLane(payload);
       case "lane.diff":
         return await this.laneDiff(payload);
+      case "lane.openPr":
+        return await this.openPr(payload);
       default:
         throw new CommandError("unknown_command", `unknown command: ${cmd}`);
     }
@@ -371,6 +380,79 @@ export class Orchestrator {
     }
     const result = await diffLane(lane.root, lane.baseSha);
     return { files: result.files, patch: result.patch, status: result.status };
+  }
+
+  /**
+   * Opens a pull request for a lane, degrading in stages: commit if asked,
+   * push, then create the PR with `gh` when it is available and authenticated.
+   * Each stage reports what happened rather than failing the whole flow, so a
+   * user without `gh` still gets a working compare link.
+   */
+  private async openPr(p: CommandPayloads["lane.openPr"]): Promise<CommandResults["lane.openPr"]> {
+    const lane = this.store.getLane(p.laneId);
+    if (!lane) throw new CommandError("not_found", `no such lane: ${p.laneId}`);
+    if (lane.status === "archived") {
+      throw new CommandError("invalid_payload", "lane is archived");
+    }
+
+    const base = { branch: lane.branch, url: null, compareUrl: null };
+
+    if (await isDirty(lane.root)) {
+      if (!p.commitMessage?.trim()) {
+        // A PR cannot come from an unrecorded tree, and committing on the
+        // user's behalf without being asked is not ours to decide.
+        return { ...base, status: "needs_commit", detail: "lane has uncommitted changes" };
+      }
+      const committed = await commitAll(lane.root, p.commitMessage.trim());
+      if (!committed.ok) {
+        return { ...base, status: "error", detail: committed.detail ?? "commit failed" };
+      }
+    }
+
+    const remote = await getRemote(lane.root);
+    if (!remote) {
+      return { ...base, status: "error", detail: "no git remote configured for this repository" };
+    }
+
+    const pushed = await pushBranch(lane.root, remote.name, lane.branch);
+    if (!pushed.ok) {
+      return { ...base, status: "error", detail: pushed.detail ?? "push failed" };
+    }
+
+    const targetBranch = await defaultBaseBranch(lane.root, remote.name);
+    const compare = remote.slug ? compareUrl(remote.slug, targetBranch, lane.branch) : null;
+
+    // `gh` only understands GitHub remotes. Calling it on anything else fails
+    // with a vendor error that tells the user nothing useful, so decide from
+    // the remote we already parsed.
+    if (!remote.slug) {
+      return {
+        ...base,
+        status: "pushed",
+        detail: `pushed to ${remote.name}; open the pull request in your git host`,
+      };
+    }
+
+    if (!(await hasGh())) {
+      return {
+        ...base,
+        status: "pushed",
+        compareUrl: compare,
+        detail: "gh not available — open the compare link to finish the pull request",
+      };
+    }
+
+    const pr = await createPrWithGh(lane.root, targetBranch, p.title, p.body);
+    if (!pr.ok) {
+      return {
+        ...base,
+        status: "pushed",
+        compareUrl: compare,
+        detail: pr.detail ?? "gh pr create failed",
+      };
+    }
+
+    return { ...base, status: "created", url: pr.url ?? null, compareUrl: compare, detail: null };
   }
 
   private async detect(): Promise<CommandResults["provider.detect"]> {

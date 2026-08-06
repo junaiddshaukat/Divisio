@@ -3,6 +3,7 @@ import type {
   DiffFileEntry,
   DomainEvent,
   LaneView,
+  PrResult,
   MessageView,
   PermissionMode,
   ProjectView,
@@ -115,6 +116,22 @@ export function App() {
       status: lane.status,
     });
   }, []);
+
+  const openLanePr = useCallback(
+    async (laneId: string, title: string, commitMessage?: string): Promise<PrResult> => {
+      const client = clientRef.current;
+      if (!client) throw new Error("not connected");
+      const result = await client.send("lane.openPr", {
+        laneId,
+        title,
+        body: "Opened from Divisio.",
+        ...(commitMessage ? { commitMessage } : {}),
+      });
+      await refresh(client);
+      return result;
+    },
+    [],
+  );
 
   const archiveLane = useCallback(async (laneId: string, deleteBranch: boolean, force: boolean) => {
     const client = clientRef.current;
@@ -492,6 +509,7 @@ export function App() {
           onCreate={createLane}
           onArchive={archiveLane}
           onDiff={(laneId) => void showLaneDiff(laneId)}
+          onOpenPr={openLanePr}
           onClose={() => setLaneBoard(false)}
         />
       )}

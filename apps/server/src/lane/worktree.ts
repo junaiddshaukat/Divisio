@@ -301,3 +301,98 @@ export async function headSha(projectRoot: string): Promise<string | null> {
   const r = await git(projectRoot, ["rev-parse", "--verify", "HEAD"]);
   return r.code === 0 ? r.stdout : null;
 }
+
+/* ------------------------------ delivery ---------------------------------- */
+
+export interface RemoteInfo {
+  name: string;
+  url: string;
+  /** `owner/repo` when the remote is recognisably GitHub. */
+  slug: string | null;
+}
+
+/**
+ * Parses `owner/repo` out of a remote URL.
+ * Handles the SSH and HTTPS forms; anything else yields a null slug, which
+ * degrades to "pushed, no compare link" rather than a wrong URL.
+ */
+export function parseGitHubSlug(url: string): string | null {
+  const ssh = url.match(/^git@github\.com:(.+?)(?:\.git)?$/);
+  if (ssh?.[1]) return ssh[1];
+  const https = url.match(/^https?:\/\/(?:[^@]+@)?github\.com\/(.+?)(?:\.git)?\/?$/);
+  if (https?.[1]) return https[1];
+  return null;
+}
+
+export async function getRemote(root: string): Promise<RemoteInfo | null> {
+  const name = await git(root, ["remote"]);
+  if (name.code !== 0 || !name.stdout) return null;
+  const first = name.stdout.split("\n")[0]?.trim();
+  if (!first) return null;
+  const url = await git(root, ["remote", "get-url", first]);
+  if (url.code !== 0 || !url.stdout) return null;
+  return { name: first, url: url.stdout, slug: parseGitHubSlug(url.stdout) };
+}
+
+/** Commits everything in the lane. Only reached after the caller supplied a message. */
+export async function commitAll(root: string, message: string): Promise<{ ok: boolean; detail?: string }> {
+  const add = await git(root, ["add", "-A"]);
+  if (add.code !== 0) return { ok: false, detail: add.stderr || "git add failed" };
+  const commit = await git(root, ["commit", "-m", message]);
+  if (commit.code !== 0) return { ok: false, detail: commit.stderr || commit.stdout || "git commit failed" };
+  return { ok: true };
+}
+
+export async function pushBranch(root: string, remote: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
+  const push = await git(root, ["push", "-u", remote, branch]);
+  if (push.code !== 0) return { ok: false, detail: push.stderr || "git push failed" };
+  return { ok: true };
+}
+
+/** `gh` is optional. Its absence degrades the flow, never breaks it. */
+export async function hasGh(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["gh", "auth", "status"], { stdout: "pipe", stderr: "pipe" });
+    return (await proc.exited) === 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function createPrWithGh(
+  root: string,
+  base: string,
+  title: string,
+  body: string,
+): Promise<{ ok: boolean; url?: string; detail?: string }> {
+  // gh uses the user's own credentials; Divisio never sees or proxies them.
+  const proc = Bun.spawn(["gh", "pr", "create", "--base", base, "--title", title, "--body", body], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "ignore",
+  });
+  const stdout = (await new Response(proc.stdout).text()).trim();
+  const stderr = (await new Response(proc.stderr).text()).trim();
+  if ((await proc.exited) !== 0) return { ok: false, detail: stderr || "gh pr create failed" };
+  const url = stdout.split("\n").find((l) => l.startsWith("http"))?.trim();
+  return { ok: true, ...(url ? { url } : {}) };
+}
+
+export function compareUrl(slug: string, base: string, branch: string): string {
+  return `https://github.com/${slug}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}?expand=1`;
+}
+
+/** Branch the lane should target: the remote's default branch when known. */
+export async function defaultBaseBranch(root: string, remote: string): Promise<string> {
+  const symbolic = await git(root, ["symbolic-ref", "--quiet", `refs/remotes/${remote}/HEAD`]);
+  if (symbolic.code === 0 && symbolic.stdout) {
+    const name = symbolic.stdout.split("/").pop();
+    if (name) return name;
+  }
+  for (const candidate of ["main", "master"]) {
+    const exists = await git(root, ["rev-parse", "--verify", "--quiet", `refs/remotes/${remote}/${candidate}`]);
+    if (exists.code === 0) return candidate;
+  }
+  return "main";
+}

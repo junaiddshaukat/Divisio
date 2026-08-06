@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { LaneView, ProjectView, ThreadView } from "@divisio/contracts";
+import type { LaneView, PrResult, ProjectView, ThreadView } from "@divisio/contracts";
 
 interface Props {
   lanes: LaneView[];
@@ -9,6 +9,7 @@ interface Props {
   onCreate(projectId: string, title: string): Promise<void>;
   onArchive(laneId: string, deleteBranch: boolean, force: boolean): Promise<void>;
   onDiff(laneId: string): void;
+  onOpenPr(laneId: string, title: string, commitMessage?: string): Promise<PrResult>;
   onClose(): void;
 }
 
@@ -27,11 +28,36 @@ const STATUS_DOT: Record<LaneView["status"], string> = {
   archived: "",
 };
 
-export function LaneBoard({ lanes, projects, threads, busy, onCreate, onArchive, onDiff, onClose }: Props) {
+export function LaneBoard({ lanes, projects, threads, busy, onCreate, onArchive, onDiff, onOpenPr, onClose }: Props) {
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  /** Lane awaiting a commit message before its PR can be opened. */
+  const [needsCommit, setNeedsCommit] = useState<string | null>(null);
+  const [commitMessage, setCommitMessage] = useState("");
+  const [prResult, setPrResult] = useState<{ laneId: string; result: PrResult } | null>(null);
+  const [prBusy, setPrBusy] = useState<string | null>(null);
+
+  const openPr = async (lane: LaneView, message?: string) => {
+    setError(null);
+    setPrBusy(lane.id);
+    try {
+      const result = await onOpenPr(lane.id, lane.title, message);
+      if (result.status === "needs_commit") {
+        // Not a failure — the lane simply has work that is not recorded yet.
+        setNeedsCommit(lane.id);
+      } else {
+        setNeedsCommit(null);
+        setCommitMessage("");
+        setPrResult({ laneId: lane.id, result });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPrBusy(null);
+    }
+  };
 
   const active = lanes.filter((l) => l.status !== "archived");
 
@@ -114,11 +140,56 @@ export function LaneBoard({ lanes, projects, threads, busy, onCreate, onArchive,
                     </span>
                   )}
                   {lane.status === "error" && lane.detail && <span className="hint danger">{lane.detail}</span>}
+
+                  {needsCommit === lane.id && (
+                    <div className="lane-commit">
+                      <input
+                        autoFocus
+                        placeholder="Commit message for this lane's work"
+                        value={commitMessage}
+                        onChange={(e) => setCommitMessage(e.target.value)}
+                        onKeyDown={(e) =>
+                          e.key === "Enter" && commitMessage.trim() && void openPr(lane, commitMessage)
+                        }
+                      />
+                      <button
+                        className="btn"
+                        disabled={!commitMessage.trim() || prBusy === lane.id}
+                        onClick={() => void openPr(lane, commitMessage)}
+                      >
+                        Commit &amp; open PR
+                      </button>
+                    </div>
+                  )}
+
+                  {prResult?.laneId === lane.id && (
+                    <span className={`hint${prResult.result.status === "error" ? " danger" : ""}`}>
+                      {prResult.result.url ? (
+                        <a href={prResult.result.url} target="_blank" rel="noreferrer">
+                          Pull request opened
+                        </a>
+                      ) : prResult.result.compareUrl ? (
+                        <a href={prResult.result.compareUrl} target="_blank" rel="noreferrer">
+                          Pushed — open the compare page to finish
+                        </a>
+                      ) : (
+                        prResult.result.detail
+                      )}
+                      {prResult.result.url && prResult.result.detail ? ` · ${prResult.result.detail}` : ""}
+                    </span>
+                  )}
                 </div>
 
                 <div className="lane-actions">
                   <button className="icon" onClick={() => onDiff(lane.id)} disabled={lane.status !== "ready"}>
                     Diff
+                  </button>
+                  <button
+                    className="icon"
+                    disabled={lane.status !== "ready" || prBusy === lane.id}
+                    onClick={() => void openPr(lane)}
+                  >
+                    {prBusy === lane.id ? "Opening…" : "Open PR"}
                   </button>
                   {confirming === lane.id ? (
                     <>

@@ -59,12 +59,12 @@ Also delivered beyond the original bar: the five handshake checks with all eight
 **Exit criteria**
 
 - [x] Two agents on one repo in separate worktrees without file clobber
-- [ ] Create PR from a finished lane
+- [x] Create PR from a finished lane
 - [x] Archive/cleanup worktree from the UI
 
-Lane creation, carry-over, per-lane ports, setup, diff, concurrency cap, and
-archive safety are implemented and covered by tests. Outstanding for the phase:
-one-click PR, and a richer session board.
+Lane creation, carry-over, per-lane ports, setup, diff, concurrency cap,
+archive safety, and pull requests are implemented and covered by tests.
+Outstanding for the phase: a richer session board view.
 
 ## Phase 3 — Handoff + remote
 
