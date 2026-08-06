@@ -50,7 +50,7 @@ Also delivered beyond the original bar: the five handshake checks with all eight
 
 | Deliverable | Notes |
 | --- | --- |
-| Worktrees | One isolated tree/branch per parallel lane |
+| Worktrees | One isolated tree/branch per parallel lane — see [worktrees spec](specs/worktrees.md) |
 | Session board | See running / waiting / done lanes |
 | Diff review | Aggregate changes; stage/commit helpers |
 | Open PR | `gh` or equivalent from the UI |

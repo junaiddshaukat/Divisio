@@ -34,6 +34,7 @@ Serious agentic work is scattered across terminals, vendor apps, and tabs. Divis
 | [Design system](docs/design/README.md) | Tokens, type, layout |
 | [Design tokens](docs/design/tokens.md) | Light + dark color tokens |
 | [MVP spec](docs/specs/mvp.md) | Phase 0–1 acceptance criteria |
+| [Worktrees](docs/specs/worktrees.md) | Phase 2 parallel lanes |
 | [Glossary](docs/specs/glossary.md) | Shared vocabulary |
 | [ADRs](docs/adr/) | Locked decisions |
 
