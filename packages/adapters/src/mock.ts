@@ -10,7 +10,7 @@ import {
 } from "@divisio/contracts";
 
 /**
- * In-process mock peer for tests — the T3-style fixture pattern.
+ * In-process mock peer for tests — fixture pattern, not a live CLI.
  *
  * No live CLI. Turns complete from scripted events so orchestration,
  * interrupt → stopping, approvals, and capability wiring can be asserted
@@ -58,8 +58,11 @@ const BASE_CAPABILITIES: AdapterCapabilities = {
 };
 
 export class MockPeerAdapter implements ProviderAdapter {
-  readonly kind = "mock";
-  readonly label = "Mock Peer";
+  // Typed as string, not as the literal "mock": ProviderAdapter declares
+  // `kind: ProviderKind` (a string), and inferring a literal here stops tests
+  // from subclassing this to get a second provider.
+  readonly kind: string = "mock";
+  readonly label: string = "Mock Peer";
   readonly tier = "stream" as const;
   readonly capabilities: AdapterCapabilities;
   readonly contractVersion = ADAPTER_CONTRACT_VERSION;

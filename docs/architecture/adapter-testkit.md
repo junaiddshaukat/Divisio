@@ -28,4 +28,4 @@ Vendor CLIs change constantly. Adapters must be testable **without** a live bina
 2. Keep process I/O in the adapter class
 3. Register golden fixtures before merging the adapter
 
-Pattern inspired by T3 Code's mock ACP peer tests — fixtures, not live processes.
+Fixture-based ACP peer tests — not live processes.

@@ -1,7 +1,7 @@
 /**
  * Adapter testkit — replay recorded vendor output against normalizers.
  *
- * Pattern borrowed from T3's mock-peer tests: CI never talks to a live CLI.
+ * Replay fixtures for CI — never talks to a live CLI.
  * Fixtures are NDJSON (one vendor event per line), matching Claude's
  * `--output-format stream-json` and similar stream-tier transports.
  */
