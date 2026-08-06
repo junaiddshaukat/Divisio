@@ -1,4 +1,5 @@
-import { AdapterRegistry } from "@divisio/adapters";
+import { AdapterRegistry, loadCommunityAdapters } from "@divisio/adapters";
+import { createAdapters as createCommunityAdapters } from "@divisio/community-adapters";
 import { DEFAULT_PORT, ENV_PREFIX, PRODUCT_NAME, WS_SUBPROTOCOL } from "@divisio/shared/brand";
 import { newId } from "@divisio/shared/ids";
 import { logger } from "@divisio/shared/log";
@@ -66,6 +67,13 @@ const auth = new Auth({
   allowedHosts: remote ? [network.hostname, ...reachableAddresses()] : [],
 });
 const registry = new AdapterRegistry();
+// Reference community pack is statically imported so `bun build --compile`
+// embeds it (dynamic import of a workspace package fails under /$bunfs).
+for (const adapter of createCommunityAdapters()) {
+  registry.register(adapter, { source: "community" });
+}
+// Optional extra modules: userdata/adapters.json + DIVISIO_ADAPTER_MODULES.
+await loadCommunityAdapters({ registry, builtinModules: [] });
 const hub = new WsHub(store, newId("env"));
 const pairingControls = {
   status: () => ({
@@ -119,7 +127,7 @@ hub.terminals = async (ws, cmd, payload) => {
     case "terminal.open": {
       const p = payload as { threadId: string; cols: number; rows: number };
       if (!terminalsAvailable()) {
-        throw new Error("terminals are unavailable on this machine (node-pty could not load)");
+        throw new Error("terminals are unavailable on this machine (need Bun ≥1.3.5 with PTY support)");
       }
       const thread = store.getThread(p.threadId);
       if (!thread) throw new Error(`no such thread: ${p.threadId}`);

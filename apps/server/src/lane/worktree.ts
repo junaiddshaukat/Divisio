@@ -243,6 +243,62 @@ export async function isDirty(root: string): Promise<boolean> {
   return r.code === 0 && r.stdout.length > 0;
 }
 
+/** Short branch name for the checkout, or null when detached / not a repo. */
+export async function currentBranch(root: string): Promise<string | null> {
+  const r = await git(root, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (r.code !== 0 || !r.stdout || r.stdout === "HEAD") return null;
+  return r.stdout;
+}
+
+/**
+ * Live working-tree changes vs HEAD (tracked) plus untracked paths from
+ * porcelain status. Untracked files appear in the file list; their content is
+ * omitted from the patch until the user stages them.
+ */
+export async function diffWorkingTree(root: string) {
+  if (!(await isGitRepo(root))) {
+    return { files: [] as Array<{ path: string; status: "A" | "M" | "D" | "R" | "?" }>, patch: null, status: "skipped" as const, detail: "not a git repository" };
+  }
+
+  const status = await git(root, ["status", "--porcelain", "-uall"]);
+  if (status.code !== 0) {
+    return { files: [], patch: null, status: "error" as const, detail: status.stderr || "git status failed" };
+  }
+
+  const files = status.stdout
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((line) => parsePorcelainLine(line))
+    .filter((f): f is { path: string; status: "A" | "M" | "D" | "R" | "?" } => !!f);
+
+  const patch = await git(root, ["diff", "HEAD"]);
+  return {
+    files,
+    patch: patch.code === 0 ? patch.stdout || null : null,
+    status: "ready" as const,
+  };
+}
+
+/** Parses one `git status --porcelain` line into a DiffFileEntry-shaped row. */
+export function parsePorcelainLine(line: string): { path: string; status: "A" | "M" | "D" | "R" | "?" } | null {
+  if (line.length < 4) return null;
+  const x = line[0] ?? " ";
+  const y = line[1] ?? " ";
+  let path = line.slice(3);
+  // Rename: "R  old -> new" or "RM old -> new"
+  if (path.includes(" -> ")) {
+    path = path.split(" -> ").pop()!.trim();
+  }
+  if (!path) return null;
+
+  if (x === "?" && y === "?") return { path, status: "A" };
+  if (x === "A" || y === "A") return { path, status: "A" };
+  if (x === "D" || y === "D") return { path, status: "D" };
+  if (x === "R" || y === "R") return { path, status: "R" };
+  if (x === "M" || y === "M" || x === "U" || y === "U") return { path, status: "M" };
+  return { path, status: "?" };
+}
+
 /**
  * Removes the worktree. Git's refusal on a dirty tree is kept as the default;
  * `force` is only reachable after an explicit, informed confirmation upstream.
@@ -335,9 +391,15 @@ export async function getRemote(root: string): Promise<RemoteInfo | null> {
   return { name: first, url: url.stdout, slug: parseGitHubSlug(url.stdout) };
 }
 
-/** Commits everything in the lane. Only reached after the caller supplied a message. */
-export async function commitAll(root: string, message: string): Promise<{ ok: boolean; detail?: string }> {
-  const add = await git(root, ["add", "-A"]);
+/** Commits selected paths, or everything when `paths` is omitted / empty. */
+export async function commitAll(
+  root: string,
+  message: string,
+  paths?: string[],
+): Promise<{ ok: boolean; detail?: string }> {
+  const addArgs =
+    paths && paths.length > 0 ? ["add", "--", ...paths] : ["add", "-A"];
+  const add = await git(root, addArgs);
   if (add.code !== 0) return { ok: false, detail: add.stderr || "git add failed" };
   const commit = await git(root, ["commit", "-m", message]);
   if (commit.code !== 0) return { ok: false, detail: commit.stderr || commit.stdout || "git commit failed" };

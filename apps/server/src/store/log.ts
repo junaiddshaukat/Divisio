@@ -139,6 +139,7 @@ export class EventStore {
     // Existing DBs created before permission_mode / turn_diffs — additive migrate.
     this.ensureColumn("threads", "permission_mode", "text not null default 'supervised'");
     this.ensureColumn("threads", "lane_id", "text");
+    this.ensureColumn("threads", "model", "text");
   }
 
   private ensureColumn(table: string, column: string, ddl: string) {
@@ -271,6 +272,13 @@ export class EventStore {
           .run(p.mode, e.at, p.threadId);
         break;
       }
+      case "thread.provider_set": {
+        const p = e.payload as { threadId: string; provider: string; model: string | null };
+        this.db
+          .query("update threads set provider = ?, model = ?, updated_at = ? where id = ?")
+          .run(p.provider, p.model, e.at, p.threadId);
+        break;
+      }
       case "turn.diff_ready": {
         const p = e.payload as {
           threadId: string;
@@ -387,11 +395,12 @@ export class EventStore {
           status: string;
           permission_mode: string;
           lane_id: string | null;
+          model: string | null;
           updated_at: string;
         },
         []
       >(
-        "select id, project_id, title, provider, status, permission_mode, lane_id, updated_at from threads order by updated_at desc",
+        "select id, project_id, title, provider, status, permission_mode, lane_id, model, updated_at from threads order by updated_at desc",
       )
       .all()
       .map((r) => ({
@@ -405,6 +414,7 @@ export class EventStore {
         status: toSessionStatus(r.status),
         laneId: r.lane_id,
         permissionMode: toPermissionMode(r.permission_mode),
+        model: r.model ?? null,
         updatedAt: r.updated_at,
       }));
   }

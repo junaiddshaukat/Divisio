@@ -1,58 +1,56 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureSpawnHelperExecutable, terminalsAvailable } from "./pty.ts";
-
-/**
- * node-pty exec's a `spawn-helper` binary to allocate the pty. Some package
- * managers extract it without the executable bit, and the resulting failure is
- * a bare "posix_spawnp failed" that says nothing about the cause. Repairing it
- * at startup is cheaper than every user debugging that message.
- */
-
-let dir: string;
-
-afterEach(() => {
-  if (dir) rmSync(dir, { recursive: true, force: true });
-});
-
-describe("spawn-helper repair", () => {
-  test("adds the executable bit when it is missing", () => {
-    dir = mkdtempSync(join(tmpdir(), "divisio-pty-"));
-    const platformDir = join(dir, "prebuilds", `${process.platform}-${process.arch}`);
-    mkdirSync(platformDir, { recursive: true });
-    const helper = join(platformDir, "spawn-helper");
-    writeFileSync(helper, "#!/bin/sh\n");
-    chmodSync(helper, 0o644);
-
-    expect(statSync(helper).mode & 0o111).toBe(0);
-    ensureSpawnHelperExecutable(dir);
-    expect(statSync(helper).mode & 0o111).not.toBe(0);
-  });
-
-  test("leaves an already-executable helper alone", () => {
-    dir = mkdtempSync(join(tmpdir(), "divisio-pty-"));
-    const platformDir = join(dir, "prebuilds", `${process.platform}-${process.arch}`);
-    mkdirSync(platformDir, { recursive: true });
-    const helper = join(platformDir, "spawn-helper");
-    writeFileSync(helper, "#!/bin/sh\n");
-    chmodSync(helper, 0o755);
-
-    ensureSpawnHelperExecutable(dir);
-    expect(statSync(helper).mode & 0o111).not.toBe(0);
-  });
-
-  test("a missing helper is not an error", () => {
-    dir = mkdtempSync(join(tmpdir(), "divisio-pty-"));
-    expect(() => ensureSpawnHelperExecutable(dir)).not.toThrow();
-  });
-});
+import { TerminalManager, terminalsAvailable } from "./pty.ts";
 
 describe("availability", () => {
   test("reports whether terminals can run, without throwing", () => {
-    // A terminal is a feature, not a dependency: failing to load node-pty must
+    // A terminal is a feature, not a dependency: missing PTY support must
     // never take the daemon down.
     expect(typeof terminalsAvailable()).toBe("boolean");
   });
+
+  test("Bun ≥1.3.5 exposes Terminal on this machine", () => {
+    expect(terminalsAvailable()).toBe(true);
+  });
+});
+
+describe("Bun.Terminal session", () => {
+  const managers: TerminalManager[] = [];
+  afterAll(() => {
+    for (const m of managers) m.closeAll();
+  });
+
+  test("opens a shell PTY and receives output", async () => {
+    if (!terminalsAvailable()) return;
+
+    const cwd = mkdtempSync(join(tmpdir(), "divisio-term-"));
+    const chunks: string[] = [];
+    let exitCode: number | null = null;
+
+    const manager = new TerminalManager({
+      onData: (_id, data) => chunks.push(data),
+      onExit: (_id, code) => {
+        exitCode = code;
+      },
+    });
+    managers.push(manager);
+
+    manager.open("ses_test", "thr_test", cwd, 80, 24);
+    // Drive a one-shot command; login shells vary, so write after a tick.
+    await Bun.sleep(200);
+    manager.get("ses_test")?.write("printf 'pty-ok\\n'; exit\n");
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (chunks.join("").includes("pty-ok") || exitCode !== null) break;
+      await Bun.sleep(50);
+    }
+
+    manager.get("ses_test")?.kill();
+    rmSync(cwd, { recursive: true, force: true });
+
+    expect(chunks.join("")).toContain("pty-ok");
+  }, 10_000);
 });

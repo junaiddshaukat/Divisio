@@ -3,6 +3,7 @@ import {
   type CommandName,
   type CommandPayloads,
   type CommandResults,
+  type DiffFileEntry,
   type DomainEvent,
   type NewEvent,
   type PermissionMode,
@@ -13,9 +14,12 @@ import type { AdapterRegistry } from "@divisio/adapters";
 import { newId } from "@divisio/shared/ids";
 import { logger } from "@divisio/shared/log";
 import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { captureCheckpoint, checkpointRef, diffCheckpoints, restoreCheckpoint } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
 import { seedPrompt, summaryPrompt, type PacketContext } from "./handoff.ts";
+import { validateModel } from "./models.ts";
 import {
   FileTooLargeError,
   PathEscapeError,
@@ -24,6 +28,7 @@ import {
   writeTextFile,
 } from "./files/service.ts";
 import type { PairingStatus } from "@divisio/contracts";
+import { probeToolchain } from "./toolchain.ts";
 
 /** What the orchestrator needs from pairing, so it does not depend on transport. */
 export interface PairingControls {
@@ -50,8 +55,10 @@ import {
   copyCarryOver,
   createPrWithGh,
   createWorktree,
+  currentBranch,
   defaultBaseBranch,
   diffLane,
+  diffWorkingTree,
   getRemote,
   hasGh,
   headSha,
@@ -96,9 +103,10 @@ interface LiveSession {
 /** Commands the orchestrator routes. Kept beside the switch that handles them. */
 export const ORCHESTRATOR_COMMANDS = [
   "project.create", "project.list",
-  "thread.create", "thread.snapshot", "thread.setPermissionMode", "thread.handoff",
+  "thread.create", "thread.snapshot", "thread.setPermissionMode", "thread.setProvider", "thread.handoff",
+  "thread.commit", "thread.diff", "thread.gitStatus", "thread.push",
   "turn.send", "turn.interrupt", "turn.diff", "turn.restore",
-  "approval.respond", "provider.detect",
+  "approval.respond", "provider.detect", "toolchain.status",
   "lane.create", "lane.list", "lane.archive", "lane.diff", "lane.openPr",
   "file.tree", "file.read", "file.write",
   "pairing.status", "pairing.createToken", "pairing.revoke", "pairing.revokeAll",
@@ -133,6 +141,8 @@ export class Orchestrator {
         return this.snapshot(payload);
       case "thread.setPermissionMode":
         return this.setPermissionMode(payload);
+      case "thread.setProvider":
+        return await this.setProvider(payload);
       case "turn.send":
         return await this.sendTurn(payload);
       case "turn.interrupt":
@@ -141,10 +151,20 @@ export class Orchestrator {
         return await this.turnDiff(payload);
       case "turn.restore":
         return await this.restoreTurn(payload);
+      case "thread.commit":
+        return await this.commitThread(payload);
+      case "thread.diff":
+        return await this.threadDiff(payload);
+      case "thread.gitStatus":
+        return await this.threadGitStatus(payload);
+      case "thread.push":
+        return await this.pushThread(payload);
       case "approval.respond":
         return await this.respondApproval(payload);
       case "provider.detect":
         return await this.detect();
+      case "toolchain.status":
+        return await probeToolchain();
       case "lane.create":
         return await this.createLane(payload);
       case "lane.list":
@@ -259,10 +279,70 @@ export class Orchestrator {
     return { thread };
   }
 
+  /**
+   * Empty-thread provider/model switch. History requires `thread.handoff` for
+   * provider changes so context is summarized by the source agent.
+   */
+  private async setProvider(
+    p: CommandPayloads["thread.setProvider"],
+  ): Promise<CommandResults["thread.setProvider"]> {
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    if (!this.registry.get(p.provider)) {
+      throw new CommandError("provider_unavailable", `no adapter for provider: ${p.provider}`);
+    }
+
+    const providerChanging = p.provider !== thread.provider;
+    const messages = this.store.listMessages(p.threadId);
+    if (providerChanging && messages.length > 0) {
+      throw new CommandError(
+        "invalid_payload",
+        "thread has history — use Hand off to change provider (costs one turn on the current agent)",
+      );
+    }
+
+    const live = this.sessions.get(p.threadId);
+    if (live?.activeTurnId) {
+      throw new CommandError("session_busy", "cannot change provider while a turn is running");
+    }
+    if (live && providerChanging) {
+      const adapter = this.registry.get(live.provider);
+      try {
+        await adapter?.stopSession(live.handle);
+      } catch {
+        /* best-effort teardown */
+      }
+      this.sessions.delete(p.threadId);
+    }
+
+    // Validated here rather than at the adapter: every adapter would otherwise
+    // have to repeat it, and a community adapter would be trusted to remember.
+    const model = p.model === undefined ? thread.model : validateModel(p.model);
+
+    this.commit([
+      {
+        type: "thread.provider_set",
+        threadId: p.threadId,
+        payload: { threadId: p.threadId, provider: p.provider, model },
+      },
+    ]);
+    const updated = this.store.getThread(p.threadId);
+    if (!updated) throw new CommandError("internal", "thread projection missing after provider set");
+    return { thread: updated };
+  }
+
   private snapshot(p: CommandPayloads["thread.snapshot"]): CommandResults["thread.snapshot"] {
     const thread = this.store.getThread(p.threadId);
     if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
-    return { thread, messages: this.store.listMessages(p.threadId), seq: this.store.head() };
+    return {
+      thread,
+      messages: this.store.listMessages(p.threadId),
+      seq: this.store.head(),
+      diffs: this.store.listTurnDiffs(p.threadId).map((d) => ({
+        turnId: d.turnId,
+        files: d.files as DiffFileEntry[],
+      })),
+    };
   }
 
   /* --------------------------------- lanes -------------------------------- */
@@ -549,6 +629,128 @@ export class Orchestrator {
     };
   }
 
+  /**
+   * Stages and commits the thread's working tree. Message is required — we
+   * never invent one. Used by the Changes pane Commit action.
+   */
+  private async commitThread(p: CommandPayloads["thread.commit"]): Promise<CommandResults["thread.commit"]> {
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    if (this.sessions.get(p.threadId)?.activeTurnId) {
+      throw new CommandError("session_busy", "stop the running turn before committing");
+    }
+    const message = p.message.trim();
+    if (!message) throw new CommandError("invalid_payload", "commit message is required");
+
+    const root = this.workdirFor(thread);
+    if (!(await isGitRepo(root))) {
+      return { ok: false, detail: "working directory is not a git repository" };
+    }
+    if (!(await isDirty(root))) {
+      return { ok: false, detail: "nothing to commit" };
+    }
+    return commitAll(root, message, p.paths);
+  }
+
+  private async threadGitStatus(
+    p: CommandPayloads["thread.gitStatus"],
+  ): Promise<CommandResults["thread.gitStatus"]> {
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    const root = this.workdirFor(thread);
+    if (!(await isGitRepo(root))) {
+      return { dirty: false, branch: null, laneId: thread.laneId, hasRemote: false, git: false };
+    }
+    const remote = await getRemote(root);
+    return {
+      dirty: await isDirty(root),
+      branch: await currentBranch(root),
+      laneId: thread.laneId,
+      hasRemote: !!remote,
+      git: true,
+    };
+  }
+
+  private async threadDiff(p: CommandPayloads["thread.diff"]): Promise<CommandResults["thread.diff"]> {
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    const root = this.workdirFor(thread);
+    const branch = (await isGitRepo(root)) ? await currentBranch(root) : null;
+
+    if (p.scope === "working") {
+      const result = await diffWorkingTree(root);
+      return {
+        scope: "working",
+        files: result.files,
+        patch: result.patch,
+        status: result.status,
+        branch,
+        ...(result.detail ? { detail: result.detail } : {}),
+      };
+    }
+
+    // Branch scope: lane vs its base, otherwise vs the remote default branch.
+    if (thread.laneId) {
+      const lane = this.store.getLane(thread.laneId);
+      if (!lane || lane.status === "archived") {
+        return { scope: "branch", files: [], patch: null, status: "skipped", branch, detail: "lane unavailable" };
+      }
+      const result = await diffLane(lane.root, lane.baseSha);
+      return {
+        scope: "branch",
+        files: result.files,
+        patch: result.patch,
+        status: result.status,
+        branch: lane.branch,
+        ...(result.detail ? { detail: result.detail } : {}),
+      };
+    }
+
+    if (!(await isGitRepo(root))) {
+      return { scope: "branch", files: [], patch: null, status: "skipped", branch, detail: "not a git repository" };
+    }
+    const remote = await getRemote(root);
+    if (!remote) {
+      return { scope: "branch", files: [], patch: null, status: "skipped", branch, detail: "no git remote" };
+    }
+    const base = await defaultBaseBranch(root, remote.name);
+    const result = await diffLane(root, `${remote.name}/${base}`);
+    return {
+      scope: "branch",
+      files: result.files,
+      patch: result.patch,
+      status: result.status,
+      branch,
+      ...(result.detail ? { detail: result.detail } : {}),
+    };
+  }
+
+  private async pushThread(p: CommandPayloads["thread.push"]): Promise<CommandResults["thread.push"]> {
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    if (this.sessions.get(p.threadId)?.activeTurnId) {
+      throw new CommandError("session_busy", "stop the running turn before pushing");
+    }
+    const root = this.workdirFor(thread);
+    if (!(await isGitRepo(root))) {
+      return { ok: false, detail: "working directory is not a git repository" };
+    }
+    if (await isDirty(root)) {
+      return { ok: false, detail: "commit changes before pushing" };
+    }
+    const branch = await currentBranch(root);
+    if (!branch) return { ok: false, detail: "detached HEAD — check out a branch to push" };
+    const remote = await getRemote(root);
+    if (!remote) return { ok: false, detail: "no git remote configured" };
+
+    const pushed = await pushBranch(root, remote.name, branch);
+    if (!pushed.ok) return { ok: false, detail: pushed.detail ?? "push failed" };
+
+    const target = await defaultBaseBranch(root, remote.name);
+    const compare = remote.slug ? compareUrl(remote.slug, target, branch) : null;
+    return { ok: true, compareUrl: compare };
+  }
+
   /* --------------------------------- files -------------------------------- */
 
   /**
@@ -713,12 +915,13 @@ export class Orchestrator {
 
   private async detect(): Promise<CommandResults["provider.detect"]> {
     const providers = await Promise.all(
-      this.registry.list().map(async (a) => {
+      this.registry.listEntries().map(async ({ adapter: a, source }) => {
         const d = await a.detect();
         return {
           kind: a.kind,
           label: a.label,
           tier: a.tier,
+          source,
           available: d.available,
           version: d.version,
           detail: d.detail,
@@ -766,20 +969,39 @@ export class Orchestrator {
   }
 
   private async sendTurn(p: CommandPayloads["turn.send"]): Promise<CommandResults["turn.send"]> {
-    const text = p.text.trim();
-    if (!text) throw new CommandError("invalid_payload", "empty message");
+    const images = p.images ?? [];
+    let text = p.text.trim();
+    if (!text && images.length === 0) {
+      throw new CommandError("invalid_payload", "empty message");
+    }
+    if (images.length > 8) {
+      throw new CommandError("invalid_payload", "at most 8 images per turn");
+    }
+
+    // Validate before anything is mutated. Rejecting after `activeTurnId` was
+    // set left the thread permanently busy with no turn behind it.
+    const requestedModel = validateModel(p.model);
 
     const session = await this.ensureSession(p.threadId);
     if (session.activeTurnId) {
       throw new CommandError("session_busy", "a turn is already running on this thread");
     }
 
+    const thread = this.store.getThread(p.threadId);
+    const project = thread ? this.store.getProject(thread.projectId) : null;
+
+    if (images.length > 0) {
+      if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+      const root = this.workdirFor(thread);
+      const saved = await writeTurnImages(root, images);
+      const list = saved.map((rel) => `- ${rel}`).join("\n");
+      const note = `Attached images (saved in the working tree):\n${list}`;
+      text = text ? `${text}\n\n${note}` : note;
+    }
+
     const turnId = newId("trn");
     session.activeTurnId = turnId;
     session.pendingApprovals.clear();
-
-    const thread = this.store.getThread(p.threadId);
-    const project = thread ? this.store.getProject(thread.projectId) : null;
 
     this.commit([
       {
@@ -816,8 +1038,13 @@ export class Orchestrator {
     }
 
     const adapter = this.registry.get(session.provider);
+    const model = (requestedModel ?? validateModel(thread?.model)) ?? undefined;
     try {
-      await adapter!.sendTurn(session.handle, { turnId, text });
+      await adapter!.sendTurn(session.handle, {
+        turnId,
+        text,
+        ...(model ? { model } : {}),
+      });
     } catch (err) {
       session.activeTurnId = null;
       this.commit([
@@ -1133,4 +1360,34 @@ export class Orchestrator {
     }
     this.sessions.clear();
   }
+}
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+async function writeTurnImages(
+  root: string,
+  images: Array<{ name: string; mimeType: string; dataBase64: string }>,
+): Promise<string[]> {
+  const dirRel = join(".divisio", "attachments");
+  await mkdir(join(root, dirRel), { recursive: true });
+  const paths: string[] = [];
+  for (const img of images) {
+    if (!img.mimeType.startsWith("image/")) {
+      throw new CommandError("invalid_payload", `not an image: ${img.mimeType}`);
+    }
+    let buf: Buffer;
+    try {
+      buf = Buffer.from(img.dataBase64, "base64");
+    } catch {
+      throw new CommandError("invalid_payload", "invalid image payload");
+    }
+    if (buf.byteLength === 0 || buf.byteLength > MAX_IMAGE_BYTES) {
+      throw new CommandError("invalid_payload", "image must be between 1 byte and 5 MB");
+    }
+    const safe = (img.name || "image.png").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+    const rel = join(dirRel, `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${safe}`);
+    await writeFile(join(root, rel), buf);
+    paths.push(rel.replace(/\\/g, "/"));
+  }
+  return paths;
 }

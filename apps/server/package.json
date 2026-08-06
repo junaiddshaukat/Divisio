@@ -9,8 +9,8 @@
   },
   "dependencies": {
     "@divisio/adapters": "workspace:*",
+    "@divisio/community-adapters": "workspace:*",
     "@divisio/contracts": "workspace:*",
-    "@divisio/shared": "workspace:*",
-    "node-pty": "^1.1.0"
+    "@divisio/shared": "workspace:*"
   }
 }

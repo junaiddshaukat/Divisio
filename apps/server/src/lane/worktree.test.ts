@@ -17,7 +17,17 @@ import {
   defaultBaseBranch,
   getRemote,
   parseGitHubSlug,
+  parsePorcelainLine,
 } from "./worktree.ts";
+
+describe("parsePorcelainLine", () => {
+  test("maps common status codes", () => {
+    expect(parsePorcelainLine(" M src/a.ts")).toEqual({ path: "src/a.ts", status: "M" });
+    expect(parsePorcelainLine("?? new.ts")).toEqual({ path: "new.ts", status: "A" });
+    expect(parsePorcelainLine("D  gone.ts")).toEqual({ path: "gone.ts", status: "D" });
+    expect(parsePorcelainLine("R  old.ts -> new.ts")).toEqual({ path: "new.ts", status: "R" });
+  });
+});
 
 /**
  * These cover the guarantees the spec is built on. The git plumbing is easy;

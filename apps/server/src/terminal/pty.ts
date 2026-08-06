@@ -1,15 +1,18 @@
-import { chmodSync, existsSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { createRequire } from "node:module";
 import { logger } from "@divisio/shared/log";
 
 const log = logger("terminal");
+const decoder = new TextDecoder();
 
 /**
- * Terminal sessions backed by a real PTY.
+ * Terminal sessions backed by a real PTY via Bun.Terminal.
  *
  * A pipe is not a substitute: without a pty, programs disable colour, refuse to
  * prompt, and buffer their output, so anything interactive appears to hang.
+ *
+ * We intentionally do **not** use `node-pty`. That native addon cannot load from
+ * a `bun build --compile` sidecar (`/$bunfs`), and under older Bun releases its
+ * `onData` path was broken anyway. Bun ≥1.3.5 ships PTY support that works
+ * inside the compiled daemon — see ADR 0008.
  */
 
 export interface PtySession {
@@ -20,68 +23,27 @@ export interface PtySession {
   kill(): void;
 }
 
-type PtyModule = {
-  spawn(
-    file: string,
-    args: string[],
-    options: { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> },
-  ): {
-    onData(cb: (data: string) => void): void;
-    onExit(cb: (e: { exitCode: number; signal?: number }) => void): void;
-    write(data: string): void;
-    resize(cols: number, rows: number): void;
-    kill(signal?: string): void;
-  };
-};
-
-/**
- * node-pty ships `spawn-helper` without the executable bit under some package
- * managers, and node-pty exec's it to allocate the pty. The failure surfaces as
- * a bare "posix_spawnp failed", which says nothing about the cause — so repair
- * it at startup rather than leaving users to decode that.
- */
-export function ensureSpawnHelperExecutable(moduleDir: string): void {
-  const platform = `${process.platform}-${process.arch}`;
-  const helper = join(moduleDir, "prebuilds", platform, "spawn-helper");
-  if (!existsSync(helper)) return;
-  try {
-    const mode = statSync(helper).mode;
-    if ((mode & 0o111) === 0) {
-      chmodSync(helper, 0o755);
-      log.info("made node-pty spawn-helper executable", { helper });
-    }
-  } catch (err) {
-    log.warn("could not adjust spawn-helper permissions", { detail: String(err) });
-  }
-}
-
-let ptyModule: PtyModule | null = null;
-let ptyError: string | null = null;
-
-function loadPty(): PtyModule | null {
-  if (ptyModule || ptyError) return ptyModule;
-  try {
-    const require = createRequire(import.meta.url);
-    const resolved = require.resolve("node-pty");
-    ensureSpawnHelperExecutable(join(resolved, "..", ".."));
-    ptyModule = require("node-pty") as PtyModule;
-    return ptyModule;
-  } catch (err) {
-    // A terminal is a feature, not a dependency of the daemon. Failing to load
-    // it must not take the rest of the app down.
-    ptyError = String(err);
-    log.warn("node-pty unavailable; terminals are disabled", { detail: ptyError });
-    return null;
-  }
-}
-
-export function terminalsAvailable(): boolean {
-  return loadPty() !== null;
-}
-
 export interface PtyCallbacks {
   onData(sessionId: string, data: string): void;
   onExit(sessionId: string, exitCode: number): void;
+}
+
+type BunTerminal = {
+  write(data: string | Uint8Array): number | void;
+  resize(cols: number, rows: number): void;
+  close(): void;
+};
+
+/** True when this Bun build exposes the Terminal / spawn-PTY API. */
+export function terminalsAvailable(): boolean {
+  return typeof Bun !== "undefined" && typeof (Bun as { Terminal?: unknown }).Terminal === "function";
+}
+
+function defaultShell(): string {
+  if (process.platform === "win32") {
+    return process.env["COMSPEC"] || "powershell.exe";
+  }
+  return process.env["SHELL"] || "/bin/bash";
 }
 
 export class TerminalManager {
@@ -90,39 +52,72 @@ export class TerminalManager {
   constructor(private readonly callbacks: PtyCallbacks) {}
 
   open(id: string, threadId: string, cwd: string, cols: number, rows: number): PtySession {
-    const pty = loadPty();
-    if (!pty) throw new Error("terminals are unavailable: node-pty could not be loaded");
+    if (!terminalsAvailable()) {
+      throw new Error("terminals are unavailable: this Bun build has no PTY support (need ≥1.3.5)");
+    }
 
-    const shell = process.env["SHELL"] || (process.platform === "win32" ? "powershell.exe" : "/bin/bash");
-    const proc = pty.spawn(shell, [], {
-      name: "xterm-256color",
-      cols,
-      rows,
+    const shell = defaultShell();
+    // Login shell on POSIX so PATH / rc files match an interactive Terminal.app.
+    const argv = process.platform === "win32" ? [shell] : [shell, "-l"];
+
+    let term: BunTerminal | null = null;
+
+    const proc = Bun.spawn(argv, {
       cwd,
       env: {
-        ...(process.env as Record<string, string>),
-        // Tells programs a capable terminal is present, so they emit colour.
+        ...process.env,
         TERM: "xterm-256color",
         COLORTERM: "truecolor",
       },
+      terminal: {
+        cols: Math.max(1, cols),
+        rows: Math.max(1, rows),
+        name: "xterm-256color",
+        data: (_t, data) => {
+          this.callbacks.onData(id, decoder.decode(data));
+        },
+      },
     });
 
-    proc.onData((data) => this.callbacks.onData(id, data));
-    proc.onExit(({ exitCode }) => {
+    term = proc.terminal as BunTerminal | null;
+    if (!term) {
+      try {
+        proc.kill();
+      } catch {
+        /* ignore */
+      }
+      throw new Error("terminals are unavailable: Bun.spawn did not attach a PTY");
+    }
+
+    void proc.exited.then((code) => {
       this.sessions.delete(id);
-      this.callbacks.onExit(id, exitCode);
+      try {
+        term?.close();
+      } catch {
+        /* already closed */
+      }
+      this.callbacks.onExit(id, code ?? 1);
     });
 
     const session: PtySession = {
       id,
       threadId,
-      write: (data) => proc.write(data),
-      resize: (c, r) => proc.resize(Math.max(1, c), Math.max(1, r)),
+      write: (data) => {
+        term?.write(data);
+      },
+      resize: (c, r) => {
+        term?.resize(Math.max(1, c), Math.max(1, r));
+      },
       kill: () => {
         try {
           proc.kill();
         } catch {
-          // Already gone; onExit has run or will.
+          // Already gone; exited has run or will.
+        }
+        try {
+          term?.close();
+        } catch {
+          /* ignore */
         }
       },
     };
