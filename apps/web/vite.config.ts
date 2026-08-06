@@ -17,6 +17,10 @@ export default defineConfig({
   },
   envPrefix: ["VITE_", "TAURI_"],
   build: {
+    // Size is tracked, not gated (ADR 0006 revision). Monaco is legitimately
+    // large and lives in its own lazily-loaded chunk; warning about it on every
+    // build trains people to ignore build output.
+    chunkSizeWarningLimit: 5000,
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,

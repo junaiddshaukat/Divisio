@@ -10,7 +10,8 @@ import { EventStore } from "./store/log.ts";
 import { WsHub, type SocketData } from "./ws.ts";
 import { PairingStore } from "./pairing/store.ts";
 import { InsecureBindError, reachableAddresses, resolveNetwork, type NetworkConfig } from "./pairing/network.ts";
-import { join } from "node:path";
+import { dirname, join, normalize } from "node:path";
+import { existsSync } from "node:fs";
 import { userDataDir } from "@divisio/shared/paths";
 
 const log = logger("daemon");
@@ -148,7 +149,7 @@ const server = Bun.serve<SocketData>({
       return ok ? undefined : new Response("upgrade failed", { status: 400 });
     }
 
-    return new Response("not found", { status: 404 });
+    return serveWebUi(url);
   },
 
   websocket: {
@@ -163,6 +164,51 @@ const server = Bun.serve<SocketData>({
     },
   },
 });
+
+/**
+ * Static hosting for the built web UI.
+ *
+ * A paired device opens the daemon's own address, so the daemon has to serve
+ * the app — without this, a pairing link lands on a 404 and remote access is
+ * unusable no matter how well the token exchange works.
+ *
+ * In dev the UI is served by Vite instead, and this returns a pointer there.
+ */
+const WEB_DIST = (() => {
+  for (const candidate of [
+    // Packaged: dist sits beside the daemon binary's resources.
+    join(dirname(process.execPath), "..", "Resources", "web"),
+    // Dev / source checkout.
+    join(import.meta.dir, "..", "..", "web", "dist"),
+  ]) {
+    if (existsSync(join(candidate, "index.html"))) return candidate;
+  }
+  return null;
+})();
+
+async function serveWebUi(url: URL): Promise<Response> {
+  if (!WEB_DIST) {
+    return new Response(
+      "The web UI is not built. Run `bun run build`, or use the Vite dev server.",
+      { status: 404, headers: { "content-type": "text/plain" } },
+    );
+  }
+
+  // Confine to the dist directory: this path comes from the network.
+  const requested = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
+  const candidate = join(WEB_DIST, requested);
+  if (!candidate.startsWith(WEB_DIST)) return new Response("forbidden", { status: 403 });
+
+  const file = Bun.file(candidate);
+  if (requested !== "/" && (await file.exists())) {
+    return new Response(file);
+  }
+  // Single-page app: unknown paths fall back to the shell so the client router
+  // (and the #pair fragment) still work.
+  return new Response(Bun.file(join(WEB_DIST, "index.html")), {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
 
 async function handlePair(req: Request): Promise<Response> {
   const host = req.headers.get("host");

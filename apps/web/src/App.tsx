@@ -24,13 +24,25 @@ import { HandoffMenu } from "./components/HandoffMenu.tsx";
 import { PairingPanel } from "./components/PairingPanel.tsx";
 
 /**
- * Monaco is ~4 MB. Loading it eagerly would delay first paint for every user,
- * including those who never open a file, and would be felt hardest on a paired
- * device over LAN. It arrives only when the file pane is first opened.
+ * Monaco is ~4 MB, so it is not in the first-paint bundle — that would delay
+ * startup for everyone, including users who never open a file.
+ *
+ * It is not merely deferred, though: once the app is idle the chunk is fetched
+ * in the background, so opening the file pane is instant rather than showing a
+ * spinner. Fast start and an instant editor, instead of trading one for the other.
  */
-const FilePane = lazy(() =>
-  import("./components/FilePane.tsx").then((m) => ({ default: m.FilePane })),
-);
+const loadFilePane = () => import("./components/FilePane.tsx");
+const FilePane = lazy(() => loadFilePane().then((m) => ({ default: m.FilePane })));
+
+let editorPrefetched = false;
+function prefetchEditor() {
+  if (editorPrefetched) return;
+  editorPrefetched = true;
+  void loadFilePane().catch(() => {
+    // A failed prefetch is not a failure: opening the pane retries for real.
+    editorPrefetched = false;
+  });
+}
 import { TurnDiff } from "./components/TurnDiff.tsx";
 
 const PORT = 4577;
@@ -44,6 +56,49 @@ function readTokenSync(): string {
   const fromEnv = import.meta.env["VITE_DIVISIO_TOKEN"];
   if (typeof fromEnv === "string" && fromEnv.length > 0) return fromEnv;
   return localStorage.getItem("divisio:token") ?? "";
+}
+
+/**
+ * Reads a single-use pairing token out of the URL fragment.
+ *
+ * The fragment, not the query string: a fragment is never sent to the server in
+ * a request line and does not land in access logs or Referer headers.
+ */
+function pairingTokenFromUrl(): string | null {
+  const hash = window.location.hash;
+  if (!hash.startsWith("#pair=")) return null;
+  const token = hash.slice("#pair=".length).trim();
+  return token.length > 0 ? token : null;
+}
+
+/**
+ * Exchanges a pairing token for this device's own session token.
+ *
+ * Called once, on load, before any WebSocket attempt. The pairing token is
+ * consumed by the daemon on first use, so the fragment is cleared immediately
+ * whether the exchange succeeded or not — leaving a spent credential in the
+ * address bar invites it into screenshots and browser history.
+ */
+async function redeemPairing(token: string): Promise<string> {
+  const label = `${navigator.platform || "device"} · ${new Date().toLocaleDateString()}`;
+  try {
+    const res = await fetch("/pair", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token, label }),
+    });
+    if (!res.ok) {
+      throw new Error(
+        res.status === 401
+          ? "That pairing link has already been used or has expired. Generate a new one on the host."
+          : `Pairing failed (${res.status}).`,
+      );
+    }
+    const body = (await res.json()) as { token: string };
+    return body.token;
+  } finally {
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
 }
 
 async function readTokenAsync(): Promise<string> {
@@ -65,6 +120,11 @@ async function readTokenAsync(): Promise<string> {
 
 export function App() {
   const [token, setToken] = useState(readTokenSync);
+  // Non-null only while a pairing link is being exchanged on first load.
+  const [pairingToken] = useState(pairingTokenFromUrl);
+  const [pairingState, setPairingState] = useState<"idle" | "pairing" | "failed">(
+    pairingTokenFromUrl() ? "pairing" : "idle",
+  );
   const [bootError, setBootError] = useState<string | null>(null);
   const [state, setState] = useState<ConnectionState>("connecting");
   const [projects, setProjects] = useState<ProjectView[]>([]);
@@ -85,6 +145,8 @@ export function App() {
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [pairing, setPairing] = useState<PairingStatus | null>(null);
   const [filesOpen, setFilesOpen] = useState(false);
+  /** Sidebar is an overlay below tablet width; this drives it. */
+  const [navOpen, setNavOpen] = useState(false);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
   const [laneBusy, setLaneBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
@@ -322,6 +384,39 @@ export function App() {
     };
   }, [token, onEvent, refresh, openThread]);
 
+  // Redeem a pairing link before anything tries to connect.
+  useEffect(() => {
+    if (!pairingToken) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const sessionToken = await redeemPairing(pairingToken);
+        if (cancelled) return;
+        localStorage.setItem("divisio:token", sessionToken);
+        setToken(sessionToken);
+        setPairingState("idle");
+      } catch (err) {
+        if (cancelled) return;
+        setBootError(err instanceof Error ? err.message : String(err));
+        setPairingState("failed");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pairingToken]);
+
+  // Warm the editor once the app is idle, so the first open has nothing to wait for.
+  useEffect(() => {
+    const idle = window.requestIdleCallback
+      ? window.requestIdleCallback(prefetchEditor, { timeout: 4000 })
+      : window.setTimeout(prefetchEditor, 1500);
+    return () => {
+      if (window.cancelIdleCallback) window.cancelIdleCallback(idle as number);
+      else clearTimeout(idle as number);
+    };
+  }, []);
+
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const sync = () => setDark(document.documentElement.classList.contains("dark"));
@@ -476,7 +571,24 @@ export function App() {
     return res.project;
   };
 
+  if (pairingState === "pairing") {
+    return (
+      <div className="empty">
+        <h1>Pairing this device…</h1>
+        <p>Exchanging the one-time link for a key that belongs to this device.</p>
+      </div>
+    );
+  }
+
   if (!token) {
+    if (pairingState === "failed") {
+      return (
+        <div className="empty">
+          <h1>Pairing failed</h1>
+          <p>{bootError}</p>
+        </div>
+      );
+    }
     if (isTauri()) {
       return (
         <div className="empty">
@@ -515,7 +627,7 @@ export function App() {
   const showFiles = view === "thread" && !!activeThread && filesOpen;
 
   return (
-    <div className={`shell${showFiles ? " shell-files" : ""}`}>
+    <div className={`shell${showFiles ? " shell-files" : ""}`} data-nav={navOpen ? "open" : "closed"}>
       <Sidebar
         projects={projects}
         threads={threads}
@@ -523,17 +635,26 @@ export function App() {
         state={state}
         onOpen={(id) => {
           setView("thread");
+          setNavOpen(false);
           void openThread(id);
         }}
         onNew={() => setDialog(true)}
         onProviders={() => setMatrixOpen(true)}
         onDevices={() => void openPairing()}
-        onLanes={() => setView("board")}
+        onLanes={() => {
+          setView("board");
+          setNavOpen(false);
+        }}
         laneCount={lanes.filter((l) => l.status !== "archived").length}
         view={view}
       />
+      {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}
+
       <main className="main">
         <div className="topbar">
+          <button className="icon nav-toggle" onClick={() => setNavOpen((v) => !v)} aria-label="Menu">
+            ☰
+          </button>
           {view === "board" ? (
             <span className="crumb">
               <strong>Board</strong> — parallel lanes

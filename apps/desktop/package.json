@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "bun run scripts/build-app.ts",
     "tauri": "tauri",
     "build:daemon": "bun run scripts/build-daemon.ts"
   },

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (amends [ADR 0002](0002-typescript-daemon-web.md))
+Accepted, then **relaxed** — see *Revision* below
 
 ## Context
 
@@ -21,3 +21,31 @@ Comparable desktop tools in this category ship around **~150 MB**. Users notice 
 - Platform WebView differences must be tested (macOS/Windows/Linux)
 - Daemon may still ship as a sidecar binary — count it inside the 150 MB budget
 - If budget is breached, cut bundled assets and native deps before switching back to Electron
+
+
+## Revision: size is a metric, not a gate
+
+The 150 MB budget did its job. It forced the runtime decision onto measured
+evidence (ADR 0008) and produced a 66 MB app with the daemon bundled — less
+than half the ceiling.
+
+It has since started pulling the wrong way. Weighing an editor, a language
+server, or a richer surface against megabytes optimises for a number nobody
+downloads twice, at the cost of things users feel constantly.
+
+**Revised position:**
+
+- Packaged size is **tracked and reported**, not enforced. A build is never
+  blocked for being larger
+- **Speed, robustness, and capability come first.** Where they conflict with
+  size, size loses
+- What still matters is *when* bytes are paid. Deferring work off the
+  first-paint path is a latency decision and stays: the editor is prefetched
+  during idle so it opens instantly, rather than being withheld to keep a
+  bundle small
+- The [ADR 0007](0007-performance-release-gates.md) latency budgets remain hard
+  gates. Those measure what a user experiences on every action
+
+Deliberately not reverted: the Tauri shell and the compiled daemon. Both were
+chosen for startup time and for not requiring a runtime on the user's machine,
+which are speed and robustness arguments that hold regardless of size.

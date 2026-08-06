@@ -11,10 +11,10 @@ Divisio must feel immediate in daily use: cold start, thread switch, streaming, 
 | Thread switch | ≤ 100ms to paint cached projection | No full reload |
 | First stream token visible | ≤ 100ms after adapter emits | WS push path |
 | Interrupt acknowledged | ≤ 150ms UI status flip | Adapter may take longer to stop |
-| Packaged desktop install size | **&lt; 150 MB** | See [ADR 0006](../adr/0006-size-budget-tauri.md) |
+| Packaged desktop install size | tracked, not gated | See the revision in [ADR 0006](../adr/0006-size-budget-tauri.md) |
 | Steady streaming CPU | No sustained fan spin from CSS/raf loops | Audit animations |
 
-150 MB is the ceiling, not the goal — prefer smaller.
+Size is reported rather than enforced: speed and capability come first when they conflict with it. What still matters is *when* bytes are paid — keeping them off the first-paint path is a latency decision, not a size one.
 
 ## Known ways this gets slow (avoid)
 

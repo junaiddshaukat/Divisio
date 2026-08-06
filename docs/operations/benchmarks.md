@@ -9,6 +9,10 @@ Measured on macOS arm64, 2026-08-06.
 
 Budget: **< 150 MB** per platform.
 
+Size is now tracked rather than enforced — see the revision in
+[ADR 0006](../adr/0006-size-budget-tauri.md). These numbers exist to make growth
+visible, not to block a build.
+
 | Artifact | Size | Notes |
 | --- | --- | --- |
 | `Divisio.app` | **66 MB** | Shell, web UI, and the bundled daemon |
@@ -37,8 +41,8 @@ users who never open a file do not pay for it.
 
 | What loads | Size | When |
 | --- | --- | --- |
-| App shell (JS + CSS) | **236 KB** | First paint |
-| Monaco + language workers | ~4 MB, split across chunks | First time the file pane opens |
+| App shell (JS + CSS) | **~240 KB** | First paint |
+| Monaco + language workers | ~4 MB, split across chunks | Prefetched during idle, so opening the pane is instant |
 
 Reproduce with `bun run build`, then read `apps/web/dist/index.html` for what is
 referenced eagerly. A jump in the eager figure means something imported the
