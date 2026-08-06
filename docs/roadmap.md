@@ -32,17 +32,17 @@ Also delivered beyond the original bar: the five handshake checks with all eight
 | Deliverable | Notes |
 | --- | --- |
 | Adapters | Claude Code ✓, Codex ✓, Cursor Agent ✓ — [providers](specs/providers.md) |
-| Permissions | Supervised vs full-access modes — [permissions](specs/permissions.md) |
+| Permissions | Supervised vs full-access — wired for mediating adapters (Codex); Claude/Cursor stay CLI-managed |
 | Projects | Directory-rooted workspaces |
-| Checkpoints | Hidden git ref (or equivalent) per turn for diff/restore |
-| Capability matrix UI | Show what each provider supports |
+| Checkpoints | Hidden `refs/divisio/checkpoints/...` per turn; `turn.diff` + UI |
+| Capability matrix UI | Providers panel from `provider.detect` |
 
 **Exit criteria**
 
-- [ ] Switch provider on a project without restarting the app
-- [ ] Approval prompts work for file/shell tools in supervised mode
-- [ ] Diff a turn against pre-turn checkpoint
-- [ ] Documented adapter interface matches implementation
+- [x] Switch provider on a project without restarting the app (new thread / provider select)
+- [x] Approval prompts work for file/shell tools in supervised mode (Codex / mock)
+- [x] Diff a turn against pre-turn checkpoint
+- [x] Documented adapter interface matches implementation
 
 ## Phase 2 — Parallel
 

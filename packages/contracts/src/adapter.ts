@@ -6,7 +6,7 @@
  * a Phase 4 retrofit that does not fit.
  */
 
-import type { SessionStatus } from "./events.ts";
+import type { PermissionMode, SessionStatus } from "./events.ts";
 
 export type ProviderKind = string;
 
@@ -40,6 +40,11 @@ export interface StartSessionInput {
   cwd: string;
   /** Vendor-native session id to resume. Only meaningful if sessionResume. */
   resumeId?: string;
+  /**
+   * Divisio permission mode for this session. Adapters that mediate approvals
+   * honor it; stream-tier print modes ignore it (CLI owns permissions).
+   */
+  permissionMode?: PermissionMode;
 }
 
 export interface SessionHandle {

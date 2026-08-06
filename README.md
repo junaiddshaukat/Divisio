@@ -39,24 +39,45 @@ Serious agentic work is scattered across terminals, vendor apps, and tabs. Divis
 
 ## Status
 
-**Phase 0 complete.** Daemon, event log, WebSocket protocol, Claude Code adapter, and web UI all work end to end. Phase 1 (three adapters, permissions, checkpoints) is next — see [roadmap](docs/roadmap.md).
+**Phase 1 Core MVP complete** for the web+daemon path: three P0 adapters (Claude, Codex, Cursor), supervised/full-access permissions (honest — only mediating adapters), turn checkpoints + diff, and a provider capability matrix. Tauri desktop packaging is still Phase 3. See [roadmap](docs/roadmap.md).
 
 ## Run it
 
-Requires [Bun](https://bun.com) 1.3.1+ and at least one authenticated agent CLI.
+Requires [Bun](https://bun.com) 1.3.1+, [Rust](https://rustup.rs) (desktop only), and at least one authenticated agent CLI.
+
+### Desktop app (recommended)
+
+Opens a native window, starts the daemon for you, and connects automatically — no token paste.
 
 ```bash
 bun install
+bun run dev:desktop
+```
+
+First launch compiles the Tauri shell (a few minutes). Later launches are fast. **Bun must be on your PATH** so the shell can spawn the daemon.
+
+Release build (`.app` / installer):
+
+```bash
+bun run build:desktop
+```
+
+Artifacts land under `apps/desktop/src-tauri/target/release/bundle/`.
+
+### Web + daemon (dev)
+
+```bash
 bun run dev:server    # daemon on 127.0.0.1:4577
 bun run dev:web       # UI on localhost:5173
 ```
 
-The daemon prints the path to its auth token on startup. Paste that token into the UI once — auth is required even on loopback, because localhost is not a trust boundary ([why](docs/architecture/security.md)).
+Paste the token from `~/.divisio/userdata/auth-token` once (browsers cannot read that file). Auth is required even on loopback ([why](docs/architecture/security.md)).
 
 | Path | What it is |
 | --- | --- |
+| `apps/desktop` | Tauri shell — window + daemon supervisor |
 | `apps/server` | Bun daemon: event log, WS API, adapter host |
-| `apps/web` | React UI |
+| `apps/web` | React UI (used by web and desktop) |
 | `packages/contracts` | Events, commands, wire format, adapter interface |
 | `packages/adapters` | Provider adapters |
 | `packages/shared` | Branding, paths, ids, logging |

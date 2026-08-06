@@ -13,6 +13,7 @@
 export const EVENT_VERSIONS = {
   "project.created": 1,
   "thread.created": 1,
+  "thread.permission_mode_set": 1,
   "turn.started": 1,
   "turn.message": 1,
   "turn.completed": 1,
@@ -23,7 +24,11 @@ export const EVENT_VERSIONS = {
   "approval.resolved": 1,
   "tool.started": 1,
   "tool.finished": 1,
+  "checkpoint.captured": 1,
+  "turn.diff_ready": 1,
 } as const;
+
+export type PermissionMode = "supervised" | "full_access";
 
 export type EventType = keyof typeof EVENT_VERSIONS;
 
@@ -39,9 +44,15 @@ export type SessionStatus =
 
 export type TurnRole = "user" | "assistant";
 
+export interface DiffFileEntry {
+  path: string;
+  status: "A" | "M" | "D" | "R" | "?";
+}
+
 export interface EventPayloads {
   "project.created": { projectId: string; name: string; rootPath: string };
   "thread.created": { threadId: string; projectId: string; title: string; provider: string };
+  "thread.permission_mode_set": { threadId: string; mode: PermissionMode };
   "turn.started": { threadId: string; turnId: string; provider: string };
   /** A complete message. Streaming deltas are transport-only and never stored. */
   "turn.message": { threadId: string; turnId: string; role: TurnRole; text: string };
@@ -63,6 +74,22 @@ export interface EventPayloads {
   };
   "tool.started": { threadId: string; turnId: string; toolCallId: string; name: string; input?: string };
   "tool.finished": { threadId: string; turnId: string; toolCallId: string; ok: boolean; output?: string };
+  "checkpoint.captured": {
+    threadId: string;
+    turnId: string;
+    phase: "pre" | "post";
+    ref: string;
+    sha: string | null;
+    status: "ready" | "skipped" | "error";
+    detail?: string;
+  };
+  "turn.diff_ready": {
+    threadId: string;
+    turnId: string;
+    fromRef: string;
+    toRef: string;
+    files: DiffFileEntry[];
+  };
 }
 
 /** An event as stored and as broadcast. `seq` is assigned at append time. */

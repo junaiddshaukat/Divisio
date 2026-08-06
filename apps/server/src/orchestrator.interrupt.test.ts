@@ -30,6 +30,8 @@ describe("interrupt → stopping (mock peer)", () => {
 
   afterEach(async () => {
     await orchestrator?.shutdown();
+    // Let async checkpoint finalize settle before closing the store.
+    await Bun.sleep(50);
     store?.close();
     if (dir) rmSync(dir, { recursive: true, force: true });
   });

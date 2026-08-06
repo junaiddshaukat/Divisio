@@ -5,6 +5,7 @@ import {
   type CommandResults,
   type DomainEvent,
   type NewEvent,
+  type PermissionMode,
   type ProviderRuntimeEvent,
   type SessionHandle,
 } from "@divisio/contracts";
@@ -12,6 +13,7 @@ import type { AdapterRegistry } from "@divisio/adapters";
 import { newId } from "@divisio/shared/ids";
 import { logger } from "@divisio/shared/log";
 import { existsSync } from "node:fs";
+import { captureCheckpoint, checkpointRef, diffCheckpoints } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
 
 const log = logger("orchestrator");
@@ -25,6 +27,8 @@ interface LiveSession {
   handle: SessionHandle;
   provider: string;
   activeTurnId: string | null;
+  /** Pending approvals for the active turn (approvalId → meta). */
+  pendingApprovals: Map<string, { turnId: string }>;
 }
 
 /**
@@ -43,9 +47,6 @@ export class Orchestrator {
   ) {}
 
   async dispatch<C extends CommandName>(cmd: C, payload: CommandPayloads[C]): Promise<CommandResults[C]> {
-    // Routed untyped, cast once at the boundary. Narrowing a generic C inside a
-    // switch does not relate the payload and result types, so per-case casts
-    // just move the same unsoundness around while reading as if they were safe.
     return (await this.route(cmd, payload as never)) as CommandResults[C];
   }
 
@@ -59,10 +60,16 @@ export class Orchestrator {
         return this.createThread(payload);
       case "thread.snapshot":
         return this.snapshot(payload);
+      case "thread.setPermissionMode":
+        return this.setPermissionMode(payload);
       case "turn.send":
         return await this.sendTurn(payload);
       case "turn.interrupt":
         return await this.interrupt(payload);
+      case "turn.diff":
+        return await this.turnDiff(payload);
+      case "approval.respond":
+        return await this.respondApproval(payload);
       case "provider.detect":
         return await this.detect();
       default:
@@ -70,7 +77,6 @@ export class Orchestrator {
     }
   }
 
-  /** Appends and broadcasts in one step so clients never see a gap. */
   private commit(events: NewEvent[]): DomainEvent[] {
     const stored = this.store.append(events);
     this.bus.events(stored);
@@ -107,6 +113,27 @@ export class Orchestrator {
     ]);
     const thread = this.store.getThread(threadId);
     if (!thread) throw new CommandError("internal", "thread projection missing after append");
+    return { thread };
+  }
+
+  private setPermissionMode(
+    p: CommandPayloads["thread.setPermissionMode"],
+  ): CommandResults["thread.setPermissionMode"] {
+    if (!this.store.getThread(p.threadId)) {
+      throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    }
+    if (p.mode !== "supervised" && p.mode !== "full_access") {
+      throw new CommandError("invalid_payload", `invalid permission mode: ${p.mode}`);
+    }
+    this.commit([
+      {
+        type: "thread.permission_mode_set",
+        threadId: p.threadId,
+        payload: { threadId: p.threadId, mode: p.mode },
+      },
+    ]);
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("internal", "thread projection missing after mode set");
     return { thread };
   }
 
@@ -153,11 +180,17 @@ export class Orchestrator {
 
     this.commit([{ type: "session.status", threadId, payload: { threadId, status: "connecting" } }]);
 
-    const handle = await adapter.startSession({ threadId, cwd: project.rootPath }, (event) =>
-      this.onRuntimeEvent(threadId, event),
+    const handle = await adapter.startSession(
+      { threadId, cwd: project.rootPath, permissionMode: thread.permissionMode },
+      (event) => this.onRuntimeEvent(threadId, event),
     );
 
-    const live: LiveSession = { handle, provider: thread.provider, activeTurnId: null };
+    const live: LiveSession = {
+      handle,
+      provider: thread.provider,
+      activeTurnId: null,
+      pendingApprovals: new Map(),
+    };
     this.sessions.set(threadId, live);
     return live;
   }
@@ -173,12 +206,42 @@ export class Orchestrator {
 
     const turnId = newId("trn");
     session.activeTurnId = turnId;
+    session.pendingApprovals.clear();
 
     const thread = this.store.getThread(p.threadId);
+    const project = thread ? this.store.getProject(thread.projectId) : null;
+
     this.commit([
-      { type: "turn.started", threadId: p.threadId, payload: { threadId: p.threadId, turnId, provider: thread?.provider ?? "" } },
-      { type: "turn.message", threadId: p.threadId, payload: { threadId: p.threadId, turnId, role: "user", text } },
+      {
+        type: "turn.started",
+        threadId: p.threadId,
+        payload: { threadId: p.threadId, turnId, provider: thread?.provider ?? "" },
+      },
+      {
+        type: "turn.message",
+        threadId: p.threadId,
+        payload: { threadId: p.threadId, turnId, role: "user", text },
+      },
     ]);
+
+    if (project) {
+      const pre = await captureCheckpoint(project.rootPath, p.threadId, turnId, "pre");
+      this.commit([
+        {
+          type: "checkpoint.captured",
+          threadId: p.threadId,
+          payload: {
+            threadId: p.threadId,
+            turnId,
+            phase: "pre",
+            ref: pre.ref,
+            sha: pre.sha,
+            status: pre.status,
+            ...(pre.detail ? { detail: pre.detail } : {}),
+          },
+        },
+      ]);
+    }
 
     const adapter = this.registry.get(session.provider);
     try {
@@ -191,7 +254,11 @@ export class Orchestrator {
           threadId: p.threadId,
           payload: { threadId: p.threadId, turnId, code: "send_failed", message: String(err) },
         },
-        { type: "session.status", threadId: p.threadId, payload: { threadId: p.threadId, status: "error", detail: String(err) } },
+        {
+          type: "session.status",
+          threadId: p.threadId,
+          payload: { threadId: p.threadId, status: "error", detail: String(err) },
+        },
       ]);
       throw new CommandError("internal", String(err));
     }
@@ -203,7 +270,6 @@ export class Orchestrator {
     const session = this.sessions.get(p.threadId);
     if (!session) throw new CommandError("not_found", `no live session for thread ${p.threadId}`);
 
-    // Explicit turnId: with two clients attached, "the current turn" is ambiguous.
     if (session.activeTurnId !== p.turnId) {
       throw new CommandError("not_found", `turn ${p.turnId} is not running`);
     }
@@ -211,20 +277,112 @@ export class Orchestrator {
     const adapter = this.registry.get(session.provider);
     await adapter!.interruptTurn(session.handle, p.turnId);
     session.activeTurnId = null;
+    session.pendingApprovals.clear();
     this.commit([
       { type: "turn.interrupted", threadId: p.threadId, payload: { threadId: p.threadId, turnId: p.turnId } },
     ]);
     return {};
   }
 
-  /** Adapter events → domain events. Deltas bypass the log by design. */
+  private async respondApproval(
+    p: CommandPayloads["approval.respond"],
+  ): Promise<CommandResults["approval.respond"]> {
+    const session = this.sessions.get(p.threadId);
+    if (!session) throw new CommandError("not_found", `no live session for thread ${p.threadId}`);
+    if (!session.pendingApprovals.has(p.approvalId)) {
+      throw new CommandError("not_found", `no pending approval: ${p.approvalId}`);
+    }
+
+    const adapter = this.registry.get(session.provider);
+    if (!adapter?.respondToApproval) {
+      throw new CommandError("provider_unavailable", "provider does not mediate approvals");
+    }
+
+    session.pendingApprovals.delete(p.approvalId);
+    await adapter.respondToApproval(session.handle, p.approvalId, p.decision);
+    this.commit([
+      {
+        type: "approval.resolved",
+        threadId: p.threadId,
+        payload: { threadId: p.threadId, approvalId: p.approvalId, decision: p.decision },
+      },
+    ]);
+    return {};
+  }
+
+  private async turnDiff(p: CommandPayloads["turn.diff"]): Promise<CommandResults["turn.diff"]> {
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    const project = this.store.getProject(thread.projectId);
+    if (!project) throw new CommandError("not_found", `no such project: ${thread.projectId}`);
+
+    const stored = this.store.getTurnDiff(p.threadId, p.turnId);
+    if (!stored) {
+      return { turnId: p.turnId, files: [], patch: null, status: "missing", detail: "no diff for turn" };
+    }
+
+    const diff = await diffCheckpoints(project.rootPath, stored.fromRef, stored.toRef);
+    return {
+      turnId: p.turnId,
+      files: diff.files,
+      patch: diff.patch,
+      status: diff.status,
+      ...(diff.detail ? { detail: diff.detail } : {}),
+    };
+  }
+
+  private permissionMode(threadId: string): PermissionMode {
+    return this.store.getThread(threadId)?.permissionMode ?? "supervised";
+  }
+
+  private async finalizeCheckpoints(threadId: string, turnId: string) {
+    const thread = this.store.getThread(threadId);
+    const project = thread ? this.store.getProject(thread.projectId) : null;
+    if (!project) return;
+
+    const post = await captureCheckpoint(project.rootPath, threadId, turnId, "post");
+    this.commit([
+      {
+        type: "checkpoint.captured",
+        threadId,
+        payload: {
+          threadId,
+          turnId,
+          phase: "post",
+          ref: post.ref,
+          sha: post.sha,
+          status: post.status,
+          ...(post.detail ? { detail: post.detail } : {}),
+        },
+      },
+    ]);
+
+    if (post.status !== "ready") return;
+
+    const fromRef = checkpointRef(threadId, turnId, "pre");
+    const diff = await diffCheckpoints(project.rootPath, fromRef, post.ref);
+    if (diff.status === "ready") {
+      this.commit([
+        {
+          type: "turn.diff_ready",
+          threadId,
+          payload: {
+            threadId,
+            turnId,
+            fromRef,
+            toRef: post.ref,
+            files: diff.files,
+          },
+        },
+      ]);
+    }
+  }
+
   private onRuntimeEvent(threadId: string, event: ProviderRuntimeEvent) {
     const session = this.sessions.get(threadId);
 
     switch (event.type) {
       case "assistant.delta":
-        // Ephemeral render hint. Never persisted — one row per token would be
-        // an fsync storm, and the durable record is the committed message.
         this.bus.delta(threadId, event.turnId, event.text);
         return;
 
@@ -270,11 +428,70 @@ export class Orchestrator {
         ]);
         return;
 
+      case "approval.requested": {
+        const category = (
+          ["fs.write", "fs.read", "shell.exec", "network", "other"] as const
+        ).includes(event.category as never)
+          ? (event.category as "fs.write" | "fs.read" | "shell.exec" | "network" | "other")
+          : "other";
+
+        const mode = this.permissionMode(threadId);
+        const adapter = session ? this.registry.get(session.provider) : null;
+
+        // Full access + mediating adapter → auto-approve without UI prompt.
+        if (mode === "full_access" && adapter?.respondToApproval && session) {
+          this.commit([
+            {
+              type: "approval.requested",
+              threadId,
+              payload: {
+                threadId,
+                turnId: event.turnId,
+                approvalId: event.approvalId,
+                category,
+                summary: event.summary,
+              },
+            },
+            {
+              type: "approval.resolved",
+              threadId,
+              payload: {
+                threadId,
+                approvalId: event.approvalId,
+                decision: "approve",
+              },
+            },
+          ]);
+          void adapter.respondToApproval(session.handle, event.approvalId, "approve").catch((err) => {
+            log.warn("auto-approve failed", { threadId, err: String(err) });
+          });
+          return;
+        }
+
+        session?.pendingApprovals.set(event.approvalId, { turnId: event.turnId });
+        this.commit([
+          {
+            type: "approval.requested",
+            threadId,
+            payload: {
+              threadId,
+              turnId: event.turnId,
+              approvalId: event.approvalId,
+              category,
+              summary: event.summary,
+            },
+          },
+        ]);
+        return;
+      }
+
       case "turn.completed":
         if (session?.activeTurnId === event.turnId) session.activeTurnId = null;
-        this.commit([
-          { type: "turn.completed", threadId, payload: { threadId, turnId: event.turnId } },
-        ]);
+        session?.pendingApprovals.clear();
+        this.commit([{ type: "turn.completed", threadId, payload: { threadId, turnId: event.turnId } }]);
+        void this.finalizeCheckpoints(threadId, event.turnId).catch((err) => {
+          log.warn("checkpoint finalize failed", { threadId, turnId: event.turnId, err: String(err) });
+        });
         return;
 
       case "status":
@@ -282,21 +499,26 @@ export class Orchestrator {
           {
             type: "session.status",
             threadId,
-            payload: { threadId, status: event.status, ...(event.detail ? { detail: event.detail } : {}) },
+            payload: {
+              threadId,
+              status: event.status,
+              ...(event.detail ? { detail: event.detail } : {}),
+            },
           },
         ]);
         return;
 
       case "session.exited":
         this.sessions.delete(threadId);
-        this.commit([
-          { type: "session.status", threadId, payload: { threadId, status: "closed" } },
-        ]);
+        this.commit([{ type: "session.status", threadId, payload: { threadId, status: "closed" } }]);
         return;
 
       case "error": {
         const turnId = session?.activeTurnId;
-        if (session) session.activeTurnId = null;
+        if (session) {
+          session.activeTurnId = null;
+          session.pendingApprovals.clear();
+        }
         const events: NewEvent[] = [];
         if (turnId) {
           events.push({
@@ -315,7 +537,10 @@ export class Orchestrator {
       }
 
       default:
-        log.warn("unhandled runtime event", { threadId, event: JSON.stringify(event).slice(0, 200) });
+        log.warn("unhandled runtime event", {
+          threadId,
+          event: JSON.stringify(event).slice(0, 200),
+        });
     }
   }
 

@@ -8,6 +8,7 @@ interface Props {
   state: ConnectionState;
   onOpen(threadId: string): void;
   onNew(): void;
+  onProviders(): void;
 }
 
 /** Relative time, kept terse the way a dense list needs. */
@@ -19,7 +20,7 @@ function ago(iso: string): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
-export function Sidebar({ projects, threads, activeId, state, onOpen, onNew }: Props) {
+export function Sidebar({ projects, threads, activeId, state, onOpen, onNew, onProviders }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
@@ -57,6 +58,9 @@ export function Sidebar({ projects, threads, activeId, state, onOpen, onNew }: P
         <span className="meta" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
           {state === "open" ? "connected" : state}
         </span>
+        <button className="linkish" style={{ marginLeft: "auto", fontSize: 11 }} onClick={onProviders}>
+          Providers
+        </button>
       </div>
     </aside>
   );

@@ -14,6 +14,9 @@ build/
 .vscode/*
 !.vscode/extensions.json
 
+# Tauri / Rust
+apps/desktop/src-tauri/target/
+
 # Internal-only: competitive analysis, peer research, third-party screenshots.
 # Not published. Keeps the reasoning without shipping it.
 docs/internal/

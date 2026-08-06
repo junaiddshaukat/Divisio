@@ -52,6 +52,7 @@ export class EventStore {
       create table if not exists threads (
         id text primary key, project_id text not null references projects(id),
         title text not null, provider text not null, status text not null,
+        permission_mode text not null default 'supervised',
         created_at text not null, updated_at text not null
       );
       create table if not exists messages (
@@ -59,8 +60,22 @@ export class EventStore {
         role text not null, text text not null, at text not null,
         primary key (turn_id, role)
       );
+      create table if not exists turn_diffs (
+        thread_id text not null, turn_id text not null,
+        from_ref text not null, to_ref text not null,
+        files_json text not null, primary key (thread_id, turn_id)
+      );
       create index if not exists messages_thread on messages(thread_id, at);
     `);
+    // Existing DBs created before permission_mode / turn_diffs — additive migrate.
+    this.ensureColumn("threads", "permission_mode", "text not null default 'supervised'");
+  }
+
+  private ensureColumn(table: string, column: string, ddl: string) {
+    const cols = this.db.query<{ name: string }, []>(`pragma table_info(${table})`).all();
+    if (!cols.some((c) => c.name === column)) {
+      this.db.exec(`alter table ${table} add column ${column} ${ddl}`);
+    }
   }
 
   head(): number {
@@ -167,10 +182,34 @@ export class EventStore {
         const p = e.payload as { threadId: string; projectId: string; title: string; provider: string };
         this.db
           .query(
-            `insert or replace into threads (id, project_id, title, provider, status, created_at, updated_at)
-             values (?, ?, ?, ?, 'ready', ?, ?)`,
+            `insert or replace into threads (id, project_id, title, provider, status, permission_mode, created_at, updated_at)
+             values (?, ?, ?, ?, 'ready', 'supervised', ?, ?)`,
           )
           .run(p.threadId, p.projectId, p.title, p.provider, e.at, e.at);
+        break;
+      }
+      case "thread.permission_mode_set": {
+        const p = e.payload as { threadId: string; mode: string };
+        this.db
+          .query("update threads set permission_mode = ?, updated_at = ? where id = ?")
+          .run(p.mode, e.at, p.threadId);
+        break;
+      }
+      case "turn.diff_ready": {
+        const p = e.payload as {
+          threadId: string;
+          turnId: string;
+          fromRef: string;
+          toRef: string;
+          files: unknown[];
+        };
+        this.db
+          .query(
+            `insert or replace into turn_diffs (thread_id, turn_id, from_ref, to_ref, files_json)
+             values (?, ?, ?, ?, ?)`,
+          )
+          .run(p.threadId, p.turnId, p.fromRef, p.toRef, JSON.stringify(p.files));
+        this.touch(p.threadId, e.at);
         break;
       }
       case "turn.message": {
@@ -201,7 +240,7 @@ export class EventStore {
    */
   rebuildProjections(): number {
     const run = this.db.transaction(() => {
-      this.db.exec("delete from messages; delete from threads; delete from projects;");
+      this.db.exec("delete from turn_diffs; delete from messages; delete from threads; delete from projects;");
       let n = 0;
       let cursor = 0;
       for (;;) {
@@ -232,9 +271,19 @@ export class EventStore {
   listThreads() {
     return this.db
       .query<
-        { id: string; project_id: string; title: string; provider: string; status: string; updated_at: string },
+        {
+          id: string;
+          project_id: string;
+          title: string;
+          provider: string;
+          status: string;
+          permission_mode: string;
+          updated_at: string;
+        },
         []
-      >("select id, project_id, title, provider, status, updated_at from threads order by updated_at desc")
+      >(
+        "select id, project_id, title, provider, status, permission_mode, updated_at from threads order by updated_at desc",
+      )
       .all()
       .map((r) => ({
         id: r.id,
@@ -242,8 +291,26 @@ export class EventStore {
         title: r.title,
         provider: r.provider,
         status: r.status as never,
+        permissionMode: (r.permission_mode === "full_access" ? "full_access" : "supervised") as
+          | "supervised"
+          | "full_access",
         updatedAt: r.updated_at,
       }));
+  }
+
+  getTurnDiff(threadId: string, turnId: string) {
+    const row = this.db
+      .query<
+        { from_ref: string; to_ref: string; files_json: string },
+        [string, string]
+      >("select from_ref, to_ref, files_json from turn_diffs where thread_id = ? and turn_id = ?")
+      .get(threadId, turnId);
+    if (!row) return null;
+    return {
+      fromRef: row.from_ref,
+      toRef: row.to_ref,
+      files: JSON.parse(row.files_json) as Array<{ path: string; status: string }>,
+    };
   }
 
   getThread(threadId: string) {

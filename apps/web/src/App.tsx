@@ -1,26 +1,55 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DomainEvent, MessageView, ProjectView, ProviderView, ThreadView } from "@divisio/contracts";
+import type {
+  DiffFileEntry,
+  DomainEvent,
+  MessageView,
+  PermissionMode,
+  ProjectView,
+  ProviderView,
+  ThreadView,
+} from "@divisio/contracts";
 import { Client, type ConnectionState } from "./client.ts";
+import { ApprovalBar, type PendingApproval } from "./components/ApprovalBar.tsx";
+import { CapabilityMatrix } from "./components/CapabilityMatrix.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Transcript, type Bubble } from "./components/Transcript.tsx";
 import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
+import { TurnDiff } from "./components/TurnDiff.tsx";
 
 const PORT = 4577;
 const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
 
-/**
- * The token is read from a dev-time env var or a prompt. It is never placed in
- * the URL, so it does not end up in history, logs, or a Referer header.
- */
-function readToken(): string {
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function readTokenSync(): string {
   const fromEnv = import.meta.env["VITE_DIVISIO_TOKEN"];
   if (typeof fromEnv === "string" && fromEnv.length > 0) return fromEnv;
   return localStorage.getItem("divisio:token") ?? "";
 }
 
+async function readTokenAsync(): Promise<string> {
+  const sync = readTokenSync();
+  if (sync) return sync;
+  if (!isTauri()) return "";
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const token = await invoke<string>("auth_token");
+    if (token) {
+      localStorage.setItem("divisio:token", token);
+      return token;
+    }
+  } catch {
+    /* daemon may still be booting */
+  }
+  return "";
+}
+
 export function App() {
-  const [token, setToken] = useState(readToken);
+  const [token, setToken] = useState(readTokenSync);
+  const [bootError, setBootError] = useState<string | null>(null);
   const [state, setState] = useState<ConnectionState>("connecting");
   const [projects, setProjects] = useState<ProjectView[]>([]);
   const [threads, setThreads] = useState<ThreadView[]>([]);
@@ -32,6 +61,16 @@ export function App() {
   const [tools, setTools] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState(false);
+  const [matrixOpen, setMatrixOpen] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [diffTurns, setDiffTurns] = useState<Set<string>>(new Set());
+  const [diffView, setDiffView] = useState<{
+    turnId: string;
+    files: DiffFileEntry[];
+    patch: string | null;
+    status: string;
+    detail?: string;
+  } | null>(null);
 
   const clientRef = useRef<Client | null>(null);
   const activeIdRef = useRef<string | null>(null);
@@ -45,6 +84,13 @@ export function App() {
     setThreads(list.threads);
   }, []);
 
+  const refreshProviders = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) return;
+    const r = await client.send("provider.detect", {});
+    setProviders(r.providers);
+  }, []);
+
   const openThread = useCallback(async (threadId: string) => {
     const client = clientRef.current;
     if (!client) return;
@@ -52,68 +98,129 @@ export function App() {
     setStreaming(null);
     setTools([]);
     setError(null);
+    setPendingApproval(null);
+    setDiffTurns(new Set());
     client.subscribe([threadId]);
     const snap = await client.send("thread.snapshot", { threadId });
     setMessages(snap.messages);
     setThreads((prev) => prev.map((t) => (t.id === snap.thread.id ? snap.thread : t)));
   }, []);
 
-  /** Applies one domain event to local projections. Clients render, never invent. */
-  const onEvent = useCallback((event: DomainEvent) => {
-    const p = event.payload as Record<string, unknown>;
-    switch (event.type) {
-      case "turn.message": {
-        if (p["threadId"] !== activeIdRef.current) break;
-        const msg: MessageView = {
-          turnId: String(p["turnId"]),
-          role: p["role"] as "user" | "assistant",
-          text: String(p["text"]),
-          at: event.at,
-        };
-        setMessages((prev) =>
-          prev.some((m) => m.turnId === msg.turnId && m.role === msg.role) ? prev : [...prev, msg],
-        );
-        // The durable message supersedes the streamed preview.
-        if (msg.role === "assistant") setStreaming(null);
-        break;
+  const onEvent = useCallback(
+    (event: DomainEvent) => {
+      const p = event.payload as Record<string, unknown>;
+      switch (event.type) {
+        case "turn.message": {
+          if (p["threadId"] !== activeIdRef.current) break;
+          const msg: MessageView = {
+            turnId: String(p["turnId"]),
+            role: p["role"] as "user" | "assistant",
+            text: String(p["text"]),
+            at: event.at,
+          };
+          setMessages((prev) =>
+            prev.some((m) => m.turnId === msg.turnId && m.role === msg.role) ? prev : [...prev, msg],
+          );
+          if (msg.role === "assistant") setStreaming(null);
+          break;
+        }
+        case "turn.started":
+          if (p["threadId"] === activeIdRef.current) {
+            setActiveTurn(String(p["turnId"]));
+            setTools([]);
+            setPendingApproval(null);
+          }
+          break;
+        case "turn.completed":
+        case "turn.interrupted":
+          if (p["threadId"] === activeIdRef.current) {
+            setActiveTurn(null);
+            setStreaming(null);
+            setPendingApproval(null);
+          }
+          break;
+        case "turn.failed":
+          if (p["threadId"] === activeIdRef.current) {
+            setActiveTurn(null);
+            setStreaming(null);
+            setPendingApproval(null);
+            setError(String(p["message"]));
+          }
+          break;
+        case "tool.started":
+          if (p["threadId"] === activeIdRef.current) setTools((t) => [...t, String(p["name"])]);
+          break;
+        case "approval.requested":
+          if (p["threadId"] === activeIdRef.current) {
+            setPendingApproval({
+              approvalId: String(p["approvalId"]),
+              turnId: String(p["turnId"]),
+              category: String(p["category"]),
+              summary: String(p["summary"]),
+            });
+          }
+          break;
+        case "approval.resolved":
+          if (p["threadId"] === activeIdRef.current) {
+            setPendingApproval((cur) =>
+              cur?.approvalId === p["approvalId"] ? null : cur,
+            );
+          }
+          break;
+        case "turn.diff_ready":
+          if (p["threadId"] === activeIdRef.current) {
+            setDiffTurns((prev) => new Set(prev).add(String(p["turnId"])));
+          }
+          break;
+        case "session.status":
+          setThreads((prev) =>
+            prev.map((t) => (t.id === p["threadId"] ? { ...t, status: p["status"] as never } : t)),
+          );
+          if (p["status"] === "error" && p["threadId"] === activeIdRef.current) {
+            setError(String(p["detail"] ?? "session error"));
+          }
+          break;
+        case "thread.permission_mode_set":
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === p["threadId"] ? { ...t, permissionMode: p["mode"] as PermissionMode } : t,
+            ),
+          );
+          break;
+        case "project.created":
+        case "thread.created":
+          void (clientRef.current && refresh(clientRef.current));
+          break;
       }
-      case "turn.started":
-        if (p["threadId"] === activeIdRef.current) {
-          setActiveTurn(String(p["turnId"]));
-          setTools([]);
+    },
+    [refresh],
+  );
+
+  // Desktop shell injects the userdata token — no paste gate.
+  useEffect(() => {
+    if (token || !isTauri()) return;
+    let cancelled = false;
+    const boot = async () => {
+      for (let i = 0; i < 40; i++) {
+        const next = await readTokenAsync();
+        if (cancelled) return;
+        if (next) {
+          setToken(next);
+          return;
         }
-        break;
-      case "turn.completed":
-      case "turn.interrupted":
-        if (p["threadId"] === activeIdRef.current) {
-          setActiveTurn(null);
-          setStreaming(null);
-        }
-        break;
-      case "turn.failed":
-        if (p["threadId"] === activeIdRef.current) {
-          setActiveTurn(null);
-          setStreaming(null);
-          setError(String(p["message"]));
-        }
-        break;
-      case "tool.started":
-        if (p["threadId"] === activeIdRef.current) setTools((t) => [...t, String(p["name"])]);
-        break;
-      case "session.status":
-        setThreads((prev) =>
-          prev.map((t) => (t.id === p["threadId"] ? { ...t, status: p["status"] as never } : t)),
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      if (!cancelled) {
+        setBootError(
+          "Could not reach the Divisio daemon. Is Bun installed and on PATH? Check the terminal for [daemon] logs.",
         );
-        if (p["status"] === "error" && p["threadId"] === activeIdRef.current) {
-          setError(String(p["detail"] ?? "session error"));
-        }
-        break;
-      case "project.created":
-      case "thread.created":
-        void (clientRef.current && refresh(clientRef.current));
-        break;
-    }
-  }, [refresh]);
+      }
+    };
+    void boot();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -121,7 +228,9 @@ export function App() {
       onEvent,
       onDelta: (threadId, turnId, text) => {
         if (threadId !== activeIdRef.current) return;
-        setStreaming((prev) => (prev?.turnId === turnId ? { turnId, text: prev.text + text } : { turnId, text }));
+        setStreaming((prev) =>
+          prev?.turnId === turnId ? { turnId, text: prev.text + text } : { turnId, text },
+        );
       },
       onState: setState,
       onResync: () => {
@@ -143,8 +252,8 @@ export function App() {
     const client = clientRef.current;
     if (!client) return;
     void refresh(client);
-    void client.send("provider.detect", {}).then((r) => setProviders(r.providers));
-  }, [state, refresh]);
+    void refreshProviders();
+  }, [state, refresh, refreshProviders]);
 
   const send = async (text: string) => {
     const client = clientRef.current;
@@ -168,6 +277,49 @@ export function App() {
     }
   };
 
+  const respondApproval = async (decision: "approve" | "deny") => {
+    const client = clientRef.current;
+    if (!client || !activeId || !pendingApproval) return;
+    try {
+      await client.send("approval.respond", {
+        threadId: activeId,
+        approvalId: pendingApproval.approvalId,
+        decision,
+      });
+      setPendingApproval(null);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    }
+  };
+
+  const setPermissionMode = async (mode: PermissionMode) => {
+    const client = clientRef.current;
+    if (!client || !activeId) return;
+    try {
+      const res = await client.send("thread.setPermissionMode", { threadId: activeId, mode });
+      setThreads((prev) => prev.map((t) => (t.id === res.thread.id ? res.thread : t)));
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    }
+  };
+
+  const showDiff = async (turnId: string) => {
+    const client = clientRef.current;
+    if (!client || !activeId) return;
+    try {
+      const res = await client.send("turn.diff", { threadId: activeId, turnId });
+      setDiffView({
+        turnId,
+        files: res.files,
+        patch: res.patch,
+        status: res.status,
+        detail: res.detail,
+      });
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    }
+  };
+
   const createThread = async (projectId: string, title: string, provider: string) => {
     const client = clientRef.current;
     if (!client) return;
@@ -185,10 +337,36 @@ export function App() {
     return res.project;
   };
 
-  if (!token) return <TokenGate onSubmit={(t) => { localStorage.setItem("divisio:token", t); setToken(t); }} />;
+  if (!token) {
+    if (isTauri()) {
+      return (
+        <div className="empty">
+          <h1>{bootError ? "Daemon unavailable" : "Starting Divisio…"}</h1>
+          <p>
+            {bootError ??
+              "The desktop shell is starting the local daemon and connecting automatically."}
+          </p>
+        </div>
+      );
+    }
+    return (
+      <TokenGate
+        onSubmit={(t) => {
+          localStorage.setItem("divisio:token", t);
+          setToken(t);
+        }}
+      />
+    );
+  }
 
   const bubbles: Bubble[] = [
-    ...messages.map((m) => ({ kind: m.role, text: m.text, key: `${m.turnId}:${m.role}` })),
+    ...messages.map((m) => ({
+      kind: m.role as "user" | "assistant",
+      text: m.text,
+      key: `${m.turnId}:${m.role}`,
+      turnId: m.turnId,
+      showDiff: m.role === "assistant" && diffTurns.has(m.turnId),
+    })),
     ...(tools.length > 0 && activeTurn ? [{ kind: "tools" as const, text: tools.join(", "), key: "tools" }] : []),
     ...(streaming && streaming.text.length > 0
       ? [{ kind: "streaming" as const, text: streaming.text, key: "streaming" }]
@@ -204,6 +382,7 @@ export function App() {
         state={state}
         onOpen={(id) => void openThread(id)}
         onNew={() => setDialog(true)}
+        onProviders={() => setMatrixOpen(true)}
       />
       <main className="main">
         <div className="topbar">
@@ -225,14 +404,19 @@ export function App() {
 
         {activeThread ? (
           <>
-            <Transcript bubbles={bubbles} />
+            <Transcript bubbles={bubbles} onShowDiff={(turnId) => void showDiff(turnId)} />
             {error && <div className="banner">{error}</div>}
+            {pendingApproval && (
+              <ApprovalBar pending={pendingApproval} onRespond={(d) => void respondApproval(d)} />
+            )}
             <Composer
               busy={!!activeTurn}
               provider={activeThread.provider}
               providers={providers}
+              permissionMode={activeThread.permissionMode ?? "supervised"}
               onSend={send}
               onInterrupt={interrupt}
+              onPermissionMode={(m) => void setPermissionMode(m)}
             />
           </>
         ) : (
@@ -256,6 +440,19 @@ export function App() {
           onCreateProject={createProject}
           onCreate={createThread}
           onClose={() => setDialog(false)}
+        />
+      )}
+      {matrixOpen && (
+        <CapabilityMatrix
+          providers={providers}
+          onClose={() => setMatrixOpen(false)}
+          onRefresh={() => void refreshProviders()}
+        />
+      )}
+      {diffView && (
+        <TurnDiff
+          {...diffView}
+          onClose={() => setDiffView(null)}
         />
       )}
     </div>

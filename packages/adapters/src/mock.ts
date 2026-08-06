@@ -13,19 +13,28 @@ import {
  * In-process mock peer for tests — the T3-style fixture pattern.
  *
  * No live CLI. Turns complete from scripted events so orchestration,
- * interrupt → stopping, and capability wiring can be asserted without
- * depending on vendor binaries or network auth.
+ * interrupt → stopping, approvals, and capability wiring can be asserted
+ * without depending on vendor binaries or network auth.
  */
 
+export type MockScriptStep =
+  | { type: "assistant.delta"; text: string }
+  | { type: "assistant.message"; text: string }
+  | { type: "status"; status: "running" | "ready" | "stopping" | "awaiting_approval" }
+  | {
+      type: "approval.requested";
+      approvalId: string;
+      category: string;
+      summary: string;
+      /** Wait for respondToApproval before continuing the script. */
+      wait?: boolean;
+    };
+
 export interface MockPeerOptions {
-  /** Delay before scripted turn events fire (lets interrupt win the race). */
   turnDelayMs?: number;
-  /** Extra events after the initial delta, before turn.completed. */
-  script?: Array<
-    | { type: "assistant.delta"; text: string }
-    | { type: "assistant.message"; text: string }
-    | { type: "status"; status: "running" | "ready" | "stopping" }
-  >;
+  script?: MockScriptStep[];
+  /** When true, declare approvals capability (for supervised-mode tests). */
+  approvals?: boolean;
 }
 
 interface MockSession extends SessionHandle {
@@ -34,9 +43,11 @@ interface MockSession extends SessionHandle {
   activeTurnId: string | null;
   cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Resolve when respondToApproval is called for this id. */
+  approvalWaiters: Map<string, (decision: "approve" | "deny") => void>;
 }
 
-const CAPABILITIES: AdapterCapabilities = {
+const BASE_CAPABILITIES: AdapterCapabilities = {
   sessionResume: true,
   interruptTurn: true,
   modelSwitch: false,
@@ -50,18 +61,19 @@ export class MockPeerAdapter implements ProviderAdapter {
   readonly kind = "mock";
   readonly label = "Mock Peer";
   readonly tier = "stream" as const;
-  readonly capabilities = CAPABILITIES;
+  readonly capabilities: AdapterCapabilities;
   readonly contractVersion = ADAPTER_CONTRACT_VERSION;
 
-  /** Status values emitted in order — tests assert interrupt reaches `stopping`. */
   readonly statusLog: string[] = [];
+  readonly approvalLog: Array<{ approvalId: string; decision: "approve" | "deny" }> = [];
 
   private readonly sessions = new Map<string, MockSession>();
   private readonly turnDelayMs: number;
-  private readonly script: NonNullable<MockPeerOptions["script"]>;
+  private readonly script: MockScriptStep[];
 
   constructor(options: MockPeerOptions = {}) {
     this.turnDelayMs = options.turnDelayMs ?? 50;
+    this.capabilities = { ...BASE_CAPABILITIES, approvals: options.approvals ?? false };
     this.script = options.script ?? [
       { type: "assistant.delta", text: "hello " },
       { type: "assistant.delta", text: "world" },
@@ -82,6 +94,7 @@ export class MockPeerAdapter implements ProviderAdapter {
       activeTurnId: null,
       cancelled: false,
       timer: null,
+      approvalWaiters: new Map(),
       close: async () => {
         await this.stopSession(session);
       },
@@ -102,31 +115,70 @@ export class MockPeerAdapter implements ProviderAdapter {
 
     session.timer = setTimeout(() => {
       session.timer = null;
-      if (session.cancelled || session.activeTurnId !== turn.turnId) return;
+      void this.runScript(session, turn.turnId);
+    }, this.turnDelayMs);
+  }
 
-      for (const step of this.script) {
-        if (session.cancelled) return;
-        if (step.type === "assistant.delta") {
-          session.emit({ type: "assistant.delta", turnId: turn.turnId, text: step.text });
-        } else if (step.type === "assistant.message") {
-          session.emit({ type: "assistant.message", turnId: turn.turnId, text: step.text });
-        } else if (step.type === "status") {
-          this.recordStatus(session, step.status);
+  private async runScript(session: MockSession, turnId: string) {
+    for (const step of this.script) {
+      if (session.cancelled || session.activeTurnId !== turnId) return;
+
+      if (step.type === "assistant.delta") {
+        session.emit({ type: "assistant.delta", turnId, text: step.text });
+      } else if (step.type === "assistant.message") {
+        session.emit({ type: "assistant.message", turnId, text: step.text });
+      } else if (step.type === "status") {
+        this.recordStatus(session, step.status);
+      } else if (step.type === "approval.requested") {
+        // Register the waiter before emit — full_access auto-approve may
+        // respond synchronously inside onRuntimeEvent.
+        let decisionPromise: Promise<"approve" | "deny"> | null = null;
+        if (step.wait !== false) {
+          decisionPromise = new Promise<"approve" | "deny">((resolve) => {
+            session.approvalWaiters.set(step.approvalId, resolve);
+          });
+        }
+        session.emit({
+          type: "approval.requested",
+          turnId,
+          approvalId: step.approvalId,
+          category: step.category,
+          summary: step.summary,
+        });
+        this.recordStatus(session, "awaiting_approval");
+        if (decisionPromise) {
+          await decisionPromise;
+          if (session.cancelled || session.activeTurnId !== turnId) return;
+          this.recordStatus(session, "running");
         }
       }
+    }
 
-      if (session.cancelled || session.activeTurnId !== turn.turnId) return;
-      session.activeTurnId = null;
-      session.emit({ type: "turn.completed", turnId: turn.turnId });
-      this.recordStatus(session, "ready");
-    }, this.turnDelayMs);
+    if (session.cancelled || session.activeTurnId !== turnId) return;
+    session.activeTurnId = null;
+    session.emit({ type: "turn.completed", turnId });
+    this.recordStatus(session, "ready");
+  }
+
+  async respondToApproval(
+    handle: SessionHandle,
+    approvalId: string,
+    decision: "approve" | "deny",
+  ): Promise<void> {
+    const session = this.sessions.get(handle.threadId);
+    if (!session) return;
+    this.approvalLog.push({ approvalId, decision });
+    const waiter = session.approvalWaiters.get(approvalId);
+    if (waiter) {
+      session.approvalWaiters.delete(approvalId);
+      waiter(decision);
+    }
   }
 
   async interruptTurn(handle: SessionHandle, turnId: string): Promise<void> {
     const session = this.sessions.get(handle.threadId);
     if (!session || session.activeTurnId !== turnId) return;
 
-    // Same contract as Claude: report stopping before claiming ready.
     this.recordStatus(session, "stopping");
     session.cancelled = true;
     session.activeTurnId = null;
@@ -134,6 +186,8 @@ export class MockPeerAdapter implements ProviderAdapter {
       clearTimeout(session.timer);
       session.timer = null;
     }
+    for (const [, resolve] of session.approvalWaiters) resolve("deny");
+    session.approvalWaiters.clear();
     session.emit({ type: "turn.completed", turnId });
     this.recordStatus(session, "ready");
   }
@@ -147,7 +201,10 @@ export class MockPeerAdapter implements ProviderAdapter {
     session.emit({ type: "session.exited", code: null, signal: null });
   }
 
-  private recordStatus(session: MockSession, status: "ready" | "running" | "stopping") {
+  private recordStatus(
+    session: MockSession,
+    status: "ready" | "running" | "stopping" | "awaiting_approval",
+  ) {
     this.statusLog.push(status);
     session.emit({ type: "status", status });
   }

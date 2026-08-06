@@ -13,7 +13,10 @@ const log = logger("daemon");
 const port = Number(process.env[`${ENV_PREFIX}_PORT`] ?? DEFAULT_PORT);
 // The Vite dev server runs on a different origin and must be allowlisted
 // explicitly rather than by loosening the Origin check.
-const devOrigins = (process.env[`${ENV_PREFIX}_DEV_ORIGINS`] ?? "http://localhost:5173")
+const devOrigins = (
+  process.env[`${ENV_PREFIX}_DEV_ORIGINS`] ??
+  "http://localhost:5173,http://127.0.0.1:5173,http://tauri.localhost,https://tauri.localhost,tauri://localhost"
+)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);

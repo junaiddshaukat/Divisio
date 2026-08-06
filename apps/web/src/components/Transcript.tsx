@@ -4,6 +4,8 @@ export interface Bubble {
   kind: "user" | "assistant" | "streaming" | "tools";
   text: string;
   key: string;
+  turnId?: string;
+  showDiff?: boolean;
 }
 
 /**
@@ -11,7 +13,13 @@ export interface Bubble {
  * back while someone is reading scrollback is the single most irritating thing
  * a streaming transcript can do.
  */
-export function Transcript({ bubbles }: { bubbles: Bubble[] }) {
+export function Transcript({
+  bubbles,
+  onShowDiff,
+}: {
+  bubbles: Bubble[];
+  onShowDiff?(turnId: string): void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
 
@@ -38,6 +46,13 @@ export function Transcript({ bubbles }: { bubbles: Bubble[] }) {
           return (
             <div key={b.key} className={`msg-assistant${b.kind === "streaming" ? " streaming" : ""}`}>
               {b.text}
+              {b.showDiff && b.turnId && onShowDiff && (
+                <div className="msg-actions">
+                  <button className="linkish" onClick={() => onShowDiff(b.turnId!)}>
+                    Diff
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

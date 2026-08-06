@@ -6,7 +6,7 @@
  * unresolvable when two clients are attached to the same thread.
  */
 
-import type { DomainEvent, SessionStatus } from "./events.ts";
+import type { DiffFileEntry, DomainEvent, PermissionMode, SessionStatus } from "./events.ts";
 
 export interface CommandPayloads {
   "session.resume": { since: number; threads: string[] };
@@ -14,8 +14,10 @@ export interface CommandPayloads {
   "project.list": Record<string, never>;
   "thread.create": { projectId: string; title: string; provider: string };
   "thread.snapshot": { threadId: string };
+  "thread.setPermissionMode": { threadId: string; mode: PermissionMode };
   "turn.send": { threadId: string; text: string };
   "turn.interrupt": { threadId: string; turnId: string };
+  "turn.diff": { threadId: string; turnId: string };
   "approval.respond": { threadId: string; approvalId: string; decision: "approve" | "deny" };
   "provider.detect": Record<string, never>;
 }
@@ -35,6 +37,8 @@ export interface ThreadView {
   title: string;
   provider: string;
   status: SessionStatus;
+  /** Default supervised. Controls whether Divisio mediates provider approvals. */
+  permissionMode: PermissionMode;
   updatedAt: string;
 }
 
@@ -61,8 +65,16 @@ export interface CommandResults {
   "project.list": { projects: ProjectView[]; threads: ThreadView[] };
   "thread.create": { thread: ThreadView };
   "thread.snapshot": { thread: ThreadView; messages: MessageView[]; seq: number };
+  "thread.setPermissionMode": { thread: ThreadView };
   "turn.send": { turnId: string };
   "turn.interrupt": Record<string, never>;
+  "turn.diff": {
+    turnId: string;
+    files: DiffFileEntry[];
+    patch: string | null;
+    status: "ready" | "skipped" | "error" | "missing";
+    detail?: string;
+  };
   "approval.respond": Record<string, never>;
   "provider.detect": { providers: ProviderView[] };
 }

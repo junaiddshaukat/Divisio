@@ -8,7 +8,9 @@
     "dev": "bun run --filter '*' dev",
     "dev:server": "bun run --cwd apps/server dev",
     "dev:web": "bun run --cwd apps/web dev",
+    "dev:desktop": "bun run --cwd apps/desktop dev",
     "build": "bun run --cwd apps/web build",
+    "build:desktop": "bun run --cwd apps/desktop build",
     "test": "bun test",
     "typecheck": "tsc --build --verbose"
   },

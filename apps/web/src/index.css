@@ -484,6 +484,132 @@ button.icon:hover {
   color: var(--muted-foreground);
 }
 
+.pill.ok {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.mode-select {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  outline: 0;
+}
+.mode-select:focus {
+  border-color: var(--ring);
+}
+
+.approval-bar {
+  max-width: 720px;
+  margin: 0 auto 12px;
+  border: 1px solid var(--warning);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.approval-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.approval-summary {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval-bar .actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.approval-bar .actions .btn {
+  margin-left: 0;
+}
+
+.linkish {
+  background: none;
+  border: 0;
+  color: var(--ring);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.msg-actions {
+  margin-top: 8px;
+}
+
+.matrix-dialog,
+.diff-dialog {
+  width: min(720px, 100%);
+  max-height: min(80vh, 640px);
+}
+.matrix-scroll {
+  overflow: auto;
+  max-height: 50vh;
+}
+.matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.matrix th,
+.matrix td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.matrix th {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.matrix .flag {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.muted {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin: 0;
+}
+.diff-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.diff-patch {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  background: var(--code-block);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+button.btn.secondary {
+  background: transparent;
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--border);
+  margin-left: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;

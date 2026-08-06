@@ -8,11 +8,11 @@ Clients are thin. All provider I/O and durable state live in the local daemon.
 - Connects via WebSocket (same origin in dev; pairing token when remote)
 - Owns: transcript UX, composer, project/thread navigation, approvals UI, capability matrix display
 
-## Desktop (Phase 3)
+## Desktop (Phase 3 — early shell available)
 
-- **Tauri** shell that starts/supervises the daemon and loads the web UI ([ADR 0006](../adr/0006-size-budget-tauri.md))
-- Install artifact **&lt; 150 MB**
-- Adds: OS windowing, auto-start daemon, native confirmations, optional deep links (`orchestrator://`)
+- **Tauri** shell in `apps/desktop` starts/supervises the daemon and loads `apps/web` ([ADR 0006](../adr/0006-size-budget-tauri.md))
+- Run: `bun run dev:desktop` (auto-connects; no token paste)
+- Install artifact target **&lt; 150 MB**; Bun still required on PATH until a sidecar ships
 - Must not fork a second orchestration stack — desktop is a host, not a second brain
 - Visual shell matches [design system](../design/README.md) (three-pane command center)
 

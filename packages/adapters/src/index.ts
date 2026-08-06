@@ -12,7 +12,7 @@ export { normalizeCursorStreamLine } from "./cursor/normalize.ts";
 export type { CursorNormalizeResult, CursorNormalizeState } from "./cursor/normalize.ts";
 export { JsonRpcStdioClient } from "./jsonrpc/stdio.ts";
 export { MockPeerAdapter } from "./mock.ts";
-export type { MockPeerOptions } from "./mock.ts";
+export type { MockPeerOptions, MockScriptStep } from "./mock.ts";
 export { AdapterRegistry } from "./registry.ts";
 export { replayFixtureFile, replayNdjson, splitNdjson } from "./testkit/replay.ts";
 export type { ReplayResult, StreamNormalizer } from "./testkit/replay.ts";
