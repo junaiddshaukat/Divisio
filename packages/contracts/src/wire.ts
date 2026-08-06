@@ -243,7 +243,26 @@ export interface ReadyFrame {
   protocol: string;
   environmentId: string;
   seq: number;
+  /**
+   * Commands this daemon actually routes.
+   *
+   * A running daemon can be older than the UI talking to it — a stale dev
+   * process holding the port, or a desktop app that adopted one. Without this
+   * the only symptom is "unknown command" appearing wherever the user happens
+   * to click, which names the symptom and not the cause.
+   */
+  commands: string[];
 }
+
+/** Commands the UI needs before it can present itself as working. */
+export const REQUIRED_COMMANDS: readonly CommandName[] = [
+  "project.list",
+  "thread.create",
+  "turn.send",
+  "file.tree",
+  "file.read",
+  "terminal.open",
+];
 
 export interface SubFrame {
   t: "sub";

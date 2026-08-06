@@ -66,6 +66,41 @@ fn dirs_home() -> PathBuf {
     .expect("HOME")
 }
 
+/// Commands a daemon must advertise before this shell will adopt it.
+///
+/// An already-running daemon is usually a convenience — `bun run dev:server`
+/// during development. It becomes a trap when that process is older than the
+/// app: the shell attaches happily and every newer feature fails separately
+/// with "unknown command". Checking first turns that into one clear message.
+const REQUIRED_COMMANDS: &[&str] = &["file.tree", "terminal.open", "turn.restore"];
+
+fn health_body() -> Option<String> {
+  let out = Command::new("curl")
+    .args([
+      "-fsS",
+      "--max-time",
+      "1",
+      &format!("http://127.0.0.1:{DAEMON_PORT}/health"),
+    ])
+    .output()
+    .ok()?;
+  if !out.status.success() {
+    return None;
+  }
+  String::from_utf8(out.stdout).ok()
+}
+
+/// Whether a daemon already on the port is new enough to use.
+fn existing_daemon_is_compatible() -> bool {
+  let Some(body) = health_body() else {
+    // No curl, or no answer. The caller falls back to starting our own.
+    return false;
+  };
+  REQUIRED_COMMANDS
+    .iter()
+    .all(|cmd| body.contains(&format!("\"{cmd}\"")))
+}
+
 fn wait_for_health(timeout: Duration) -> bool {
   let start = Instant::now();
   while start.elapsed() < timeout {
@@ -176,12 +211,21 @@ fn read_token_file() -> Result<String, String> {
 fn bootstrap_daemon(app: &AppHandle) -> Result<(), String> {
   let state = app.state::<DaemonState>();
 
-  // Reuse a daemon already listening (e.g. `bun run dev:server`).
-  if wait_for_health(Duration::from_secs(1)) {
+  // Reuse a daemon already listening (e.g. `bun run dev:server`) — but only if
+  // it is new enough to serve this app. An older one is left alone rather than
+  // adopted, and we start our own bundled daemon instead.
+  if wait_for_health(Duration::from_secs(1)) && existing_daemon_is_compatible() {
     let token = read_token_file()?;
     *state.token.lock().map_err(|e| e.to_string())? = Some(token);
     eprintln!("[divisio] attached to existing daemon on :{DAEMON_PORT}");
     return Ok(());
+  }
+
+  if wait_for_health(Duration::from_millis(200)) {
+    return Err(format!(
+      "A daemon is already running on port {DAEMON_PORT}, but it is an older build that this app \
+       cannot use. Stop it (likely an earlier `bun run dev:server`) and reopen Divisio."
+    ));
   }
 
   let child = start_daemon()?;

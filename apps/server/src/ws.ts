@@ -64,8 +64,12 @@ export class WsHub {
       protocol,
       environmentId: this.environmentId,
       seq: this.store.head(),
+      commands: this.supportedCommands,
     });
   }
+
+  /** Set by the daemon from the commands it actually routes. */
+  supportedCommands: string[] = [];
 
   /**
    * Drops every socket belonging to a revoked client.

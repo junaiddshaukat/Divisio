@@ -5,7 +5,7 @@ import { logger } from "@divisio/shared/log";
 import { dbPath, ensureUserDataDir, tokenPath } from "@divisio/shared/paths";
 import { repairPath } from "@divisio/shared/path-env";
 import { Auth } from "./auth.ts";
-import { Orchestrator } from "./orchestrator.ts";
+import { ORCHESTRATOR_COMMANDS, Orchestrator } from "./orchestrator.ts";
 import { EventStore } from "./store/log.ts";
 import { WsHub, type SocketData } from "./ws.ts";
 import { TerminalManager, terminalsAvailable } from "./terminal/pty.ts";
@@ -91,6 +91,17 @@ const pairingControls = {
 const orchestrator = new Orchestrator(store, registry, hub, pairingControls);
 hub.attach(orchestrator);
 
+// Advertised to clients so a version mismatch reports itself instead of
+// surfacing as "unknown command" wherever the user happens to click.
+hub.supportedCommands = [
+  ...ORCHESTRATOR_COMMANDS,
+  "session.resume",
+  "terminal.open",
+  "terminal.input",
+  "terminal.resize",
+  "terminal.close",
+];
+
 /**
  * Terminals are owned by the socket that opened them, not by the thread, so
  * they are handled here rather than in the orchestrator: a shell is a live
@@ -163,7 +174,13 @@ const server = Bun.serve<SocketData>({
     }
 
     if (url.pathname === "/health") {
-      return Response.json({ ok: true, product: PRODUCT_NAME, seq: store.head() });
+      return Response.json({
+        ok: true,
+        product: PRODUCT_NAME,
+        seq: store.head(),
+        protocol: WS_SUBPROTOCOL,
+        commands: hub.supportedCommands,
+      });
     }
 
     if (url.pathname === "/ws") {

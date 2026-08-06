@@ -1,3 +1,4 @@
+import { REQUIRED_COMMANDS } from "@divisio/contracts";
 import type {
   CommandName,
   CommandPayloads,
@@ -20,6 +21,8 @@ export type ConnectionState = "connecting" | "open" | "closed";
 type TerminalSink = { data(chunk: string): void; exit(code: number): void };
 
 interface Handlers {
+  /** Commands the UI needs that this daemon does not route. */
+  onIncompatible(missing: string[]): void;
   onEvent(event: DomainEvent): void;
   onDelta(threadId: string, turnId: string, text: string): void;
   onState(state: ConnectionState): void;
@@ -92,12 +95,22 @@ export class Client {
 
   private handleFrame(frame: ServerFrame) {
     switch (frame.t) {
-      case "ready":
+      case "ready": {
+        // A daemon can be older than the UI — a stale dev process holding the
+        // port, or a desktop shell that adopted one. Report that once, by name,
+        // instead of letting every feature fail separately with
+        // "unknown command" wherever the user happens to click.
+        if (frame.commands) {
+          const advertised = new Set(frame.commands);
+          const missing = REQUIRED_COMMANDS.filter((c) => !advertised.has(c));
+          if (missing.length > 0) this.handlers.onIncompatible(missing);
+        }
         // First connection starts at head; a reconnect asks for its gap.
         if (this.seq === 0) this.seq = frame.seq;
         else void this.resume();
         this.subscribe(this.threads);
         return;
+      }
 
       case "evt":
         this.seq = Math.max(this.seq, frame.event.seq);

@@ -93,6 +93,17 @@ interface LiveSession {
  * Plain modules, no decider/projector/reactor ceremony (ADR 0004). The
  * append-only log is what is load-bearing; the framework around it was not.
  */
+/** Commands the orchestrator routes. Kept beside the switch that handles them. */
+export const ORCHESTRATOR_COMMANDS = [
+  "project.create", "project.list",
+  "thread.create", "thread.snapshot", "thread.setPermissionMode", "thread.handoff",
+  "turn.send", "turn.interrupt", "turn.diff", "turn.restore",
+  "approval.respond", "provider.detect",
+  "lane.create", "lane.list", "lane.archive", "lane.diff", "lane.openPr",
+  "file.tree", "file.read", "file.write",
+  "pairing.status", "pairing.createToken", "pairing.revoke", "pairing.revokeAll",
+] as const;
+
 export class Orchestrator {
   private readonly sessions = new Map<string, LiveSession>();
   /** Resolvers for turns awaited internally, e.g. the handoff summary. */

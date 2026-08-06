@@ -147,6 +147,7 @@ export function App() {
   /** Set when the new-thread dialog was opened from a lane card. */
   const [laneForNewThread, setLaneForNewThread] = useState<string | null>(null);
   const [handoffBusy, setHandoffBusy] = useState(false);
+  const [incompatible, setIncompatible] = useState<string[] | null>(null);
   const [pairing, setPairing] = useState<PairingStatus | null>(null);
   const [filesOpen, setFilesOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
@@ -374,6 +375,7 @@ export function App() {
           prev?.turnId === turnId ? { turnId, text: prev.text + text } : { turnId, text },
         );
       },
+      onIncompatible: setIncompatible,
       onState: setState,
       onResync: () => {
         const id = activeIdRef.current;
@@ -678,6 +680,22 @@ export function App() {
   ];
 
   const showFiles = view === "thread" && !!activeThread && filesOpen;
+
+  if (incompatible) {
+    return (
+      <div className="empty">
+        <h1>The daemon is out of date</h1>
+        <p>
+          It is running an older build than this app and does not support{" "}
+          <code>{incompatible.join(", ")}</code>.
+        </p>
+        <p>
+          Usually an earlier <code>bun run dev:server</code> is still holding port 4577 and the app
+          attached to it. Stop that process and reopen Divisio.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className={`shell${showFiles ? " shell-files" : ""}`} data-nav={navOpen ? "open" : "closed"}>
