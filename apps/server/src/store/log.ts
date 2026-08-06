@@ -424,6 +424,19 @@ export class EventStore {
     };
   }
 
+  /** Every recorded diff for a thread, used to build the handoff file list. */
+  listTurnDiffs(threadId: string): Array<{ turnId: string; files: Array<{ path: string; status: string }> }> {
+    return this.db
+      .query<{ turn_id: string; files_json: string }, [string]>(
+        "select turn_id, files_json from turn_diffs where thread_id = ?",
+      )
+      .all(threadId)
+      .map((r) => ({
+        turnId: r.turn_id,
+        files: JSON.parse(r.files_json) as Array<{ path: string; status: string }>,
+      }));
+  }
+
   listLanes(projectId?: string): LaneView[] {
     const sql = projectId
       ? "select * from lanes where project_id = ? order by created_at desc"

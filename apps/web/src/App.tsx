@@ -18,6 +18,7 @@ import { Sidebar } from "./components/Sidebar.tsx";
 import { Transcript, type Bubble } from "./components/Transcript.tsx";
 import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
 import { SessionBoard } from "./components/SessionBoard.tsx";
+import { HandoffMenu } from "./components/HandoffMenu.tsx";
 import { TurnDiff } from "./components/TurnDiff.tsx";
 
 const PORT = 4577;
@@ -69,6 +70,7 @@ export function App() {
   const [view, setView] = useState<"thread" | "board">("thread");
   /** Set when the new-thread dialog was opened from a lane card. */
   const [laneForNewThread, setLaneForNewThread] = useState<string | null>(null);
+  const [handoffBusy, setHandoffBusy] = useState(false);
   const [laneBusy, setLaneBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [diffTurns, setDiffTurns] = useState<Set<string>>(new Set());
@@ -394,6 +396,27 @@ export function App() {
     await openThread(res.thread.id);
   };
 
+  /**
+   * Hands the thread to another provider. Costs one turn on the source agent,
+   * which writes the handover note — we have no model of our own.
+   */
+  const handoff = async (toProvider: string) => {
+    const client = clientRef.current;
+    if (!client || !activeId) return;
+    setHandoffBusy(true);
+    setError(null);
+    try {
+      const res = await client.send("thread.handoff", { threadId: activeId, toProvider });
+      await refresh(client);
+      setView("thread");
+      await openThread(res.thread.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setHandoffBusy(false);
+    }
+  };
+
   const createProject = async (name: string, rootPath: string) => {
     const client = clientRef.current;
     if (!client) return null;
@@ -468,6 +491,14 @@ export function App() {
             </span>
           ) : (
             <span className="crumb">No thread selected</span>
+          )}
+          {view === "thread" && activeThread && (
+            <HandoffMenu
+              current={activeThread.provider}
+              providers={providers}
+              busy={handoffBusy || !!activeTurn}
+              onHandoff={(kind) => void handoff(kind)}
+            />
           )}
           {view === "thread" && activeThread && (
             <span className="status">

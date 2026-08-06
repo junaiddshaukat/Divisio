@@ -29,6 +29,7 @@ export const EVENT_VERSIONS = {
   "lane.created": 1,
   "lane.status": 1,
   "lane.archived": 1,
+  "thread.handed_off": 1,
 } as const;
 
 export type PermissionMode = "supervised" | "full_access";
@@ -120,6 +121,18 @@ export interface EventPayloads {
   };
   "lane.status": { laneId: string; status: LaneStatus; detail?: string };
   "lane.archived": { laneId: string; branchDeleted: boolean; hadUncommittedChanges: boolean };
+  /**
+   * Links a thread to its continuation on another provider. The summary is
+   * written by the source agent, since Divisio has no model of its own and
+   * does not proxy provider keys.
+   */
+  "thread.handed_off": {
+    fromThreadId: string;
+    toThreadId: string;
+    fromProvider: string;
+    toProvider: string;
+    summary: string;
+  };
 }
 
 /** An event as stored and as broadcast. `seq` is assigned at append time. */

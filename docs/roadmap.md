@@ -80,7 +80,7 @@ attention. Phase 2 is complete.
 
 **Exit criteria**
 
-- [ ] Hand off Claude → Codex (or reverse) with usable continued context
+- [x] Hand off between providers with usable continued context
 - [ ] Pair a second browser on the LAN with a one-time token
 - [x] Desktop app starts daemon without separate terminal
 - [x] Packaged desktop artifact measures under 150 MB (66 MB)

@@ -15,6 +15,7 @@ import { logger } from "@divisio/shared/log";
 import { existsSync } from "node:fs";
 import { captureCheckpoint, checkpointRef, diffCheckpoints } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
+import { seedPrompt, summaryPrompt, type PacketContext } from "./handoff.ts";
 import {
   allocateBranch,
   allocatePort,
@@ -68,6 +69,8 @@ interface LiveSession {
  */
 export class Orchestrator {
   private readonly sessions = new Map<string, LiveSession>();
+  /** Resolvers for turns awaited internally, e.g. the handoff summary. */
+  private readonly turnWaiters = new Map<string, { resolve(): void; reject(err: Error): void }>();
 
   constructor(
     private readonly store: EventStore,
@@ -111,6 +114,8 @@ export class Orchestrator {
         return await this.laneDiff(payload);
       case "lane.openPr":
         return await this.openPr(payload);
+      case "thread.handoff":
+        return await this.handoff(payload);
       default:
         throw new CommandError("unknown_command", `unknown command: ${cmd}`);
     }
@@ -453,6 +458,109 @@ export class Orchestrator {
     }
 
     return { ...base, status: "created", url: pr.url ?? null, compareUrl: compare, detail: null };
+  }
+
+  /* -------------------------------- handoff ------------------------------- */
+
+  /** Waits for a turn to finish, so an internally-issued turn can be read back. */
+  private awaitTurn(turnId: string, timeoutMs: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.turnWaiters.delete(turnId);
+        reject(new Error("timed out waiting for the summary turn"));
+      }, timeoutMs);
+      this.turnWaiters.set(turnId, {
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      });
+    });
+  }
+
+  /**
+   * Moves a thread to another provider.
+   *
+   * The summary is produced by the source agent, because Divisio has no model
+   * and does not proxy keys. That costs one turn on the source provider, which
+   * the UI states rather than hides.
+   */
+  private async handoff(p: CommandPayloads["thread.handoff"]): Promise<CommandResults["thread.handoff"]> {
+    const source = this.store.getThread(p.threadId);
+    if (!source) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    if (source.provider === p.toProvider) {
+      throw new CommandError("invalid_payload", "thread is already on that provider");
+    }
+
+    const target = this.registry.get(p.toProvider);
+    if (!target) throw new CommandError("provider_unavailable", `no adapter: ${p.toProvider}`);
+    const detected = await target.detect();
+    if (!detected.available) {
+      throw new CommandError("provider_unavailable", detected.detail ?? `${p.toProvider} unavailable`);
+    }
+
+    const live = this.sessions.get(p.threadId);
+    if (live?.activeTurnId) {
+      throw new CommandError("session_busy", "finish or interrupt the running turn before handing off");
+    }
+
+    // Ask the source agent to describe its own state.
+    const { turnId } = await this.sendTurn({ threadId: p.threadId, text: summaryPrompt() });
+    await this.awaitTurn(turnId, 180_000);
+
+    const summary = this.store
+      .listMessages(p.threadId)
+      .find((m) => m.turnId === turnId && m.role === "assistant")?.text;
+    if (!summary?.trim()) {
+      throw new CommandError("internal", "the source agent produced no handover summary");
+    }
+
+    const context: PacketContext = {
+      files: this.collectTouchedFiles(p.threadId),
+      laneBranch: source.laneId ? (this.store.getLane(source.laneId)?.branch ?? null) : null,
+    };
+
+    // Continue in the same project and lane, so the working tree carries over.
+    const { thread } = this.createThread({
+      projectId: source.projectId,
+      title: p.title?.trim() || `${source.title} (${target.label})`,
+      provider: p.toProvider,
+      ...(source.laneId ? { laneId: source.laneId } : {}),
+    });
+
+    this.commit([
+      {
+        type: "thread.handed_off",
+        threadId: p.threadId,
+        payload: {
+          fromThreadId: p.threadId,
+          toThreadId: thread.id,
+          fromProvider: source.provider,
+          toProvider: p.toProvider,
+          summary,
+        },
+      },
+    ]);
+
+    // Seed the target as its first turn, so its own history explains itself.
+    await this.sendTurn({ threadId: thread.id, text: seedPrompt(summary, source.provider, context) });
+
+    const created = this.store.getThread(thread.id);
+    if (!created) throw new CommandError("internal", "thread projection missing after handoff");
+    return { thread: created, summary };
+  }
+
+  /** Files recorded by checkpoint diffs across the thread. Mechanical and free. */
+  private collectTouchedFiles(threadId: string): string[] {
+    const seen = new Set<string>();
+    for (const diff of this.store.listTurnDiffs(threadId)) {
+      for (const file of diff.files) seen.add(file.path);
+    }
+    return [...seen];
   }
 
   private async detect(): Promise<CommandResults["provider.detect"]> {
@@ -805,6 +913,8 @@ export class Orchestrator {
         if (session?.activeTurnId === event.turnId) session.activeTurnId = null;
         session?.pendingApprovals.clear();
         this.commit([{ type: "turn.completed", threadId, payload: { threadId, turnId: event.turnId } }]);
+        this.turnWaiters.get(event.turnId)?.resolve();
+        this.turnWaiters.delete(event.turnId);
         void this.finalizeCheckpoints(threadId, event.turnId).catch((err) => {
           log.warn("checkpoint finalize failed", { threadId, turnId: event.turnId, err: String(err) });
         });
@@ -849,6 +959,10 @@ export class Orchestrator {
           payload: { threadId, status: "error", detail: event.message },
         });
         this.commit(events);
+        if (turnId) {
+          this.turnWaiters.get(turnId)?.reject(new Error(event.message));
+          this.turnWaiters.delete(turnId);
+        }
         return;
       }
 

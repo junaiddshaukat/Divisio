@@ -5,6 +5,7 @@ import {
   type EmitRuntimeEvent,
   type ProviderAdapter,
   type SendTurnInput,
+  type PermissionMode,
   type SessionHandle,
   type StartSessionInput,
 } from "@divisio/contracts";
@@ -35,6 +36,8 @@ type TurnProcess = Bun.Subprocess<"ignore", "pipe", "pipe">;
 interface Session extends SessionHandle {
   proc: TurnProcess | null;
   cwd: string;
+  /** Divisio's mode for this thread, mapped onto the CLI's own permission flag. */
+  permissionMode: PermissionMode;
   emit: EmitRuntimeEvent;
   /** Vendor session id, captured from the init line, for --resume. */
   nativeId: string | null;
@@ -82,6 +85,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       nativeId: input.resumeId ?? null,
       proc: null,
       cwd: input.cwd,
+      permissionMode: input.permissionMode ?? "supervised",
       emit,
       close: async () => {
         await this.stopSession(session);
@@ -98,6 +102,14 @@ export class ClaudeAdapter implements ProviderAdapter {
     if (session.proc) throw new Error("turn already running");
 
     const args = ["--print", "--output-format", "stream-json", "--verbose"];
+
+    // Without an explicit mode the CLI refuses every edit in print mode, so a
+    // thread could talk but never change a file and full access meant nothing.
+    // `acceptEdits` allows file writes while still refusing the destructive
+    // classes the CLI gates separately — closer to what "full access" implies
+    // here than bypassing every check.
+    args.push("--permission-mode", session.permissionMode === "full_access" ? "acceptEdits" : "manual");
+
     if (session.nativeId) args.push("--resume", session.nativeId);
     args.push(turn.text);
 

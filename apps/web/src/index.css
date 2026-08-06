@@ -882,3 +882,28 @@ button.btn.secondary {
     grid-template-columns: 1fr;
   }
 }
+
+.handoff {
+  position: relative;
+  margin-left: auto;
+}
+.handoff-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+/* Handoff already pushes right; a second auto margin would split the gap. */
+.topbar .handoff ~ .status {
+  margin-left: 0;
+}

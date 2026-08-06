@@ -20,6 +20,7 @@ export interface CommandPayloads {
   "turn.diff": { threadId: string; turnId: string };
   "approval.respond": { threadId: string; approvalId: string; decision: "approve" | "deny" };
   "provider.detect": Record<string, never>;
+  "thread.handoff": { threadId: string; toProvider: string; title?: string };
   "lane.create": { projectId: string; title: string; base?: string };
   "lane.list": { projectId?: string };
   "lane.archive": { laneId: string; deleteBranch: boolean; force: boolean };
@@ -103,6 +104,7 @@ export interface CommandResults {
   };
   "approval.respond": Record<string, never>;
   "provider.detect": { providers: ProviderView[] };
+  "thread.handoff": { thread: ThreadView; summary: string };
   "lane.create": { lane: LaneView };
   "lane.list": { lanes: LaneView[] };
   "lane.archive": { lane: LaneView };
