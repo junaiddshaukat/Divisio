@@ -35,6 +35,57 @@ fn daemon_ready(state: State<'_, DaemonState>) -> bool {
   state.token.lock().map(|g| g.is_some()).unwrap_or(false)
 }
 
+/// Reveal a folder in the file manager, or open it with Cursor / VS Code.
+#[tauri::command]
+fn open_external(path: String, with: String) -> Result<(), String> {
+  let path = PathBuf::from(&path);
+  if !path.exists() {
+    return Err(format!("path does not exist: {}", path.display()));
+  }
+
+  let mut cmd = match with.as_str() {
+    "finder" | "reveal" => {
+      #[cfg(target_os = "macos")]
+      {
+        let mut c = Command::new("open");
+        c.arg(&path);
+        c
+      }
+      #[cfg(target_os = "windows")]
+      {
+        let mut c = Command::new("explorer");
+        c.arg(&path);
+        c
+      }
+      #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+      {
+        let mut c = Command::new("xdg-open");
+        c.arg(&path);
+        c
+      }
+    }
+    "cursor" => {
+      let mut c = Command::new("cursor");
+      c.arg(&path);
+      c
+    }
+    "code" => {
+      let mut c = Command::new("code");
+      c.arg(&path);
+      c
+    }
+    other => return Err(format!("unknown open target: {other}")),
+  };
+
+  match cmd.spawn() {
+    Ok(_) => Ok(()),
+    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+      Err(format!("{with} CLI not on PATH — install it, then retry"))
+    }
+    Err(err) => Err(err.to_string()),
+  }
+}
+
 fn repo_root() -> Option<PathBuf> {
   // Only meaningful in a dev checkout. A packaged app has no monorepo, so this
   // returning None is normal rather than an error.
@@ -72,7 +123,7 @@ fn dirs_home() -> PathBuf {
 /// during development. It becomes a trap when that process is older than the
 /// app: the shell attaches happily and every newer feature fails separately
 /// with "unknown command". Checking first turns that into one clear message.
-const REQUIRED_COMMANDS: &[&str] = &["file.tree", "terminal.open", "turn.restore"];
+const REQUIRED_COMMANDS: &[&str] = &["file.tree", "terminal.open", "turn.restore", "thread.setProvider"];
 
 fn health_body() -> Option<String> {
   let out = Command::new("curl")
@@ -248,7 +299,7 @@ pub fn run() {
       child: Mutex::new(None),
       token: Mutex::new(None),
     })
-    .invoke_handler(tauri::generate_handler![auth_token, daemon_ready])
+    .invoke_handler(tauri::generate_handler![auth_token, daemon_ready, open_external])
     .setup(|app| {
       match bootstrap_daemon(app.handle()) {
         Ok(()) => eprintln!("[divisio] daemon ready"),
@@ -257,6 +308,24 @@ pub fn run() {
           // Still show the window — the UI can surface the error via missing token.
         }
       }
+
+      // Wallpaper bleed: native under-window vibrancy behind a transparent webview.
+      // CSS frost alone cannot show the desktop; this is the AppKit material.
+      #[cfg(target_os = "macos")]
+      {
+        use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+        if let Some(window) = app.get_webview_window("main") {
+          if let Err(err) = apply_vibrancy(
+            &window,
+            NSVisualEffectMaterial::UnderWindowBackground,
+            None,
+            None,
+          ) {
+            eprintln!("[divisio] vibrancy unavailable: {err}");
+          }
+        }
+      }
+
       Ok(())
     })
     .on_window_event(|window, event| {

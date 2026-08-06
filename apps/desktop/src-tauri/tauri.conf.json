@@ -4,20 +4,29 @@
   "version": "0.0.0",
   "identifier": "dev.divisio.desktop",
   "build": {
-    "beforeDevCommand": "bun run --cwd ../web dev",
+    "beforeDevCommand": "bun run scripts/build-daemon.ts && bun run --cwd ../web dev",
     "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "bun run --cwd ../web build && bun run scripts/build-daemon.ts",
     "frontendDist": "../../web/dist"
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Divisio",
         "width": 1280,
         "height": 840,
         "minWidth": 960,
-        "minHeight": 640
+        "minHeight": 640,
+        "transparent": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 14,
+          "y": 18
+        }
       }
     ],
     "security": {

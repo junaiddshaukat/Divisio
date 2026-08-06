@@ -21,7 +21,7 @@ jobs:
         with:
           # Pinned deliberately: Bun moves fast, and an unpinned runtime turns
           # an unrelated upstream release into a red build on someone's PR.
-          bun-version: 1.3.1
+          bun-version: 1.3.5
 
       - name: Install
         run: bun install --frozen-lockfile
