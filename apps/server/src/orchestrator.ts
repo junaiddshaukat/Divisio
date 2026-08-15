@@ -38,6 +38,7 @@ import {
 } from "./files/service.ts";
 import type { PairingStatus } from "@divisio/contracts";
 import { probeToolchain } from "./toolchain.ts";
+import { normalizeUsageRange } from "./store/usage.ts";
 import { setupFor } from "@divisio/adapters/setup";
 
 /** What the orchestrator needs from pairing, so it does not depend on transport. */
@@ -119,7 +120,7 @@ export const ORCHESTRATOR_COMMANDS = [
   "thread.commit", "thread.diff", "thread.gitStatus", "thread.push",
   "turn.send", "turn.interrupt", "turn.diff", "turn.restore",
   "approval.respond", "provider.detect", "provider.models", "customProvider.list", "customProvider.upsert", "customProvider.delete",
-  "toolchain.status", "stats.activity",
+  "toolchain.status", "stats.activity", "stats.usage",
   "lane.create", "lane.list", "lane.archive", "lane.diff", "lane.openPr",
   "file.tree", "file.read", "file.write",
   "pairing.status", "pairing.createToken", "pairing.revoke", "pairing.revokeAll",
@@ -196,6 +197,8 @@ export class Orchestrator {
         return await probeToolchain();
       case "stats.activity":
         return this.store.activityStats();
+      case "stats.usage":
+        return this.store.usageStats(normalizeUsageRange((payload as { days?: unknown }).days));
       case "lane.create":
         return await this.createLane(payload);
       case "lane.list":
@@ -1608,9 +1611,18 @@ export class Orchestrator {
         const inputTokens = finiteToken(event.inputTokens);
         const outputTokens = finiteToken(event.outputTokens);
         const totalTokens = finiteToken(event.totalTokens);
-        if (inputTokens === undefined && outputTokens === undefined && totalTokens === undefined) {
+        const cacheReadTokens = finiteToken(event.cacheReadTokens);
+        const cacheWriteTokens = finiteToken(event.cacheWriteTokens);
+        if (
+          inputTokens === undefined &&
+          outputTokens === undefined &&
+          totalTokens === undefined &&
+          cacheReadTokens === undefined &&
+          cacheWriteTokens === undefined
+        ) {
           return;
         }
+        const model = this.store.getThread(threadId)?.model;
         this.commit([
           {
             type: "turn.usage",
@@ -1618,9 +1630,13 @@ export class Orchestrator {
             payload: {
               threadId,
               turnId: event.turnId,
+              ...(session?.provider ? { provider: session.provider } : {}),
+              ...(model ? { model } : {}),
               ...(inputTokens !== undefined ? { inputTokens } : {}),
               ...(outputTokens !== undefined ? { outputTokens } : {}),
               ...(totalTokens !== undefined ? { totalTokens } : {}),
+              ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+              ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
             },
           },
         ]);

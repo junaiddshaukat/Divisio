@@ -77,5 +77,7 @@ export {
   PanelLeft as SidebarShowIcon,
   LockOpen as UnlockIcon,
   Pencil as EditIcon,
+  Camera as CameraIcon,
   FolderPlus as AddProjectIcon,
+  ChartNoAxesColumn as UsageIcon,
 } from "lucide-react";

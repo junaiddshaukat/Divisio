@@ -1233,6 +1233,7 @@ export function App() {
       { id: "board", label: "Open board", group: "Navigate", run: () => { setSettingsOpen(null); setView("board"); } },
       { id: "providers", label: "Providers", group: "Navigate", run: () => openSettings("providers") },
       { id: "profile", label: "Profile", group: "Navigate", run: () => openSettings("profile") },
+      { id: "usage", label: "Usage", group: "Navigate", run: () => openSettings("usage") },
       { id: "settings", label: "Settings", group: "Navigate", run: () => openSettings("providers") },
       {
         id: "devices",
@@ -1420,6 +1421,11 @@ export function App() {
             const client = clientRef.current;
             if (!client) throw new Error("not connected");
             return client.send("stats.activity", {});
+          }}
+          onLoadUsage={async (days) => {
+            const client = clientRef.current;
+            if (!client) throw new Error("not connected");
+            return client.send("stats.usage", { days });
           }}
           onCreateToken={async () => {
             const client = clientRef.current;

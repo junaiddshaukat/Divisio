@@ -53,7 +53,15 @@ function usageFromResult(msg: Record<string, unknown>, turnId: string): Provider
   const inputTokens = finiteToken(u["input_tokens"]);
   const outputTokens = finiteToken(u["output_tokens"]);
   const totalTokens = finiteToken(u["total_tokens"]);
-  if (inputTokens === undefined && outputTokens === undefined && totalTokens === undefined) {
+  const cacheReadTokens = finiteToken(u["cache_read_input_tokens"]);
+  const cacheWriteTokens = finiteToken(u["cache_creation_input_tokens"]);
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cacheReadTokens === undefined &&
+    cacheWriteTokens === undefined
+  ) {
     return null;
   }
   return {
@@ -62,6 +70,8 @@ function usageFromResult(msg: Record<string, unknown>, turnId: string): Provider
     ...(inputTokens !== undefined ? { inputTokens } : {}),
     ...(outputTokens !== undefined ? { outputTokens } : {}),
     ...(totalTokens !== undefined ? { totalTokens } : {}),
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
   };
 }
 

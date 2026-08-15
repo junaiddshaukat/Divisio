@@ -140,6 +140,11 @@ export interface EventPayloads {
     inputTokens?: number;
     outputTokens?: number;
     totalTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    /** Adapter kind. Additive — older events omit it. */
+    provider?: string;
+    model?: string | null;
   };
   "session.status": { threadId: string; status: SessionStatus; detail?: string };
   "approval.requested": {

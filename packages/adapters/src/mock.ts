@@ -34,6 +34,8 @@ export type MockScriptStep =
       inputTokens?: number;
       outputTokens?: number;
       totalTokens?: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
     };
 
 export interface MockPeerOptions {
@@ -199,6 +201,8 @@ export class MockPeerAdapter implements ProviderAdapter {
           ...(step.inputTokens !== undefined ? { inputTokens: step.inputTokens } : {}),
           ...(step.outputTokens !== undefined ? { outputTokens: step.outputTokens } : {}),
           ...(step.totalTokens !== undefined ? { totalTokens: step.totalTokens } : {}),
+          ...(step.cacheReadTokens !== undefined ? { cacheReadTokens: step.cacheReadTokens } : {}),
+          ...(step.cacheWriteTokens !== undefined ? { cacheWriteTokens: step.cacheWriteTokens } : {}),
         });
       }
     }

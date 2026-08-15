@@ -69,6 +69,8 @@ Vendor session ids are persisted on the event log (`thread.vendor_session_set`) 
 
 `usageSignals` is true only when the adapter maps vendor token counts onto `usage.reported` / `turn.usage`. Missing counters stay absent; adapters must not invent numbers.
 
+Settings → Usage aggregates those `turn.usage` events on this machine (uncached input, cache read, cache write, output). It is not billed spend, not a vendor quota, and not a scan of CLI home directories. Agents that do not emit usage still appear as unmetered turns.
+
 CLIs often show their own "92% of quota" banners inside the vendor TUI. Divisio does not receive that percentage unless an adapter maps it. When a turn fails with a rate-limit or quota error, the UI offers **Hand off** and orchestration seeds the next agent from the event log so the limited CLI does not have to write a note.
 
 Divisio permission modes are **supervised** and **full access**. Vendor session modes (Plan / Agent / Ask and similar) stay on the CLI. Do not add a Divisio mode picker that claims to switch a CLI into a mode the adapter cannot actually set.

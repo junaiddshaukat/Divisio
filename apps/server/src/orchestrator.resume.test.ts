@@ -118,6 +118,7 @@ describe("vendor session resume", () => {
     expect(usage[0]?.payload).toEqual({
       threadId: thread.id,
       turnId: expect.any(String),
+      provider: "mock",
       inputTokens: 12,
       outputTokens: 4,
     });

@@ -6,8 +6,11 @@ import {
   UpcastError,
   type ActivityStats,
   type DomainEvent,
+  type EventPayloads,
   type EventType,
   type NewEvent,
+  type UsageRangeDays,
+  type UsageStats,
   type LaneStatus,
   type LaneView,
   type PermissionMode,
@@ -17,6 +20,7 @@ import {
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
 import { assembleActivityStats, localDateKey } from "./activity.ts";
+import { assembleUsageStats, DEFAULT_USAGE_RANGE, normalizeUsageRange } from "./usage.ts";
 
 const log = logger("store");
 
@@ -621,6 +625,63 @@ export class EventStore {
       projects,
       filesTouched,
     });
+  }
+
+  /**
+   * Token counts for Settings → Usage. From `turn.usage` on this log —
+   * not a vendor bill, not a scan of CLI home directories.
+   */
+  usageStats(days?: UsageRangeDays): UsageStats {
+    const rangeDays = normalizeUsageRange(days ?? DEFAULT_USAGE_RANGE);
+    const startedRows = this.db
+      .query<{ at: string; payload: string }, []>(
+        "select at, payload from events where type = 'turn.started' order by seq",
+      )
+      .all();
+    const usageRows = this.db
+      .query<{ at: string; payload: string }, []>(
+        "select at, payload from events where type = 'turn.usage' order by seq",
+      )
+      .all();
+
+    const started = startedRows.flatMap((row) => {
+      try {
+        const payload = JSON.parse(row.payload) as EventPayloads["turn.started"];
+        if (!payload.turnId) return [];
+        return [
+          {
+            date: localDateKey(row.at),
+            turnId: payload.turnId,
+            provider: payload.provider || "unknown",
+          },
+        ];
+      } catch {
+        return [];
+      }
+    });
+
+    const usage = usageRows.flatMap((row) => {
+      try {
+        const payload = JSON.parse(row.payload) as EventPayloads["turn.usage"];
+        if (!payload.turnId) return [];
+        return [
+          {
+            date: localDateKey(row.at),
+            turnId: payload.turnId,
+            ...(payload.provider ? { provider: payload.provider } : {}),
+            ...(payload.inputTokens !== undefined ? { inputTokens: payload.inputTokens } : {}),
+            ...(payload.outputTokens !== undefined ? { outputTokens: payload.outputTokens } : {}),
+            ...(payload.totalTokens !== undefined ? { totalTokens: payload.totalTokens } : {}),
+            ...(payload.cacheReadTokens !== undefined ? { cacheReadTokens: payload.cacheReadTokens } : {}),
+            ...(payload.cacheWriteTokens !== undefined ? { cacheWriteTokens: payload.cacheWriteTokens } : {}),
+          },
+        ];
+      } catch {
+        return [];
+      }
+    });
+
+    return assembleUsageStats({ started, usage, rangeDays });
   }
 
   close() {

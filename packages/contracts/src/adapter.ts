@@ -115,6 +115,10 @@ export type ProviderRuntimeEvent =
       inputTokens?: number;
       outputTokens?: number;
       totalTokens?: number;
+      /** Cache hits. Disjoint from `inputTokens` on Claude's wire. */
+      cacheReadTokens?: number;
+      /** Cache writes. Disjoint from `inputTokens` on Claude's wire. */
+      cacheWriteTokens?: number;
     }
   | { type: "status"; status: SessionStatus; detail?: string }
   | { type: "session.exited"; code: number | null; signal: string | null }

@@ -98,9 +98,13 @@ export interface CommandPayloads {
   "toolchain.status": Record<string, never>;
   /**
    * Local coding activity for Settings → Profile (heatmap / streaks).
-   * Turns and messages only — tokens are not recorded yet.
    */
   "stats.activity": Record<string, never>;
+  /**
+   * Token counts Divisio recorded from CLIs that emit usage.
+   * `days` is 7, 30, or 90; default 30. Not a bill.
+   */
+  "stats.usage": { days?: 7 | 30 | 90 };
   /**
    * Clone a git remote into `parentPath/<dirname>`, then register it as a project.
    * `name` defaults to the repo folder name.
@@ -282,6 +286,7 @@ export interface CommandResults {
   "pairing.revokeAll": { revoked: number };
   "toolchain.status": ToolchainStatus;
   "stats.activity": ActivityStats;
+  "stats.usage": UsageStats;
   "project.clone": { project: ProjectView };
   "lane.create": { lane: LaneView };
   "lane.list": { lanes: LaneView[] };
@@ -359,8 +364,7 @@ export interface ActivityTotals {
 }
 
 /**
- * Settings → Profile. Honest local activity — not GitHub contributions,
- * and not token spend (tokens are not persisted yet).
+ * Settings → Profile. Honest local activity — not GitHub contributions.
  */
 export interface ActivityStats {
   days: ActivityDay[];
@@ -368,6 +372,44 @@ export interface ActivityStats {
   totals: ActivityTotals;
   /** Inclusive day count in `days` (typically ~371 for 53 weeks). */
   rangeDays: number;
+}
+
+export type UsageRangeDays = 7 | 30 | 90;
+
+export interface UsageDay {
+  date: string;
+  tokens: number;
+  meteredTurns: number;
+}
+
+export interface UsageProviderShare {
+  kind: string;
+  tokens: number;
+  meteredTurns: number;
+  unmeteredTurns: number;
+}
+
+export interface UsageTotals {
+  tokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  meteredTurns: number;
+  unmeteredTurns: number;
+}
+
+/**
+ * Settings → Usage. Counts from `turn.usage` on this machine.
+ * Missing counters stay zero — never a guessed dollar cost.
+ */
+export interface UsageStats {
+  rangeDays: UsageRangeDays;
+  from: string;
+  to: string;
+  days: UsageDay[];
+  providers: UsageProviderShare[];
+  totals: UsageTotals;
 }
 
 export interface PrResult {

@@ -289,4 +289,59 @@ describe("EventStore projections", () => {
     ]);
     expect(store.getThread("thr_a")?.vendorResume).toBeNull();
   });
+
+  test("usageStats counts metered tokens and unmetered turns", () => {
+    setup();
+    store.append([
+      {
+        type: "project.created",
+        threadId: null,
+        payload: { projectId: "prj_a", name: "Alpha", rootPath: "/tmp/a" },
+      },
+      {
+        type: "thread.created",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", projectId: "prj_a", title: "Hello", provider: "claude" },
+      },
+      {
+        type: "turn.started",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", turnId: "trn_metered", provider: "claude" },
+      },
+      {
+        type: "turn.usage",
+        threadId: "thr_a",
+        payload: {
+          threadId: "thr_a",
+          turnId: "trn_metered",
+          provider: "claude",
+          inputTokens: 12,
+          outputTokens: 4,
+        },
+      },
+      {
+        type: "turn.started",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", turnId: "trn_bare", provider: "grok" },
+      },
+    ]);
+
+    const stats = store.usageStats(7);
+    expect(stats.rangeDays).toBe(7);
+    expect(stats.days).toHaveLength(7);
+    expect(stats.totals.tokens).toBe(16);
+    expect(stats.totals.meteredTurns).toBe(1);
+    expect(stats.totals.unmeteredTurns).toBe(1);
+    expect(stats.providers.find((p) => p.kind === "claude")?.tokens).toBe(16);
+    expect(stats.providers.find((p) => p.kind === "grok")?.unmeteredTurns).toBe(1);
+  });
+
+  test("usageStats is empty on a fresh log", () => {
+    setup();
+    const stats = store.usageStats();
+    expect(stats.rangeDays).toBe(30);
+    expect(stats.totals.tokens).toBe(0);
+    expect(stats.totals.meteredTurns).toBe(0);
+    expect(stats.days).toHaveLength(30);
+  });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ActivityStats, PairingStatus, ProviderView, ToolchainStatus } from "@divisio/contracts";
+import type { ActivityStats, PairingStatus, ProviderView, ToolchainStatus, UsageRangeDays, UsageStats } from "@divisio/contracts";
 import { Button } from "./ui/Button.tsx";
 import {
   AppearanceIcon,
@@ -11,6 +11,7 @@ import {
   ProviderIcon,
   RefreshIcon,
   SettingsIcon,
+  UsageIcon,
 } from "./ui/icons.ts";
 import { AppearanceSettings } from "./settings/AppearanceSettings.tsx";
 import { GeneralSettings } from "./settings/GeneralSettings.tsx";
@@ -18,12 +19,14 @@ import { KeybindingsSettings } from "./settings/KeybindingsSettings.tsx";
 import { ProfileSettings } from "./settings/ProfileSettings.tsx";
 import { ProvidersSettings } from "./settings/ProvidersSettings.tsx";
 import { SourceControlSettings } from "./settings/SourceControlSettings.tsx";
+import { UsageSettings } from "./settings/UsageSettings.tsx";
 import { PairingPanel } from "./PairingPanel.tsx";
 import type { Client } from "../client.ts";
 import type { ConnectionState } from "../client.ts";
 
 export type SettingsSection =
   | "profile"
+  | "usage"
   | "general"
   | "appearance"
   | "providers"
@@ -33,6 +36,7 @@ export type SettingsSection =
 
 type NavIconId =
   | "profile"
+  | "usage"
   | "settings"
   | "appearance"
   | "providers"
@@ -45,6 +49,7 @@ const NAV_GROUPS: { label: string; items: { id: SettingsSection; label: string; 
     label: "Workspace",
     items: [
       { id: "profile", label: "Profile", icon: "profile" },
+      { id: "usage", label: "Usage", icon: "usage" },
       { id: "general", label: "General", icon: "settings" },
       { id: "appearance", label: "Appearance", icon: "appearance" },
     ],
@@ -67,6 +72,7 @@ const NAV_GROUPS: { label: string; items: { id: SettingsSection; label: string; 
 
 const SECTION_COPY: Record<SettingsSection, string> = {
   profile: "Local coding activity on this machine — turns, streaks, and agents you used.",
+  usage: "Token counts Divisio recorded from CLIs that emit usage. Not a bill.",
   general: "About Divisio and this window.",
   appearance: "Color mode for the workspace.",
   providers: "Turn agents on or off, see what each CLI actually supports, or add OpenAI-compatible endpoints with your own keys.",
@@ -86,6 +92,7 @@ interface Props {
   onEnsurePairing(): Promise<void>;
   onLoadToolchain(): Promise<ToolchainStatus>;
   onLoadActivity(): Promise<ActivityStats>;
+  onLoadUsage(days: UsageRangeDays): Promise<UsageStats>;
   onCreateToken(): Promise<{ url: string; expiresAt: string; fingerprint: string | null }>;
   onRevoke(clientId: string): Promise<void>;
   onRevokeAll(): Promise<void>;
@@ -96,6 +103,8 @@ function NavIcon({ kind }: { kind: NavIconId }) {
   switch (kind) {
     case "profile":
       return <ProfileIcon />;
+    case "usage":
+      return <UsageIcon />;
     case "appearance":
       return <AppearanceIcon />;
     case "providers":
@@ -126,6 +135,7 @@ export function SettingsShell({
   onEnsurePairing,
   onLoadToolchain,
   onLoadActivity,
+  onLoadUsage,
   onCreateToken,
   onRevoke,
   onRevokeAll,
@@ -134,6 +144,7 @@ export function SettingsShell({
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [toolchainKey, setToolchainKey] = useState(0);
   const [activityKey, setActivityKey] = useState(0);
+  const [usageKey, setUsageKey] = useState(0);
 
   useEffect(() => {
     setSection(initialSection);
@@ -177,6 +188,15 @@ export function SettingsShell({
         size="sm"
         icon={<RefreshIcon />}
         onClick={() => setActivityKey((k) => k + 1)}
+      >
+        Refresh
+      </Button>
+    ) : section === "usage" ? (
+      <Button
+        variant="secondary"
+        size="sm"
+        icon={<RefreshIcon />}
+        onClick={() => setUsageKey((k) => k + 1)}
       >
         Refresh
       </Button>
@@ -226,6 +246,10 @@ export function SettingsShell({
             <div className="settings-panel-body">
               {section === "profile" && (
                 <ProfileSettings key={activityKey} load={onLoadActivity} providers={providers} />
+              )}
+
+              {section === "usage" && (
+                <UsageSettings key={usageKey} load={onLoadUsage} providers={providers} />
               )}
 
               {section === "general" && (

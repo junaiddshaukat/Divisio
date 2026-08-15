@@ -1,0 +1,247 @@
+/*
+ * Settings → Usage. Log-derived token counts. Discrete day bars, one stacked
+ * composition strip, agent list — luminosity only, no invented spend.
+ */
+
+.usage-section {
+  gap: var(--space-7);
+}
+
+.usage-note {
+  margin: 0;
+  font-size: var(--text-ui);
+  line-height: var(--leading-normal);
+  color: var(--muted-foreground);
+  max-width: 58ch;
+}
+
+.usage-toolbar {
+  display: flex;
+  align-items: center;
+}
+
+.usage-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.usage-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.usage-kicker {
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.usage-hero-value {
+  margin-top: var(--space-2);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-hero-meta {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--muted-foreground);
+  text-align: right;
+}
+
+.usage-days {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 72px;
+}
+
+.usage-day {
+  flex: 1;
+  min-width: 2px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.usage-day-fill,
+.usage-day-empty {
+  display: block;
+  width: 100%;
+  border-radius: 1px 1px 0 0;
+}
+
+.usage-day-fill {
+  height: var(--h);
+  background: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.usage-day-empty {
+  height: 2px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.usage-days-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-micro);
+  color: var(--muted-foreground);
+}
+
+.usage-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.usage-stack {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.usage-stack-seg {
+  display: block;
+  height: 100%;
+  width: var(--w);
+  flex-shrink: 0;
+}
+
+.usage-stack-seg[data-part="cache-read"],
+.usage-legend-swatch[data-part="cache-read"] {
+  background: color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+
+.usage-stack-seg[data-part="input"],
+.usage-legend-swatch[data-part="input"] {
+  background: color-mix(in srgb, var(--foreground) 52%, transparent);
+}
+
+.usage-stack-seg[data-part="output"],
+.usage-legend-swatch[data-part="output"] {
+  background: color-mix(in srgb, var(--ring) 78%, var(--foreground));
+}
+
+.usage-stack-seg[data-part="cache-write"],
+.usage-legend-swatch[data-part="cache-write"] {
+  background: color-mix(in srgb, var(--muted-foreground) 80%, var(--foreground));
+}
+
+.usage-stack-seg[data-part="reported"],
+.usage-legend-swatch[data-part="reported"] {
+  background: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.usage-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  font-size: var(--text-meta);
+  color: var(--muted-foreground);
+}
+
+.usage-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.usage-legend-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.usage-legend-value {
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-providers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.usage-providers li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-rows: auto 6px;
+  column-gap: var(--space-4);
+  row-gap: var(--space-3);
+  align-items: center;
+}
+
+.usage-providers .provider-mark {
+  width: 16px;
+  height: 16px;
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.usage-provider-label {
+  font-size: var(--text-ui);
+  font-weight: var(--weight-medium);
+  grid-row: 1;
+  grid-column: 2;
+}
+
+.usage-provider-meta {
+  font-size: var(--text-meta);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  grid-row: 1;
+  grid-column: 3;
+}
+
+.usage-provider-bar {
+  grid-row: 2;
+  grid-column: 2 / 4;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  position: relative;
+  overflow: hidden;
+}
+
+.usage-provider-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--share, 0%);
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--ring) 70%, var(--foreground));
+}
+
+@media (max-width: 720px) {
+  .usage-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .usage-hero-meta {
+    text-align: left;
+  }
+}

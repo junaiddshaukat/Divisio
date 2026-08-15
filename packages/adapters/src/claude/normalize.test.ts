@@ -106,4 +106,32 @@ describe("Claude stream normalizer (golden fixtures)", () => {
       { type: "usage.reported", turnId: "trn_usage", inputTokens: 12, outputTokens: 4 },
     ]);
   });
+
+  test("result.usage maps cache counters when present", () => {
+    const result = replayNdjson(
+      JSON.stringify({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "ok",
+        usage: {
+          input_tokens: 12,
+          output_tokens: 4,
+          cache_read_input_tokens: 1000,
+          cache_creation_input_tokens: 80,
+        },
+      }) + "\n",
+      "trn_cache",
+    );
+    expect(result.events.filter((e) => e.type === "usage.reported")).toEqual([
+      {
+        type: "usage.reported",
+        turnId: "trn_cache",
+        inputTokens: 12,
+        outputTokens: 4,
+        cacheReadTokens: 1000,
+        cacheWriteTokens: 80,
+      },
+    ]);
+  });
 });
