@@ -5,7 +5,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./sdk": "./src/sdk/index.ts"
+    "./sdk": "./src/sdk/index.ts",
+    "./setup": "./src/shared/setup.ts"
   },
-  "dependencies": { "@divisio/contracts": "workspace:*", "@divisio/shared": "workspace:*" }
+  "dependencies": {
+    "@divisio/contracts": "workspace:*",
+    "@divisio/shared": "workspace:*"
+  }
 }

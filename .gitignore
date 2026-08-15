@@ -1,5 +1,5 @@
 # Git ignore
-
+.agent/
 .DS_Store
 .env
 .env.*
@@ -20,3 +20,5 @@ apps/desktop/src-tauri/target/
 # Internal-only: competitive analysis, peer research, third-party screenshots.
 # Not published. Keeps the reasoning without shipping it.
 docs/internal/
+
+AGENT_CONTEXT.md

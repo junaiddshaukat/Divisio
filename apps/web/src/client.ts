@@ -181,12 +181,20 @@ export class Client {
     this.ws?.send(JSON.stringify({ t: "sub", threads }));
   }
 
-  send<C extends CommandName>(cmd: C, payload: CommandPayloads[C]): Promise<CommandResults[C]> {
+  send<C extends CommandName>(
+    cmd: C,
+    payload: CommandPayloads[C],
+    opts?: { timeoutMs?: number },
+  ): Promise<CommandResults[C]> {
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error("not connected"));
     }
     const id = `c${++this.nextId}`;
+    // Handoff waits on a full source-agent turn (up to ~3 min server-side).
+    const timeoutMs =
+      opts?.timeoutMs ??
+      (cmd === "thread.handoff" ? 210_000 : cmd === "project.clone" ? 120_000 : 30_000);
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
       ws.send(JSON.stringify({ t: "req", id, cmd, payload }));
@@ -194,7 +202,7 @@ export class Client {
       // committed events. Stopping work needs turn.interrupt.
       setTimeout(() => {
         if (this.pending.delete(id)) reject(new Error(`${cmd} timed out`));
-      }, 30_000);
+      }, timeoutMs);
     });
   }
 

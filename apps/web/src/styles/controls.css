@@ -260,6 +260,11 @@ button.btn.btn-danger:hover:not(:disabled),
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
 }
+.menu-select-panel-portal {
+  position: fixed;
+  right: auto;
+  z-index: 1000;
+}
 .menu-select-option {
   display: flex;
   align-items: center;
@@ -287,17 +292,22 @@ button.btn.btn-danger:hover:not(:disabled),
 .cap-yes { color: var(--success); }
 .cap-no { color: var(--muted-foreground); opacity: 0.6; }
 
-/* The git menu trigger is a <summary>, so it cannot be an IconButton. */
+/* Git overflow chevron next to the primary Commit/Push button. */
 .git-menu-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: var(--control-height-sm);
   height: var(--control-height-sm);
+  border: 0;
+  background: transparent;
   border-radius: var(--radius-md);
   color: var(--muted-foreground);
   cursor: pointer;
-  list-style: none;
+  padding: 0;
 }
-.git-menu-trigger::-webkit-details-marker { display: none; }
 .git-menu-trigger:hover { background: var(--accent); color: var(--foreground); }
+.git-menu-trigger:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

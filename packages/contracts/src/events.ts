@@ -12,7 +12,11 @@
 
 export const EVENT_VERSIONS = {
   "project.created": 1,
+  /** Soft-remove from Divisio — folder on disk is never touched. */
+  "project.removed": 1,
   "thread.created": 1,
+  "thread.renamed": 1,
+  "thread.deleted": 1,
   "thread.permission_mode_set": 1,
   "thread.provider_set": 1,
   "turn.started": 1,
@@ -63,6 +67,8 @@ export interface DiffFileEntry {
 
 export interface EventPayloads {
   "project.created": { projectId: string; name: string; rootPath: string };
+  /** Soft-remove — projection hides the project; disk folder is untouched. */
+  "project.removed": { projectId: string };
   /** `laneId` is optional and additive: threads without a lane run in the
    *  primary checkout, which is the pre-Phase-2 behaviour. Optional means no
    *  version bump and no upcaster. */
@@ -73,6 +79,9 @@ export interface EventPayloads {
     provider: string;
     laneId?: string;
   };
+  "thread.renamed": { threadId: string; title: string };
+  /** Soft-delete — projection hides the thread; event log keeps history. */
+  "thread.deleted": { threadId: string };
   "thread.permission_mode_set": { threadId: string; mode: PermissionMode };
   /**
    * Empty-thread provider/model switch (no handoff). `model` null clears the

@@ -190,7 +190,7 @@ export function SessionBoard({
                         icon={<ThreadIcon />}
                         onClick={() => onNewThread(lane.id)}
                       >
-                        Start a thread
+                        Start a chat
                       </Button>
                     ) : (
                       <div className="lane-threads">

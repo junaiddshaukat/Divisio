@@ -1,3 +1,5 @@
+export { OpenAICompatAdapter } from "./openaiCompat.ts";
+export type { OpenAICompatConfig } from "./openaiCompat.ts";
 export { ClaudeAdapter } from "./claude.ts";
 export { normalizeClaudeStreamLine } from "./claude/normalize.ts";
 export type { ClaudeNormalizeResult, ClaudeNormalizeState } from "./claude/normalize.ts";
@@ -28,6 +30,7 @@ export {
 export type { CommunityAdaptersConfig, LoadCommunityOptions } from "./community/load.ts";
 export { detectCli, interruptProcess } from "./shared/streamPump.ts";
 export type { TurnProcess } from "./shared/streamPump.ts";
+export { EMPTY_MODEL_CATALOG, readJsonUnknown } from "./shared/modelCatalog.ts";
 export { pushModelArg } from "./shared/modelArg.ts";
 export { replayFixtureFile, replayNdjson, splitNdjson } from "./testkit/replay.ts";
 export type { ReplayResult, StreamNormalizer } from "./testkit/replay.ts";

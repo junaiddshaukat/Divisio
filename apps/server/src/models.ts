@@ -14,8 +14,9 @@ import { CommandError } from "@divisio/contracts";
  * gained yesterday is worse than one that passes a harmless unknown string.
  */
 
-/** Slugs are alphanumeric with separators — no spaces, no argv metacharacters. */
-const SLUG = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/;
+/** Slugs / CLI model names. Brackets for Claude `opus[1m]`; spaces/parens for
+ *  Antigravity display names like `Gemini 3.1 Pro (High)`. */
+const SLUG = /^[A-Za-z0-9][A-Za-z0-9._:@/[\]() +\-]*$/;
 
 const MAX_LENGTH = 100;
 
@@ -38,7 +39,7 @@ export function validateModel(model: string | undefined | null): string | null {
   if (!SLUG.test(value)) {
     throw new CommandError(
       "invalid_payload",
-      "model name may only contain letters, digits, and . _ : @ / -",
+      "model name may only contain letters, digits, spaces, and . _ : @ / [ ] ( ) + -",
     );
   }
 

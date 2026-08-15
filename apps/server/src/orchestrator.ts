@@ -5,21 +5,29 @@ import {
   type CommandResults,
   type DiffFileEntry,
   type DomainEvent,
+  type ModelCatalog,
   type NewEvent,
   type PermissionMode,
   type ProviderRuntimeEvent,
   type SessionHandle,
 } from "@divisio/contracts";
 import type { AdapterRegistry } from "@divisio/adapters";
+import { EMPTY_MODEL_CATALOG } from "@divisio/adapters";
 import { newId } from "@divisio/shared/ids";
 import { logger } from "@divisio/shared/log";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { captureCheckpoint, checkpointRef, diffCheckpoints, restoreCheckpoint } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
-import { seedPrompt, summaryPrompt, type PacketContext } from "./handoff.ts";
+import { seedPrompt, summaryPrompt, formatHandoffTranscript, type PacketContext } from "./handoff.ts";
 import { validateModel } from "./models.ts";
+import {
+  deleteCustomProvider as deleteCustomProviderRecord,
+  listCustomProviders as listCustomProviderViews,
+  upsertCustomProvider as upsertCustomProviderRecord,
+} from "./customProviders.ts";
+import { syncCustomAdapters } from "./syncCustomAdapters.ts";
 import {
   FileTooLargeError,
   PathEscapeError,
@@ -29,6 +37,7 @@ import {
 } from "./files/service.ts";
 import type { PairingStatus } from "@divisio/contracts";
 import { probeToolchain } from "./toolchain.ts";
+import { setupFor } from "@divisio/adapters/setup";
 
 /** What the orchestrator needs from pairing, so it does not depend on transport. */
 export interface PairingControls {
@@ -102,11 +111,12 @@ interface LiveSession {
  */
 /** Commands the orchestrator routes. Kept beside the switch that handles them. */
 export const ORCHESTRATOR_COMMANDS = [
-  "project.create", "project.list",
-  "thread.create", "thread.snapshot", "thread.setPermissionMode", "thread.setProvider", "thread.handoff",
+  "project.create", "project.list", "project.clone", "project.remove",
+  "thread.create", "thread.rename", "thread.delete", "thread.snapshot", "thread.setPermissionMode", "thread.setProvider", "thread.handoff",
   "thread.commit", "thread.diff", "thread.gitStatus", "thread.push",
   "turn.send", "turn.interrupt", "turn.diff", "turn.restore",
-  "approval.respond", "provider.detect", "toolchain.status",
+  "approval.respond", "provider.detect", "provider.models", "customProvider.list", "customProvider.upsert", "customProvider.delete",
+  "toolchain.status", "stats.activity",
   "lane.create", "lane.list", "lane.archive", "lane.diff", "lane.openPr",
   "file.tree", "file.read", "file.write",
   "pairing.status", "pairing.createToken", "pairing.revoke", "pairing.revokeAll",
@@ -133,10 +143,18 @@ export class Orchestrator {
     switch (cmd) {
       case "project.create":
         return this.createProject(payload);
+      case "project.clone":
+        return await this.cloneProject(payload);
+      case "project.remove":
+        return await this.removeProject(payload);
       case "project.list":
         return { projects: this.store.listProjects(), threads: this.store.listThreads() };
       case "thread.create":
         return this.createThread(payload);
+      case "thread.rename":
+        return this.renameThread(payload);
+      case "thread.delete":
+        return await this.deleteThread(payload);
       case "thread.snapshot":
         return this.snapshot(payload);
       case "thread.setPermissionMode":
@@ -163,8 +181,18 @@ export class Orchestrator {
         return await this.respondApproval(payload);
       case "provider.detect":
         return await this.detect();
+      case "provider.models":
+        return await this.listModels(payload);
+      case "customProvider.list":
+        return this.listCustomProviders();
+      case "customProvider.upsert":
+        return this.upsertCustomProvider(payload);
+      case "customProvider.delete":
+        return this.deleteCustomProvider(payload);
       case "toolchain.status":
         return await probeToolchain();
+      case "stats.activity":
+        return this.store.activityStats();
       case "lane.create":
         return await this.createLane(payload);
       case "lane.list":
@@ -215,6 +243,80 @@ export class Orchestrator {
     return { project };
   }
 
+  private async cloneProject(p: CommandPayloads["project.clone"]): Promise<CommandResults["project.clone"]> {
+    const url = p.url.trim();
+    const parent = p.parentPath.trim();
+    if (!url) throw new CommandError("invalid_payload", "clone URL is required");
+    if (!parent || !existsSync(parent)) {
+      throw new CommandError("invalid_payload", `parent path does not exist: ${parent}`);
+    }
+
+    const folder =
+      p.name?.trim() ||
+      basename(url.replace(/\/$/, "").replace(/\.git$/i, "")) ||
+      "repo";
+    if (folder.includes("/") || folder.includes("\\") || folder === "." || folder === "..") {
+      throw new CommandError("invalid_payload", "invalid destination folder name");
+    }
+    const rootPath = join(parent, folder);
+    if (existsSync(rootPath)) {
+      throw new CommandError("invalid_payload", `destination already exists: ${rootPath}`);
+    }
+
+    const proc = Bun.spawn(["git", "clone", "--", url, rootPath], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (code !== 0) {
+      const detail = (stderr || stdout).trim().split("\n").slice(-4).join(" ");
+      throw new CommandError("internal", detail || `git clone failed (exit ${code})`);
+    }
+
+    return this.createProject({ name: folder, rootPath });
+  }
+
+  /**
+   * Soft-remove a project from Divisio. Never deletes the folder on disk or
+   * lane worktrees — only hides the project and its chats in the product.
+   */
+  private async removeProject(p: CommandPayloads["project.remove"]): Promise<CommandResults["project.remove"]> {
+    const project = this.store.getProject(p.projectId);
+    if (!project) throw new CommandError("not_found", `no such project: ${p.projectId}`);
+
+    const threads = this.store.listThreads().filter((t) => t.projectId === p.projectId);
+    for (const thread of threads) {
+      const live = this.sessions.get(thread.id);
+      if (live?.activeTurnId) {
+        throw new CommandError(
+          "session_busy",
+          "Stop running turns in this project before removing it from Divisio.",
+        );
+      }
+    }
+    for (const thread of threads) {
+      const live = this.sessions.get(thread.id);
+      if (live) {
+        const adapter = this.registry.get(live.provider);
+        await adapter?.stopSession(live.handle).catch(() => undefined);
+        this.sessions.delete(thread.id);
+      }
+    }
+
+    this.commit([
+      {
+        type: "project.removed",
+        threadId: null,
+        payload: { projectId: p.projectId },
+      },
+    ]);
+    return {};
+  }
+
   private createThread(p: CommandPayloads["thread.create"]): CommandResults["thread.create"] {
     if (!this.store.getProject(p.projectId)) {
       throw new CommandError("not_found", `no such project: ${p.projectId}`);
@@ -256,6 +358,49 @@ export class Orchestrator {
     const thread = this.store.getThread(threadId);
     if (!thread) throw new CommandError("internal", "thread projection missing after append");
     return { thread };
+  }
+
+  private renameThread(p: CommandPayloads["thread.rename"]): CommandResults["thread.rename"] {
+    if (!this.store.getThread(p.threadId)) {
+      throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    }
+    const title = p.title.trim();
+    if (!title) throw new CommandError("invalid_payload", "title cannot be empty");
+    if (title.length > 120) throw new CommandError("invalid_payload", "title is too long");
+    this.commit([
+      {
+        type: "thread.renamed",
+        threadId: p.threadId,
+        payload: { threadId: p.threadId, title },
+      },
+    ]);
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("internal", "thread projection missing after rename");
+    return { thread };
+  }
+
+  private async deleteThread(p: CommandPayloads["thread.delete"]): Promise<CommandResults["thread.delete"]> {
+    const thread = this.store.getThread(p.threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+
+    const live = this.sessions.get(p.threadId);
+    if (live?.activeTurnId) {
+      throw new CommandError("session_busy", "Stop the running turn before deleting this chat.");
+    }
+    if (live) {
+      const adapter = this.registry.get(live.provider);
+      await adapter?.stopSession(live.handle).catch(() => undefined);
+      this.sessions.delete(p.threadId);
+    }
+
+    this.commit([
+      {
+        type: "thread.deleted",
+        threadId: p.threadId,
+        payload: { threadId: p.threadId },
+      },
+    ]);
+    return {};
   }
 
   private setPermissionMode(
@@ -338,6 +483,7 @@ export class Orchestrator {
       thread,
       messages: this.store.listMessages(p.threadId),
       seq: this.store.head(),
+      activeTurnId: this.sessions.get(p.threadId)?.activeTurnId ?? null,
       diffs: this.store.listTurnDiffs(p.threadId).map((d) => ({
         turnId: d.turnId,
         files: d.files as DiffFileEntry[],
@@ -833,6 +979,22 @@ export class Orchestrator {
   }
 
   /**
+   * Like awaitTurn, but resolves immediately if the turn already finished
+   * (race: completion between sendTurn returning and waiter registration).
+   */
+  private async waitForTurn(threadId: string, turnId: string, timeoutMs: number): Promise<void> {
+    if (this.sessions.get(threadId)?.activeTurnId !== turnId) return;
+    const done = this.awaitTurn(turnId, timeoutMs);
+    // Completion may have landed between the check and registering the waiter.
+    if (this.sessions.get(threadId)?.activeTurnId !== turnId) {
+      this.turnWaiters.get(turnId)?.resolve();
+      this.turnWaiters.delete(turnId);
+      return;
+    }
+    return done;
+  }
+
+  /**
    * Moves a thread to another provider.
    *
    * The summary is produced by the source agent, because Divisio has no model
@@ -855,12 +1017,27 @@ export class Orchestrator {
 
     const live = this.sessions.get(p.threadId);
     if (live?.activeTurnId) {
-      throw new CommandError("session_busy", "finish or interrupt the running turn before handing off");
+      throw new CommandError(
+        "session_busy",
+        "Stop the running turn before handing off — the source agent needs a free turn to write the handover note.",
+      );
     }
 
-    // Ask the source agent to describe its own state.
-    const { turnId } = await this.sendTurn({ threadId: p.threadId, text: summaryPrompt() });
-    await this.awaitTurn(turnId, 180_000);
+    const history = this.store
+      .listMessages(p.threadId)
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.text.trim());
+    if (history.length === 0) {
+      throw new CommandError(
+        "invalid_payload",
+        "Nothing to hand off yet — send at least one message in this chat first.",
+      );
+    }
+
+    const transcript = formatHandoffTranscript(history);
+
+    // Ask the source agent to describe state from the Divisio transcript.
+    const { turnId } = await this.sendTurn({ threadId: p.threadId, text: summaryPrompt(transcript) });
+    await this.waitForTurn(p.threadId, turnId, 180_000);
 
     const summary = this.store
       .listMessages(p.threadId)
@@ -925,11 +1102,71 @@ export class Orchestrator {
           available: d.available,
           version: d.version,
           detail: d.detail,
+          // Setup commands come from a declared table rather than a probe:
+          // asking a CLI about its auth can start a login flow (see
+          // packages/adapters/src/shared/setup.ts).
+          ...setupFor(a.kind),
+          authenticated: d.authenticated ?? null,
           capabilities: { ...a.capabilities } as Record<string, boolean>,
+          preferredModel:
+            "preferredModel" in a && typeof (a as { preferredModel?: unknown }).preferredModel === "string"
+              ? (a as { preferredModel: string }).preferredModel
+              : null,
         };
       }),
     );
     return { providers };
+  }
+
+  private async listModels(
+    payload: CommandPayloads["provider.models"],
+  ): Promise<CommandResults["provider.models"]> {
+    const entries = this.registry.listEntries().filter(
+      ({ adapter }) => !payload.kind || adapter.kind === payload.kind,
+    );
+    const catalogs: Record<string, ModelCatalog> = {};
+    await Promise.all(
+      entries.map(async ({ adapter }) => {
+        if (!adapter.listModels) {
+          catalogs[adapter.kind] = EMPTY_MODEL_CATALOG;
+          return;
+        }
+        try {
+          catalogs[adapter.kind] = await adapter.listModels();
+        } catch (err) {
+          log.warn("listModels failed", {
+            kind: adapter.kind,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          catalogs[adapter.kind] = EMPTY_MODEL_CATALOG;
+        }
+      }),
+    );
+    return { catalogs };
+  }
+
+  private listCustomProviders(): CommandResults["customProvider.list"] {
+    return { providers: listCustomProviderViews() };
+  }
+
+  private upsertCustomProvider(
+    p: CommandPayloads["customProvider.upsert"],
+  ): CommandResults["customProvider.upsert"] {
+    try {
+      const provider = upsertCustomProviderRecord(p);
+      syncCustomAdapters(this.registry);
+      return { provider };
+    } catch (err) {
+      throw new CommandError("invalid_payload", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private deleteCustomProvider(
+    p: CommandPayloads["customProvider.delete"],
+  ): CommandResults["customProvider.delete"] {
+    const deleted = deleteCustomProviderRecord(p.id);
+    if (deleted) syncCustomAdapters(this.registry);
+    return { deleted };
   }
 
   private async ensureSession(threadId: string): Promise<LiveSession> {

@@ -48,6 +48,17 @@ Divisio drives **already-authenticated** CLIs. Installing Divisio does not repla
 
 Load extra community modules with `DIVISIO_ADAPTER_MODULES` or `userdata/adapters.json`. See [Adapter SDK](../sdk/adapter-sdk.md).
 
+## Model lists
+
+The composer picker prefers a **live** catalog from `provider.models` when an adapter can list one without starting a login:
+
+| Provider | Live source |
+| --- | --- |
+| Qwen Code | `$QWEN_HOME/settings.json` (default `~/.qwen/settings.json`) `modelProviders` — this is how ModelScope / Ambassador models appear |
+| Codex | `$CODEX_HOME/models_cache.json` |
+
+If listing fails or the adapter has no `listModels`, the UI falls back to curated aliases. Divisio does not invent vendor model names.
+
 ## Capability honesty
 
 Never fake approvals. Print/headless modes leave permissions with the CLI (`approvals: false`) unless a mediated protocol exists.

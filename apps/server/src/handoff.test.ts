@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { seedPrompt, summaryPrompt } from "./handoff.ts";
+import { formatHandoffTranscript, seedPrompt, summaryPrompt } from "./handoff.ts";
 
 /**
  * The packet is written by the source agent, so what we control is its shape.
@@ -7,13 +7,15 @@ import { seedPrompt, summaryPrompt } from "./handoff.ts";
  */
 
 describe("handoff prompts", () => {
-  test("the summary prompt asks for structure, not prose", () => {
-    const prompt = summaryPrompt();
+  test("the summary prompt asks for structure and embeds the transcript", () => {
+    const prompt = summaryPrompt("USER:\nShip search.\n\nASSISTANT:\nDone in src/search.ts.");
     for (const section of ["Goal", "Done", "Current state", "Next steps", "Watch out"]) {
       expect(prompt).toContain(section);
     }
-    // A summarising turn must not start editing the repository.
     expect(prompt).toContain("do not modify any files");
+    expect(prompt).toContain("BEGIN DIVISIO TRANSCRIPT");
+    expect(prompt).toContain("Ship search.");
+    expect(prompt).toContain("Do not invent");
   });
 
   test("the seed tells the target it is taking over, not starting fresh", () => {
@@ -21,7 +23,6 @@ describe("handoff prompts", () => {
     expect(seed).toContain("taking over work in progress");
     expect(seed).toContain("claude");
     expect(seed).toContain("Goal: ship search.");
-    // The note can be stale; the target must verify before trusting it.
     expect(seed).toContain("Read the relevant files before changing anything");
   });
 
@@ -32,7 +33,6 @@ describe("handoff prompts", () => {
     });
     expect(seed).toContain("src/a.ts");
     expect(seed).toContain("divisio/add-search");
-    // Attribution matters: this list is ours, not the previous agent's claim.
     expect(seed).toContain("recorded by the workspace");
   });
 
@@ -41,5 +41,16 @@ describe("handoff prompts", () => {
     const seed = seedPrompt("summary", "claude", { files, laneBranch: null });
     expect(seed).toContain("src/file-0.ts");
     expect(seed).not.toContain("src/file-100.ts");
+  });
+
+  test("transcript formatter prefixes roles and skips empty text", () => {
+    const text = formatHandoffTranscript([
+      { role: "user", text: "  hi  " },
+      { role: "assistant", text: "" },
+      { role: "assistant", text: "hello" },
+    ]);
+    expect(text).toContain("USER:\nhi");
+    expect(text).toContain("ASSISTANT:\nhello");
+    expect(text.split("ASSISTANT").length).toBe(2);
   });
 });

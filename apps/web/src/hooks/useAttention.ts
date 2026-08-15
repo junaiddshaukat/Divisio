@@ -60,7 +60,7 @@ export function useAttention(threads: ThreadView[], activeThreadId: string | nul
       announced.current.set(item.threadId, item.reason);
       if (document.visibilityState === "visible") continue;
       new Notification(`${item.reason}: ${item.title}`, {
-        body: "A thread is waiting on you.",
+        body: "A chat is waiting on you.",
         tag: item.threadId,
       });
     }

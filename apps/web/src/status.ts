@@ -10,6 +10,8 @@ import type { SessionStatus, ThreadView } from "@divisio/contracts";
 
 export interface StatusPresentation {
   label: string;
+  /** Tooltip copy. Lives beside the label so the two cannot drift. */
+  hint: string;
   /** CSS class carrying the colour; see styles/status.css. */
   tone: "attention" | "busy" | "ready" | "error" | "idle";
   /** Only states that are genuinely in motion pulse. */
@@ -22,13 +24,21 @@ export interface StatusPresentation {
 }
 
 const PRESENTATION: Record<SessionStatus, StatusPresentation> = {
-  awaiting_approval: { label: "Needs approval", tone: "attention", pulse: false, priority: 5 },
-  error: { label: "Error", tone: "error", pulse: false, priority: 4 },
-  running: { label: "Working", tone: "busy", pulse: true, priority: 3 },
-  stopping: { label: "Stopping", tone: "attention", pulse: true, priority: 3 },
-  connecting: { label: "Connecting", tone: "busy", pulse: true, priority: 2 },
-  ready: { label: "Idle", tone: "ready", pulse: false, priority: 1 },
-  closed: { label: "Closed", tone: "idle", pulse: false, priority: 0 },
+  awaiting_approval: {
+    label: "Needs approval",
+    hint: "The agent is waiting for you to approve or deny a tool call",
+    tone: "attention", pulse: false, priority: 5,
+  },
+  error: { label: "Error", hint: "The last turn failed", tone: "error", pulse: false, priority: 4 },
+  running: { label: "Working", hint: "The agent is running a turn", tone: "busy", pulse: true, priority: 3 },
+  stopping: {
+    label: "Stopping",
+    hint: "Interrupt sent — waiting for the agent to stop",
+    tone: "attention", pulse: true, priority: 3,
+  },
+  connecting: { label: "Connecting", hint: "Starting the provider", tone: "busy", pulse: true, priority: 2 },
+  ready: { label: "Idle", hint: "Idle — waiting for a prompt", tone: "ready", pulse: false, priority: 1 },
+  closed: { label: "Closed", hint: "This session has ended", tone: "idle", pulse: false, priority: 0 },
 };
 
 export function statusOf(status: SessionStatus): StatusPresentation {

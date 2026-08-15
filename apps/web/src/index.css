@@ -7,6 +7,9 @@
 @import "./styles/timeline.css";
 @import "./styles/status.css";
 @import "./styles/palette.css";
+@import "./styles/onboarding.css";
+@import "./styles/profile.css";
+@import "./styles/workspace-extras.css";
 @import "./styles/topbar.css";
 @import "./styles/settings.css";
 
@@ -26,25 +29,23 @@
   --control-radius: 0.5rem;
   --workspace-topbar-height: 52px;
   --app-scrollbar-width: 6px;
-  --density-scale: 1;
-  --glass-blur: 28px;
-
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
 
-  /* Light: near-white canvas, zinc sidebar, white raised surfaces. */
-  --background: #fafafa;
+  /* Light: off-white canvas, zinc sidebar well, hairline borders. */
+  --background: #fcfcfc;
   --foreground: #27272a;
+  --foreground-subtle: #a1a1aa;
   --card: #ffffff;
   --popover: #ffffff;
   --primary: #18181b;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
-  --muted: #f4f4f5;
+  --secondary: rgba(0, 0, 0, 0.04);
+  --muted: rgba(0, 0, 0, 0.04);
   --muted-foreground: #71717a;
-  --accent: #f4f4f5;
-  --border: #e4e4e7;
-  --input: #d4d4d8;
+  --accent: rgba(0, 0, 0, 0.04);
+  --border: rgba(0, 0, 0, 0.08);
+  --input: rgba(0, 0, 0, 0.1);
   --ring: #526fff;
   --destructive: #ef4444;
   --destructive-foreground: #b91c1c;
@@ -56,12 +57,11 @@
   --sidebar-control-surface: #e4e4e7;
   --sidebar-row-hover: #fafafa;
   --sidebar-row-selected: #ffffff;
-  --chat-composer-outline: rgba(0, 0, 0, 0.1);
+  --chat-composer-outline: rgba(0, 0, 0, 0.08);
   --composer-surface: #ffffff;
   --composer-shadow:
     0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 10px 40px rgba(15, 15, 20, 0.06),
-    0 2px 8px rgba(15, 15, 20, 0.03);
+    0 8px 24px rgba(15, 15, 20, 0.05);
   --menu-surface: #ffffff;
   --menu-border: rgba(0, 0, 0, 0.1);
   --menu-row-hover: rgba(0, 0, 0, 0.04);
@@ -77,7 +77,8 @@
 .dark {
   --background: #0e0e0e;
   --foreground: #f1f3f7;
-  --card: rgba(255, 255, 255, 0.045);
+  --foreground-subtle: #737373;
+  --card: #121212;
   --popover: #161616;
   --primary: #f4f4f5;
   --primary-foreground: #18181b;
@@ -89,15 +90,15 @@
   --input: rgba(255, 255, 255, 0.1);
   --ring: #6073cc;
   --destructive-foreground: #f87171;
-  --sidebar: rgba(14, 14, 16, 0.55);
+  --sidebar: #111111;
   --sidebar-control-surface: rgba(255, 255, 255, 0.06);
-  --sidebar-row-hover: rgba(255, 255, 255, 0.08);
-  --sidebar-row-selected: rgba(255, 255, 255, 0.07);
+  --sidebar-row-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-row-selected: rgba(255, 255, 255, 0.12);
   --chat-composer-outline: rgba(255, 255, 255, 0.12);
   --composer-surface: #1c1c1e;
   --composer-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 12px 40px rgba(0, 0, 0, 0.35);
+    0 8px 28px rgba(0, 0, 0, 0.28);
   --menu-surface: #1a1a1a;
   --menu-border: #333333;
   --menu-row-hover: #2a2a2a;
@@ -105,11 +106,7 @@
   --user-bubble: rgba(255, 255, 255, 0.06);
   --code-block: rgba(255, 255, 255, 0.05);
   --app-scrollbar-thumb: rgb(255 255 255 / 8%);
-  --ambient:
-    radial-gradient(1100px 640px at 72% 8%, rgba(196, 122, 72, 0.18), transparent 58%),
-    radial-gradient(900px 520px at 12% 92%, rgba(72, 96, 160, 0.16), transparent 55%),
-    radial-gradient(700px 400px at 50% 50%, rgba(255, 255, 255, 0.03), transparent 70%),
-    #09090a;
+  --ambient: var(--background);
 
   color-scheme: dark;
 }
@@ -147,9 +144,9 @@ body {
 }
 
 /*
- * Native desktop vibrancy: clear the web layers so AppKit's under-window
- * material (and the wallpaper behind it) show through. Browser-only keeps
- * the CSS ambient wash above — there is no desktop to bleed.
+ * Native desktop vibrancy: the window material shows around chrome.
+ * The work surface (.main) and menus stay opaque — wallpaper must not
+ * wash the canvas or smear labels.
  */
 html.desktop-vibrancy,
 html.desktop-vibrancy body,
@@ -158,15 +155,14 @@ html.desktop-vibrancy #root {
 }
 html.desktop-vibrancy {
   --ambient: transparent;
-  --background: transparent;
 }
 html.desktop-vibrancy.dark {
-  --sidebar: rgba(0, 0, 0, 0.28);
-  --sidebar-row-hover: rgba(255, 255, 255, 0.07);
+  --background: #0e0e0e;
+  --sidebar: rgba(17, 17, 18, 0.88);
+  --sidebar-row-hover: rgba(255, 255, 255, 0.06);
   --sidebar-row-selected: rgba(255, 255, 255, 0.12);
-  --card: rgba(255, 255, 255, 0.05);
+  --card: #121212;
   --popover: #161616;
-  /* Solid surfaces — glass is only the window vibrancy behind them. */
   --composer-surface: #1c1c1e;
   --chat-composer-outline: rgba(255, 255, 255, 0.12);
   --menu-surface: #1a1a1a;
@@ -177,8 +173,8 @@ html.desktop-vibrancy.dark {
   --code-block: rgba(0, 0, 0, 0.22);
 }
 html.desktop-vibrancy:not(.dark) {
-  /* Keep light mode bright — slight translucency only, not muddy gray wash. */
-  --sidebar: rgba(244, 244, 245, 0.88);
+  --background: #fcfcfc;
+  --sidebar: rgba(244, 244, 245, 0.94);
   --sidebar-row-hover: rgba(250, 250, 250, 0.9);
   --sidebar-row-selected: #ffffff;
   --card: #ffffff;
@@ -187,17 +183,32 @@ html.desktop-vibrancy:not(.dark) {
   --menu-surface: #ffffff;
   --border: rgba(0, 0, 0, 0.08);
 }
-html.desktop-vibrancy .composer {
+html.desktop-vibrancy .composer,
+html.desktop-vibrancy .topbar,
+html.desktop-vibrancy .right-panel,
+html.desktop-vibrancy .terminal-dock {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+html.desktop-vibrancy.dark .main {
+  background: var(--background);
+}
+html.desktop-vibrancy:not(.dark) .main {
+  background: var(--background);
+}
 html.desktop-vibrancy.dark .topbar {
-  background: transparent;
+  background: var(--background);
 }
 html.desktop-vibrancy:not(.dark) .topbar {
-  background: rgba(250, 250, 250, 0.82);
-  -webkit-backdrop-filter: blur(16px) saturate(1.1);
-  backdrop-filter: blur(16px) saturate(1.1);
+  background: var(--background);
+}
+html.desktop-vibrancy.dark .right-panel,
+html.desktop-vibrancy.dark .terminal-dock {
+  background: var(--background);
+}
+html.desktop-vibrancy:not(.dark) .right-panel,
+html.desktop-vibrancy:not(.dark) .terminal-dock {
+  background: var(--background);
 }
 
 ::-webkit-scrollbar {
@@ -291,13 +302,7 @@ html.desktop-vibrancy:not(.dark) .topbar {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: transparent;
-}
-html.desktop-vibrancy.dark .main {
-  background: rgba(0, 0, 0, 0.14);
-}
-html.desktop-vibrancy:not(.dark) .main {
-  background: rgba(250, 250, 250, 0.94);
+  background: var(--background);
 }
 
 /* Thread workspace: messages flex, then branch + composer, terminal under prompt. */
@@ -329,9 +334,7 @@ html.desktop-vibrancy:not(.dark) .main {
   gap: 8px;
   padding: 0 16px;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--background) 35%, transparent);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2);
-  backdrop-filter: blur(20px) saturate(1.2);
+  background: var(--background);
 }
 
 .crumb {
@@ -470,26 +473,19 @@ html.desktop-vibrancy:not(.dark) .main {
   padding: 24px;
 }
 .empty h1 {
-  font-size: 30px;
-  line-height: 38px;
-  font-weight: 600;
+  font-size: var(--text-display);
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-display);
   margin: 0;
   text-align: center;
+  text-wrap: balance;
 }
 .empty p {
   color: var(--muted-foreground);
   margin: 0;
   text-align: center;
   max-width: 460px;
-}
-.empty.quiet {
-  gap: 12px;
-}
-.empty.quiet h1 {
-  font-size: 22px;
-  line-height: 28px;
-  font-weight: 500;
-  color: var(--muted-foreground);
 }
 
 .draft-hero {
@@ -535,10 +531,11 @@ html.desktop-vibrancy:not(.dark) .main {
   margin: 0;
   font-size: clamp(28px, 4.2vw, 36px);
   line-height: 1.12;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   text-align: center;
-  letter-spacing: -0.03em;
-  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.25);
+  letter-spacing: var(--tracking-display);
+  color: var(--foreground);
+  text-wrap: balance;
 }
 .draft-sub {
   margin: 0;
@@ -2214,12 +2211,12 @@ html.dark .diff-line.del {
 .markdown > *:first-child { margin-top: 0; }
 .markdown > *:last-child { margin-bottom: 0; }
 
-.markdown p { margin: 0 0 12px; }
+.markdown p { margin: 0 0 6px; }
 .markdown h1,
 .markdown h2,
 .markdown h3,
 .markdown h4 {
-  margin: 20px 0 8px;
+  margin: 14px 0 6px;
   line-height: 1.3;
   font-weight: 600;
 }
@@ -2229,14 +2226,14 @@ html.dark .diff-line.del {
 .markdown h4 { font-size: 14px; }
 
 .markdown ul,
-.markdown ol { margin: 0 0 12px; padding-left: 22px; }
-.markdown li { margin: 3px 0; }
+.markdown ol { margin: 0 0 6px; padding-left: 22px; }
+.markdown li { margin: 2px 0; }
 .markdown li > p { margin: 0; }
 
 .markdown a { color: var(--ring); }
 
 .markdown blockquote {
-  margin: 0 0 12px;
+  margin: 0 0 6px;
   padding: 2px 0 2px 12px;
   border-left: 2px solid var(--border);
   color: var(--muted-foreground);
@@ -2245,7 +2242,7 @@ html.dark .diff-line.del {
 .markdown hr {
   border: 0;
   border-top: 1px solid var(--border);
-  margin: 16px 0;
+  margin: 10px 0;
 }
 
 /* Inline code, but not the code inside a highlighted block. */

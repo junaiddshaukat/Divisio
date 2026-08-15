@@ -92,6 +92,24 @@
   background: var(--warning);
 }
 
+/*
+ * Compact chrome: when Changes / Files / Browser / Terminal is open, only the
+ * active control keeps its label. Everything else is icon-only so the crumb
+ * (project / chat title) stays visible.
+ */
+.topbar-actions.is-compact .segment:not([aria-pressed="true"]) .segment-label,
+.topbar-actions.is-compact .status-chip-label,
+.topbar-actions.is-compact .topbar-action-label {
+  display: none;
+}
+.topbar-actions.is-compact .segment:not([aria-pressed="true"]) {
+  padding: 0 6px;
+  gap: 0;
+}
+.topbar-actions.is-compact .status-chip {
+  padding: 0 var(--space-3);
+}
+
 /* --------------------------------- status --------------------------------- */
 
 .status-chip {

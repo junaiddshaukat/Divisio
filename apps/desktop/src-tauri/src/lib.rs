@@ -123,7 +123,13 @@ fn dirs_home() -> PathBuf {
 /// during development. It becomes a trap when that process is older than the
 /// app: the shell attaches happily and every newer feature fails separately
 /// with "unknown command". Checking first turns that into one clear message.
-const REQUIRED_COMMANDS: &[&str] = &["file.tree", "terminal.open", "turn.restore", "thread.setProvider"];
+const REQUIRED_COMMANDS: &[&str] = &[
+  "file.tree",
+  "terminal.open",
+  "turn.restore",
+  "thread.setProvider",
+  "project.remove",
+];
 
 fn health_body() -> Option<String> {
   let out = Command::new("curl")

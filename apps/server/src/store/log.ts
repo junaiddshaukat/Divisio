@@ -4,6 +4,7 @@ import {
   isReadable,
   upcast,
   UpcastError,
+  type ActivityStats,
   type DomainEvent,
   type EventType,
   type NewEvent,
@@ -13,6 +14,7 @@ import {
   type SessionStatus,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
+import { assembleActivityStats, localDateKey } from "./activity.ts";
 
 const log = logger("store");
 
@@ -140,6 +142,8 @@ export class EventStore {
     this.ensureColumn("threads", "permission_mode", "text not null default 'supervised'");
     this.ensureColumn("threads", "lane_id", "text");
     this.ensureColumn("threads", "model", "text");
+    this.ensureColumn("threads", "deleted_at", "text");
+    this.ensureColumn("projects", "deleted_at", "text");
   }
 
   private ensureColumn(table: string, column: string, ddl: string) {
@@ -249,6 +253,17 @@ export class EventStore {
           .run(p.projectId, p.name, p.rootPath, e.at);
         break;
       }
+      case "project.removed": {
+        const p = e.payload as { projectId: string };
+        this.db.query("update projects set deleted_at = ? where id = ?").run(e.at, p.projectId);
+        // Hide chats for this project; leave lanes/worktrees on disk alone.
+        this.db
+          .query(
+            "update threads set deleted_at = ?, updated_at = ? where project_id = ? and deleted_at is null",
+          )
+          .run(e.at, e.at, p.projectId);
+        break;
+      }
       case "thread.created": {
         const p = e.payload as {
           threadId: string;
@@ -263,6 +278,20 @@ export class EventStore {
              values (?, ?, ?, ?, 'ready', 'supervised', ?, ?, ?)`,
           )
           .run(p.threadId, p.projectId, p.title, p.provider, p.laneId ?? null, e.at, e.at);
+        break;
+      }
+      case "thread.renamed": {
+        const p = e.payload as { threadId: string; title: string };
+        this.db
+          .query("update threads set title = ?, updated_at = ? where id = ? and deleted_at is null")
+          .run(p.title, e.at, p.threadId);
+        break;
+      }
+      case "thread.deleted": {
+        const p = e.payload as { threadId: string };
+        this.db
+          .query("update threads set deleted_at = ?, updated_at = ? where id = ?")
+          .run(e.at, e.at, p.threadId);
         break;
       }
       case "thread.permission_mode_set": {
@@ -378,7 +407,7 @@ export class EventStore {
   listProjects() {
     return this.db
       .query<{ id: string; name: string; root_path: string; created_at: string }, []>(
-        "select id, name, root_path, created_at from projects order by created_at",
+        "select id, name, root_path, created_at from projects where deleted_at is null order by created_at",
       )
       .all()
       .map((r) => ({ id: r.id, name: r.name, rootPath: r.root_path, createdAt: r.created_at }));
@@ -400,7 +429,7 @@ export class EventStore {
         },
         []
       >(
-        "select id, project_id, title, provider, status, permission_mode, lane_id, model, updated_at from threads order by updated_at desc",
+        "select id, project_id, title, provider, status, permission_mode, lane_id, model, updated_at from threads where deleted_at is null order by updated_at desc",
       )
       .all()
       .map((r) => ({
@@ -448,9 +477,16 @@ export class EventStore {
   }
 
   listLanes(projectId?: string): LaneView[] {
+    // Hide lanes whose project was removed from Divisio (folder still on disk).
     const sql = projectId
-      ? "select * from lanes where project_id = ? order by created_at desc"
-      : "select * from lanes order by created_at desc";
+      ? `select l.* from lanes l
+         inner join projects p on p.id = l.project_id
+         where l.project_id = ? and p.deleted_at is null
+         order by l.created_at desc`
+      : `select l.* from lanes l
+         inner join projects p on p.id = l.project_id
+         where p.deleted_at is null
+         order by l.created_at desc`;
     const rows = projectId
       ? this.db.query<LaneRow, [string]>(sql).all(projectId)
       : this.db.query<LaneRow, []>(sql).all();
@@ -466,7 +502,11 @@ export class EventStore {
   activeLanePorts(): Set<number> {
     return new Set(
       this.db
-        .query<{ port: number }, []>("select port from lanes where status != 'archived'")
+        .query<{ port: number }, []>(
+          `select l.port from lanes l
+           inner join projects p on p.id = l.project_id
+           where l.status != 'archived' and p.deleted_at is null`,
+        )
         .all()
         .map((r) => r.port),
     );
@@ -487,6 +527,61 @@ export class EventStore {
       )
       .all(threadId)
       .map((r) => ({ turnId: r.turn_id, role: r.role as "user" | "assistant", text: r.text, at: r.at }));
+  }
+
+  /**
+   * Local coding activity for Profile: turns, messages, streaks, provider mix.
+   * Dates are machine-local calendar days.
+   */
+  activityStats(): ActivityStats {
+    const turnRows = this.db
+      .query<{ at: string; payload: string }, []>(
+        "select at, payload from events where type = 'turn.started'",
+      )
+      .all();
+
+    const messageRows = this.db
+      .query<{ at: string }, []>("select at from messages where role = 'user'")
+      .all();
+
+    const turnByDay = new Map<string, number>();
+    const providerTurns = new Map<string, number>();
+    for (const row of turnRows) {
+      const key = localDateKey(row.at);
+      turnByDay.set(key, (turnByDay.get(key) ?? 0) + 1);
+      let provider = "unknown";
+      try {
+        const payload = JSON.parse(row.payload) as { provider?: string };
+        if (payload.provider) provider = payload.provider;
+      } catch {
+        /* keep unknown */
+      }
+      providerTurns.set(provider, (providerTurns.get(provider) ?? 0) + 1);
+    }
+
+    const messageByDay = new Map<string, number>();
+    for (const row of messageRows) {
+      const key = localDateKey(row.at);
+      messageByDay.set(key, (messageByDay.get(key) ?? 0) + 1);
+    }
+
+    const filesTouched = this.db
+      .query<{ n: number }, []>(
+        `select coalesce(sum(json_array_length(files_json)), 0) as n from turn_diffs`,
+      )
+      .get()?.n ?? 0;
+
+    const projects = this.db.query<{ n: number }, []>("select count(*) as n from projects").get()?.n ?? 0;
+    const threads = this.db.query<{ n: number }, []>("select count(*) as n from threads").get()?.n ?? 0;
+
+    return assembleActivityStats({
+      turnDays: [...turnByDay.entries()].map(([date, turns]) => ({ date, turns })),
+      messageDays: [...messageByDay.entries()].map(([date, messages]) => ({ date, messages })),
+      providers: [...providerTurns.entries()].map(([kind, turns]) => ({ kind, turns })),
+      threads,
+      projects,
+      filesTouched,
+    });
   }
 
   close() {

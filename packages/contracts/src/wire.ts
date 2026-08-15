@@ -6,13 +6,21 @@
  * unresolvable when two clients are attached to the same thread.
  */
 
+import type { ModelCatalog } from "./adapter.ts";
 import type { DiffFileEntry, DomainEvent, LaneStatus, PermissionMode, SessionStatus } from "./events.ts";
 
 export interface CommandPayloads {
   "session.resume": { since: number; threads: string[] };
   "project.create": { name: string; rootPath: string };
   "project.list": Record<string, never>;
+  /**
+   * Remove a project from Divisio only. Does not delete the folder on disk,
+   * worktrees, or git history — soft-hides the project and its chats.
+   */
+  "project.remove": { projectId: string };
   "thread.create": { projectId: string; title: string; provider: string; laneId?: string };
+  "thread.rename": { threadId: string; title: string };
+  "thread.delete": { threadId: string };
   "thread.snapshot": { threadId: string };
   "thread.setPermissionMode": { threadId: string; mode: PermissionMode };
   /**
@@ -48,6 +56,22 @@ export interface CommandPayloads {
   "thread.push": { threadId: string };
   "approval.respond": { threadId: string; approvalId: string; decision: "approve" | "deny" };
   "provider.detect": Record<string, never>;
+  /**
+   * Live model catalogs from adapters that can list them. `kind` limits the
+   * probe to one provider; omit to refresh all. Not a required command —
+   * older daemons simply leave the UI on curated aliases.
+   */
+  "provider.models": { kind?: string };
+  "customProvider.list": Record<string, never>;
+  "customProvider.upsert": {
+    id?: string;
+    label: string;
+    baseUrl: string;
+    modelId: string;
+    /** Omit or empty on update to keep the existing key. */
+    apiKey?: string;
+  };
+  "customProvider.delete": { id: string };
   "thread.handoff": { threadId: string; toProvider: string; title?: string };
   /** Paths are relative to the thread's working directory (lane root or project). */
   "terminal.open": { threadId: string; cols: number; rows: number };
@@ -63,6 +87,16 @@ export interface CommandPayloads {
   "pairing.revokeAll": Record<string, never>;
   /** Local toolchain probes (git, host CLIs) for Settings → Source Control. */
   "toolchain.status": Record<string, never>;
+  /**
+   * Local coding activity for Settings → Profile (heatmap / streaks).
+   * Turns and messages only — tokens are not recorded yet.
+   */
+  "stats.activity": Record<string, never>;
+  /**
+   * Clone a git remote into `parentPath/<dirname>`, then register it as a project.
+   * `name` defaults to the repo folder name.
+   */
+  "project.clone": { url: string; parentPath: string; name?: string };
   "lane.create": { projectId: string; title: string; base?: string };
   "lane.list": { projectId?: string };
   "lane.archive": { laneId: string; deleteBranch: boolean; force: boolean };
@@ -120,7 +154,7 @@ export interface MessageView {
   at: string;
 }
 
-export type AdapterSource = "builtin" | "community";
+export type AdapterSource = "builtin" | "community" | "custom";
 
 export interface ProviderView {
   kind: string;
@@ -131,18 +165,48 @@ export interface ProviderView {
   available: boolean;
   version: string | null;
   detail: string | null;
+  /**
+   * Whether the CLI is signed in. `null` means we cannot tell without side
+   * effects — asking some CLIs starts a login flow — so onboarding says so
+   * rather than guessing. See packages/adapters/src/shared/setup.ts.
+   */
+  authenticated: boolean | null;
+  /** Command that installs this CLI, so onboarding can hand it over directly. */
+  install: string | null;
+  /** Command that signs the user in. */
+  signIn: string | null;
   capabilities: Record<string, boolean>;
+  /** Preferred model for BYOK / custom endpoints. */
+  preferredModel?: string | null;
+}
+
+/** BYOK OpenAI-compatible endpoint (Settings → Providers). API key is masked. */
+export interface CustomProviderView {
+  id: string;
+  kind: string;
+  label: string;
+  baseUrl: string;
+  modelId: string;
+  apiKeyPreview: string;
+  hasApiKey: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CommandResults {
   "session.resume": { mode: "replay"; through: number } | { mode: "snapshot_required" };
   "project.create": { project: ProjectView };
   "project.list": { projects: ProjectView[]; threads: ThreadView[] };
+  "project.remove": Record<string, never>;
   "thread.create": { thread: ThreadView };
+  "thread.rename": { thread: ThreadView };
+  "thread.delete": Record<string, never>;
   "thread.snapshot": {
     thread: ThreadView;
     messages: MessageView[];
     seq: number;
+    /** Live turn id when the session is mid-turn; null when idle. */
+    activeTurnId: string | null;
     /** Checkpoint diffs for chat chips / Changes pane hydration. */
     diffs: Array<{ turnId: string; files: DiffFileEntry[] }>;
   };
@@ -181,6 +245,10 @@ export interface CommandResults {
     detail?: string;
   };
   "provider.detect": { providers: ProviderView[] };
+  "provider.models": { catalogs: Record<string, ModelCatalog> };
+  "customProvider.list": { providers: CustomProviderView[] };
+  "customProvider.upsert": { provider: CustomProviderView };
+  "customProvider.delete": { deleted: boolean };
   "thread.handoff": { thread: ThreadView; summary: string };
   "terminal.open": { sessionId: string };
   "terminal.input": Record<string, never>;
@@ -194,6 +262,8 @@ export interface CommandResults {
   "pairing.revoke": { revoked: boolean };
   "pairing.revokeAll": { revoked: number };
   "toolchain.status": ToolchainStatus;
+  "stats.activity": ActivityStats;
+  "project.clone": { project: ProjectView };
   "lane.create": { lane: LaneView };
   "lane.list": { lanes: LaneView[] };
   "lane.archive": { lane: LaneView };
@@ -244,6 +314,41 @@ export interface ToolchainToolStatus {
 export interface ToolchainStatus {
   git: ToolchainToolStatus;
   gh: ToolchainToolStatus;
+}
+
+/** One calendar day of local coding activity (ISO date YYYY-MM-DD, local timezone). */
+export interface ActivityDay {
+  date: string;
+  turns: number;
+  messages: number;
+}
+
+export interface ActivityProviderShare {
+  kind: string;
+  turns: number;
+}
+
+export interface ActivityTotals {
+  turns: number;
+  messages: number;
+  threads: number;
+  projects: number;
+  filesTouched: number;
+  activeDays: number;
+  currentStreak: number;
+  longestStreak: number;
+}
+
+/**
+ * Settings → Profile. Honest local activity — not GitHub contributions,
+ * and not token spend (tokens are not persisted yet).
+ */
+export interface ActivityStats {
+  days: ActivityDay[];
+  providers: ActivityProviderShare[];
+  totals: ActivityTotals;
+  /** Inclusive day count in `days` (typically ~371 for 53 weeks). */
+  rangeDays: number;
 }
 
 export interface PrResult {

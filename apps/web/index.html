@@ -37,6 +37,9 @@
             '</pre></div>';
         }
         window.addEventListener("error", function (e) {
+          var root = document.getElementById("root");
+          // App already mounted — don't wipe a running session for a later error.
+          if (root && root.childElementCount > 0) return;
           // Resource errors (a missing chunk) have no `error` object.
           if (e.target && e.target !== window && e.target.src) {
             report("A required file could not be loaded.", e.target.src);
@@ -45,6 +48,8 @@
           }
         }, true);
         window.addEventListener("unhandledrejection", function (e) {
+          var root = document.getElementById("root");
+          if (root && root.childElementCount > 0) return;
           report("A startup step failed.", (e.reason && e.reason.stack) || e.reason);
         });
         // Nothing mounted after a generous delay means a silent failure.

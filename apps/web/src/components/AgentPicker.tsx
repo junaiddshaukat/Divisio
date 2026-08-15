@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ProviderView } from "@divisio/contracts";
-import { modelLabel, modelsForProvider, type ProviderModelOption } from "../providerModels.ts";
+import type { ModelCatalog, ProviderView } from "@divisio/contracts";
+import { displayLabel, isProviderEnabled, loadProviderPrefs } from "../providerPrefs.ts";
+import {
+  modelLabel,
+  modelsForProvider,
+  setCustomProviderModels,
+  type ProviderModelOption,
+} from "../providerModels.ts";
 import { ProviderMark } from "./ProviderMark.tsx";
 import { CheckIcon, ChevronDownIcon, SearchIcon } from "./ui/icons.ts";
 
@@ -8,6 +14,8 @@ interface Props {
   provider: string;
   model: string | null;
   providers: ProviderView[];
+  /** Live catalogs from `provider.models`. Missing kinds fall back to curated aliases. */
+  catalogs?: Record<string, ModelCatalog>;
   /** True when the thread already has messages — provider change requires handoff. */
   hasHistory: boolean;
   busy: boolean;
@@ -17,21 +25,41 @@ interface Props {
 /**
  * Nested menu: agents on the left, models on the right.
  */
-export function AgentPicker({ provider, model, providers, hasHistory, busy, onSelect }: Props) {
+export function AgentPicker({ provider, model, providers, catalogs, hasHistory, busy, onSelect }: Props) {
   const [open, setOpen] = useState(false);
   const [browseKind, setBrowseKind] = useState(provider);
   const [query, setQuery] = useState("");
+  const [prefs, setPrefs] = useState(loadProviderPrefs);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const current = providers.find((p) => p.kind === provider);
   const browse = providers.find((p) => p.kind === browseKind) ?? current;
-  const options = useMemo(() => modelsForProvider(browseKind), [browseKind]);
+  const currentLabel = displayLabel(provider, current?.label ?? provider, prefs);
+  const browseLabel = displayLabel(browseKind, browse?.label ?? browseKind, prefs);
+  const options = useMemo(
+    () => modelsForProvider(browseKind, catalogs?.[browseKind]),
+    [browseKind, catalogs],
+  );
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
     return options.filter((o) => o.label.toLowerCase().includes(q) || o.id.toLowerCase().includes(q));
   }, [options, query]);
+
+  useEffect(() => {
+    for (const p of providers) {
+      if (p.kind.startsWith("custom_") && p.preferredModel) {
+        setCustomProviderModels(p.kind, p.preferredModel, p.label);
+      }
+    }
+  }, [providers]);
+
+  useEffect(() => {
+    const sync = () => setPrefs(loadProviderPrefs());
+    window.addEventListener("divisio:provider-prefs", sync);
+    return () => window.removeEventListener("divisio:provider-prefs", sync);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -52,7 +80,7 @@ export function AgentPicker({ provider, model, providers, hasHistory, busy, onSe
     };
   }, [open, provider]);
 
-  const triggerModel = modelLabel(provider, model);
+  const triggerModel = modelLabel(provider, model, catalogs?.[provider]);
 
   const pickModel = (opt: ProviderModelOption) => {
     const nextModel = opt.isDefault ? null : opt.id;
@@ -71,9 +99,9 @@ export function AgentPicker({ provider, model, providers, hasHistory, busy, onSe
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <ProviderMark kind={provider} />
+        <ProviderMark kind={provider} accent={prefs[provider]?.accent} />
         <span className="agent-picker-trigger-text">
-          {current?.label ?? provider}
+          {currentLabel}
           {triggerModel ? ` · ${triggerModel}` : ""}
         </span>
         <ChevronDownIcon className="agent-picker-trigger-chevron" />
@@ -85,17 +113,24 @@ export function AgentPicker({ provider, model, providers, hasHistory, busy, onSe
             {providers.map((p) => {
               const active = p.kind === browseKind;
               const isCurrent = p.kind === provider;
+              const enabled = isProviderEnabled(p.kind, prefs);
               return (
                 <button
                   key={p.kind}
                   type="button"
                   className={`agent-picker-rail-item${active ? " active" : ""}`}
-                  disabled={!p.available && p.kind !== provider}
-                  title={p.available ? p.label : (p.detail ?? "unavailable")}
+                  disabled={(!p.available || !enabled) && p.kind !== provider}
+                  title={
+                    !enabled
+                      ? "Disabled in Settings → Providers"
+                      : p.available
+                        ? displayLabel(p.kind, p.label, prefs)
+                        : (p.detail ?? "unavailable")
+                  }
                   onClick={() => setBrowseKind(p.kind)}
                 >
-                  <ProviderMark kind={p.kind} />
-                  <span className="agent-picker-rail-label">{p.label}</span>
+                  <ProviderMark kind={p.kind} accent={prefs[p.kind]?.accent} />
+                  <span className="agent-picker-rail-label">{displayLabel(p.kind, p.label, prefs)}</span>
                   <span className="agent-picker-trailing">
                     {isCurrent ? <CheckIcon className="agent-picker-check" /> : null}
                   </span>
@@ -105,14 +140,16 @@ export function AgentPicker({ provider, model, providers, hasHistory, busy, onSe
           </aside>
           <div className="agent-picker-main">
             <div className="agent-picker-section">
-              {browse?.label ?? browseKind}
+              {browseLabel}
               {browse?.source === "community" ? (
                 <span className="agent-picker-section-meta">community</span>
+              ) : browse?.source === "custom" ? (
+                <span className="agent-picker-section-meta">BYOK</span>
               ) : null}
             </div>
             {hasHistory && browseKind !== provider && (
               <p className="agent-picker-warn">
-                Switching agent runs Hand off (one turn on {current?.label ?? provider}).
+                Switching agent runs Hand off (one turn on {currentLabel}).
               </p>
             )}
             <label className="agent-picker-search-wrap">

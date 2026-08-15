@@ -1,8 +1,11 @@
 import { PRODUCT_NAME } from "@divisio/shared/brand";
 import type { ConnectionState } from "../../client.ts";
+import { Button } from "../ui/Button.tsx";
 
 interface Props {
   connectionState: ConnectionState;
+  /** Clear first-run dismissal and show the welcome flow again. */
+  onReplayWelcome?(): void;
 }
 
 function connectionLabel(state: ConnectionState): string {
@@ -12,7 +15,7 @@ function connectionLabel(state: ConnectionState): string {
 }
 
 /** Product about + environment facts — no fake toggles. */
-export function GeneralSettings({ connectionState }: Props) {
+export function GeneralSettings({ connectionState, onReplayWelcome }: Props) {
   const vibrancy = document.documentElement.classList.contains("desktop-vibrancy");
 
   return (
@@ -50,6 +53,25 @@ export function GeneralSettings({ connectionState }: Props) {
           </div>
         </div>
       </div>
+
+      {onReplayWelcome && (
+        <div className="settings-group">
+          <h4 className="settings-group-title">First run</h4>
+          <div className="settings-rows">
+            <div className="settings-row">
+              <div className="settings-row-copy">
+                <span className="settings-row-label">Welcome checklist</span>
+                <span className="settings-row-meta">
+                  Providers, project folder, and a first prompt — skippable any time
+                </span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={onReplayWelcome}>
+                Show again
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -170,7 +170,7 @@ export function CommandPalette({
           <input
             autoFocus
             className="palette-input"
-            placeholder="Search threads, lanes, projects — or run a command…"
+            placeholder="Search chats, lanes, projects…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {

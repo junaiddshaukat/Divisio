@@ -37,7 +37,7 @@ interface Session extends SessionHandle {
 const CAPABILITIES: AdapterCapabilities = {
   sessionResume: true,
   interruptTurn: true,
-  modelSwitch: false,
+  modelSwitch: true,
   approvals: false,
   handoffExport: false,
   worktreeAware: true,
@@ -85,6 +85,7 @@ export class OpenCodeAdapter implements ProviderAdapter {
     if (session.proc) throw new Error("turn already running");
 
     const args = ["run", "--format", "json", "--dir", session.cwd];
+    if (turn.model) args.push("--model", turn.model);
     if (session.nativeId) args.push("--session", session.nativeId);
     args.push(turn.text);
 

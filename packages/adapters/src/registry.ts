@@ -58,6 +58,10 @@ export class AdapterRegistry {
     return this.adapters.get(kind)?.adapter ?? null;
   }
 
+  unregister(kind: string): boolean {
+    return this.adapters.delete(kind);
+  }
+
   sourceOf(kind: string): AdapterSource | null {
     return this.adapters.get(kind)?.source ?? null;
   }

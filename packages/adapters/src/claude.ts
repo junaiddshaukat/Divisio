@@ -102,7 +102,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     if (!session) throw new Error(`no session for thread ${handle.threadId}`);
     if (session.proc) throw new Error("turn already running");
 
-    const args = ["--print", "--output-format", "stream-json", "--verbose"];
+    const args = ["--print", "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
 
     // Without an explicit mode the CLI refuses every edit in print mode, so a
     // thread could talk but never change a file and full access meant nothing.

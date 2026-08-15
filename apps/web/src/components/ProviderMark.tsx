@@ -1,4 +1,5 @@
 import type { ReactElement, SVGProps } from "react";
+import type { ProviderAccent } from "../providerPrefs.ts";
 import qwenLogo from "../assets/providers/qwen.png";
 import antigravityLogo from "../assets/providers/antigravity.png";
 
@@ -90,24 +91,33 @@ const BY_KIND: Record<string, (props: IconProps) => ReactElement> = {
   copilot: CopilotMark,
 };
 
-export function ProviderMark({ kind, className = "" }: { kind: string; className?: string }) {
+export function ProviderMark({
+  kind,
+  className = "",
+  accent,
+}: {
+  kind: string;
+  className?: string;
+  accent?: ProviderAccent;
+}) {
+  const accentClass = accent && accent !== "default" ? ` accent-${accent}` : "";
   if (kind === "qwen") {
     return (
-      <span className={`provider-mark ${className}`.trim()} data-kind={kind}>
+      <span className={`provider-mark${accentClass} ${className}`.trim()} data-kind={kind}>
         <RasterMark src={qwenLogo} />
       </span>
     );
   }
   if (kind === "antigravity") {
     return (
-      <span className={`provider-mark ${className}`.trim()} data-kind={kind}>
+      <span className={`provider-mark${accentClass} ${className}`.trim()} data-kind={kind}>
         <RasterMark src={antigravityLogo} />
       </span>
     );
   }
   const Icon = BY_KIND[kind] ?? GenericMark;
   return (
-    <span className={`provider-mark ${className}`.trim()} data-kind={kind}>
+    <span className={`provider-mark${accentClass} ${className}`.trim()} data-kind={kind}>
       <Icon />
     </span>
   );

@@ -27,12 +27,51 @@ export interface AdapterCapabilities {
   usageSignals: boolean;
 }
 
+/**
+ * One model the CLI will accept as `--model` (or equivalent).
+ * `id` is the argv slug; `label` is what the picker shows.
+ */
+export interface ModelOption {
+  id: string;
+  label: string;
+  /** When true, omit the model flag and let the CLI choose. */
+  isDefault?: boolean;
+}
+
+/**
+ * `live` means the adapter read the vendor CLI’s own catalog (settings,
+ * cache, or a side-effect-free list command). `none` means we have nothing
+ * honest to show — the UI may fall back to a curated alias list.
+ */
+export type ModelCatalogSource = "live" | "none";
+
+export interface ModelCatalog {
+  source: ModelCatalogSource;
+  models: ModelOption[];
+  /** Vendor’s currently selected model id, when the CLI config names one. */
+  selectedId?: string | null;
+}
+
 export interface DetectResult {
+  /** The binary is on PATH and runs. Says nothing about whether it can work. */
   available: boolean;
   /** Reported CLI version. Vendor CLIs change often; features gate on this. */
   version: string | null;
   /** Actionable when unavailable, e.g. "codex not on PATH" or "run claude auth login". */
   detail: string | null;
+  /**
+   * Whether the CLI is signed in.
+   *
+   * `null` means the CLI offers no way to ask without starting a turn — an
+   * honest "unknown" rather than a guess. Installed-but-unauthenticated is the
+   * most common first-run failure, and reporting it as ready produces a
+   * confusing error on the user's very first prompt instead of a fixable one.
+   */
+  authenticated?: boolean | null;
+  /** Shell command that installs this CLI, for onboarding to offer directly. */
+  install?: string | null;
+  /** Shell command that signs the user in. */
+  signIn?: string | null;
 }
 
 export interface StartSessionInput {
@@ -84,6 +123,13 @@ export interface ProviderAdapter {
   readonly contractVersion: number;
 
   detect(): Promise<DetectResult>;
+
+  /**
+   * Optional. Returns models this CLI actually has configured or cached.
+   * Must be side-effect-free: no login flows, no network that starts auth.
+   * Secrets in vendor config files must never appear in the result.
+   */
+  listModels?(): Promise<ModelCatalog>;
 
   /**
    * Starts a session. `emit` is passed IN rather than attached afterwards —

@@ -21,6 +21,15 @@ describe("model validation", () => {
   test("accepts the slug shapes real CLIs use", () => {
     for (const slug of [
       "claude-opus-4-6",
+      "claude-opus-5",
+      "claude-fable-5",
+      "opus[1m]",
+      "fable",
+      "gpt-5.6-sol",
+      "grok-4.5",
+      "Gemini 3.1 Pro (High)",
+      "openai/gpt-5.4",
+      "qwen3-coder-plus",
       "gpt-5.2-codex",
       "gemini-2.5-pro",
       "anthropic/claude-sonnet-4",
@@ -38,10 +47,14 @@ describe("model validation", () => {
     expect(() => validateModel("-f")).toThrow(CommandError);
   });
 
-  test("rejects whitespace and shell metacharacters", () => {
-    for (const bad of ["model name", "a;rm -rf /", "a|b", "a$(id)", "a`id`", "a\nb", "a&b"]) {
+  test("rejects shell metacharacters", () => {
+    for (const bad of ["a;rm -rf /", "a|b", "a$(id)", "a`id`", "a\nb", "a&b"]) {
       expect(() => validateModel(bad)).toThrow(CommandError);
     }
+  });
+
+  test("allows spaces used by Antigravity display names", () => {
+    expect(validateModel("Gemini 3.1 Pro (High)")).toBe("Gemini 3.1 Pro (High)");
   });
 
   test("rejects an absurdly long value", () => {

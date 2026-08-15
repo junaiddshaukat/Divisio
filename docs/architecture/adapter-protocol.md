@@ -26,6 +26,8 @@ Each adapter declares what it supports. The UI uses this matrix instead of guess
 | `worktreeAware` | Safe/expected to run with `cwd` set to a worktree |
 | `usageSignals` | Exposes quota/rate-limit hints when available |
 
+Optional `listModels()` returns a `ModelCatalog`. `live` means the adapter read the vendor CLI’s own settings or cache (side-effect-free). `none` means the UI may fall back to curated aliases. Secrets in vendor config files must never appear in the catalog.
+
 Unknown = unsupported. Never fake a capability.
 
 ## Interface sketch
@@ -41,6 +43,7 @@ interface ProviderAdapter {
   readonly capabilities: AdapterCapabilities;
 
   detect(): Promise<DetectResult>; // binary on PATH, auth hint
+  listModels?(): Promise<ModelCatalog>; // optional; vendor catalog, no secrets
   startSession(input: StartSessionInput): Promise<SessionHandle>;
   sendTurn(session: SessionHandle, turn: SendTurnInput): Promise<void>;
   interruptTurn(session: SessionHandle): Promise<void>;

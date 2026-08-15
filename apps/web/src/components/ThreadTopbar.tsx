@@ -1,3 +1,4 @@
+import { cloneElement, isValidElement, type ReactElement } from "react";
 import type { ProviderView, ThreadView } from "@divisio/contracts";
 import { statusOf } from "../status.ts";
 import { HandoffMenu } from "./HandoffMenu.tsx";
@@ -8,7 +9,6 @@ import {
   DiffIcon,
   FileIcon,
   MenuIcon,
-  SearchIcon,
   TerminalIcon,
 } from "./ui/icons.ts";
 
@@ -26,7 +26,6 @@ interface Props {
   dirty: boolean;
   workdir: string | null;
   onNav(): void;
-  onPalette(): void;
   onSurface(surface: Exclude<RightSurface, null>): void;
   onCloseSurface(): void;
   onToggleDock(): void;
@@ -38,6 +37,9 @@ interface Props {
 /**
  * Thread header. Right-panel surfaces are one segmented control; the terminal
  * is a separate dock toggle under the composer — never a second panel copy.
+ *
+ * When a surface or the terminal is open, inactive action labels collapse to
+ * icons so the breadcrumb stays readable.
  */
 export function ThreadTopbar({
   thread,
@@ -50,7 +52,6 @@ export function ThreadTopbar({
   dirty,
   workdir,
   onNav,
-  onPalette,
   onSurface,
   onCloseSurface,
   onToggleDock,
@@ -59,12 +60,18 @@ export function ThreadTopbar({
   gitActions,
 }: Props) {
   const status = statusOf(thread.status);
+  const compact = rightSurface !== null || terminalDock;
 
   const surfaces = [
     { key: "changes" as const, label: "Changes", icon: <DiffIcon />, badge: dirty },
     { key: "files" as const, label: "Files", icon: <FileIcon />, badge: false },
     { key: "browser" as const, label: "Browser", icon: <BrowserIcon />, badge: false },
   ];
+
+  const gitSlot =
+    gitActions && isValidElement(gitActions)
+      ? cloneElement(gitActions as ReactElement<{ compact?: boolean }>, { compact })
+      : gitActions;
 
   return (
     <header className="topbar">
@@ -76,24 +83,27 @@ export function ThreadTopbar({
         <span className="crumb-thread">{thread.title}</span>
       </div>
 
-      <div className="topbar-actions">
-        {gitActions}
+      <div className={`topbar-actions${compact ? " is-compact" : ""}`}>
+        {gitSlot}
         <OpenInMenu workdir={workdir} onHint={onHint} />
 
         <div className="segmented" role="group" aria-label="Workspace surfaces">
-          {surfaces.map((s) => (
-            <button
-              key={s.key}
-              className="segment"
-              aria-pressed={rightSurface === s.key}
-              title={s.label}
-              onClick={() => (rightSurface === s.key ? onCloseSurface() : onSurface(s.key))}
-            >
-              {s.icon}
-              <span className="segment-label">{s.label}</span>
-              {s.badge && <span className="segment-dot" aria-label="uncommitted changes" />}
-            </button>
-          ))}
+          {surfaces.map((s) => {
+            const active = rightSurface === s.key;
+            return (
+              <button
+                key={s.key}
+                className="segment"
+                aria-pressed={active}
+                title={s.label}
+                onClick={() => (active ? onCloseSurface() : onSurface(s.key))}
+              >
+                {s.icon}
+                <span className="segment-label">{s.label}</span>
+                {s.badge && <span className="segment-dot" aria-label="uncommitted changes" />}
+              </button>
+            );
+          })}
           <button
             type="button"
             className="segment"
@@ -106,23 +116,16 @@ export function ThreadTopbar({
           </button>
         </div>
 
-        <IconButton label="Search (⌘K)" icon={<SearchIcon />} size="sm" onClick={onPalette} />
-
         <HandoffMenu
           current={thread.provider}
           providers={providers}
-          busy={handoffBusy || busy}
+          turnBusy={busy}
+          handoffBusy={handoffBusy}
+          compact={compact}
           onHandoff={onHandoff}
         />
 
-<span
-          className={`status-chip tone-${status.tone}`}
-          title={
-            status.tone === "ready"
-              ? "Idle — waiting for a prompt"
-              : status.label
-          }
-        >
+        <span className={`status-chip tone-${status.tone}`} title={status.hint}>
           <span className={`status-dot dot-${status.tone}${status.pulse ? " is-pulsing" : ""}`} />
           <span className="status-chip-label">{status.label}</span>
         </span>

@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 import type { DiffFileEntry } from "@divisio/contracts";
+import { useSmoothReveal } from "../hooks/useSmoothReveal.ts";
 import { Markdown } from "./Markdown.tsx";
 import { WorkEntries, type WorkEntry } from "./WorkEntries.tsx";
 
 export interface Bubble {
-  kind: "user" | "assistant" | "streaming" | "work";
+  kind: "user" | "assistant" | "streaming" | "work" | "thinking";
   work?: WorkEntry[];
   text: string;
   key: string;
@@ -50,8 +51,19 @@ export function Transcript({
           // their own markdown would mangle pasted snippets.
           if (b.kind === "user") return <div key={b.key} className="msg-user">{b.text}</div>;
           if (b.kind === "work") return <WorkEntries key={b.key} entries={b.work ?? []} />;
+          if (b.kind === "thinking") {
+            return (
+              <div key={b.key} className="msg-thinking" role="status" aria-live="polite">
+                <span className="msg-thinking-dot" aria-hidden />
+                {b.text || "Thinking…"}
+              </div>
+            );
+          }
+          if (b.kind === "streaming") {
+            return <StreamingAssistant key={b.key} text={b.text} />;
+          }
           return (
-            <div key={b.key} className={`msg-assistant${b.kind === "streaming" ? " streaming" : ""}`}>
+            <div key={b.key} className="msg-assistant">
               <Markdown source={b.text} />
               {b.changedFiles && b.changedFiles.length > 0 && b.turnId && onOpenChanges && (
                 <ChangedFilesChip
@@ -64,6 +76,15 @@ export function Transcript({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function StreamingAssistant({ text }: { text: string }) {
+  const revealed = useSmoothReveal(text, true);
+  return (
+    <div className="msg-assistant streaming">
+      <Markdown source={revealed} />
     </div>
   );
 }

@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"ses_fixture_partial_001","cwd":"/tmp/demo"}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi "}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"there."}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hi there."}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"Hi there.","session_id":"ses_fixture_partial_001"}

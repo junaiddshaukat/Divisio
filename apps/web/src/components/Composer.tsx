@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { PermissionMode, ProviderView } from "@divisio/contracts";
+import type { ModelCatalog, PermissionMode, ProviderView } from "@divisio/contracts";
 import { PermissionModeSelect } from "./ApprovalBar.tsx";
 import { AgentPicker } from "./AgentPicker.tsx";
 import { Button, IconButton } from "./ui/Button.tsx";
@@ -18,6 +18,7 @@ interface Props {
   provider: string;
   model: string | null;
   providers: ProviderView[];
+  catalogs?: Record<string, ModelCatalog>;
   permissionMode: PermissionMode;
   hasHistory: boolean;
   /** Larger textarea + draft placeholder for an empty draft thread. */
@@ -66,6 +67,7 @@ export function Composer({
   provider,
   model,
   providers,
+  catalogs,
   permissionMode,
   hasHistory,
   hero,
@@ -94,8 +96,6 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const info = providers.find((p) => p.kind === provider);
-  const canMediate = !!info?.capabilities["approvals"];
   const canSend = (!!text.trim() || images.length > 0) && !busy;
 
   const addFiles = async (files: FileList | File[]) => {
@@ -205,13 +205,14 @@ export function Composer({
             provider={provider}
             model={model}
             providers={providers}
+            catalogs={catalogs}
             hasHistory={hasHistory}
             busy={busy}
             onSelect={onAgentSelect}
           />
           <PermissionModeSelect
             mode={permissionMode}
-            canMediate={canMediate}
+            mediated={providers.find((p) => p.kind === provider)?.capabilities.approvals === true}
             onChange={onPermissionMode}
           />
           <span className="composer-spacer" />

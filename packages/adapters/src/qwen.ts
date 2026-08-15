@@ -13,6 +13,7 @@ import {
   type AdapterCapabilities,
   type DetectResult,
   type EmitRuntimeEvent,
+  type ModelCatalog,
   type ProviderAdapter,
   type SendTurnInput,
   type PermissionMode,
@@ -22,6 +23,7 @@ import {
 import { logger } from "@divisio/shared/log";
 import { detectCli, interruptProcess, pumpClaudeLikeStream, type TurnProcess } from "./shared/streamPump.ts";
 import { pushModelArg } from "./shared/modelArg.ts";
+import { readQwenModelCatalog } from "./qwen/settings.ts";
 
 const log = logger("adapter:qwen");
 const BINARY = "qwen";
@@ -60,6 +62,10 @@ export class QwenAdapter implements ProviderAdapter {
       "qwen not on PATH — install Qwen Code CLI",
       "qwen exited non-zero — check auth / ModelScope token",
     );
+  }
+
+  async listModels(): Promise<ModelCatalog> {
+    return readQwenModelCatalog();
   }
 
   async startSession(input: StartSessionInput, emit: EmitRuntimeEvent): Promise<SessionHandle> {

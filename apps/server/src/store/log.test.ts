@@ -84,4 +84,114 @@ describe("EventStore projections", () => {
     expect(gap.map((e) => e.seq)).toEqual([2]);
     expect(gap[0]?.type).toBe("project.created");
   });
+
+  test("activityStats is empty on a fresh store", () => {
+    setup();
+    const stats = store.activityStats();
+    expect(stats.totals.turns).toBe(0);
+    expect(stats.totals.activeDays).toBe(0);
+    expect(stats.days.length).toBeGreaterThan(300);
+    expect(stats.providers).toEqual([]);
+  });
+
+  test("activityStats counts turns by provider and day", () => {
+    setup();
+    store.append([
+      {
+        type: "project.created",
+        threadId: null,
+        payload: { projectId: "prj_a", name: "Alpha", rootPath: "/tmp/a" },
+      },
+      {
+        type: "thread.created",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", projectId: "prj_a", title: "Hello", provider: "claude" },
+      },
+      {
+        type: "turn.started",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", turnId: "trn_1", provider: "claude" },
+      },
+      {
+        type: "turn.message",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", turnId: "trn_1", role: "user", text: "ping" },
+      },
+      {
+        type: "turn.started",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", turnId: "trn_2", provider: "claude" },
+      },
+      {
+        type: "turn.message",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", turnId: "trn_2", role: "user", text: "pong" },
+      },
+    ]);
+
+    const stats = store.activityStats();
+    expect(stats.totals.turns).toBe(2);
+    expect(stats.totals.messages).toBe(2);
+    expect(stats.totals.projects).toBe(1);
+    expect(stats.totals.threads).toBe(1);
+    expect(stats.providers).toEqual([{ kind: "claude", turns: 2 }]);
+    expect(stats.totals.activeDays).toBe(1);
+    expect(stats.totals.currentStreak).toBeGreaterThanOrEqual(1);
+  });
+
+  test("rename and soft-delete update the thread projection", () => {
+    setup();
+    store.append([
+      {
+        type: "project.created",
+        threadId: null,
+        payload: { projectId: "prj_a", name: "Alpha", rootPath: "/tmp/a" },
+      },
+      {
+        type: "thread.created",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", projectId: "prj_a", title: "Hello", provider: "mock" },
+      },
+      {
+        type: "thread.renamed",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", title: "Renamed" },
+      },
+    ]);
+    expect(store.getThread("thr_a")?.title).toBe("Renamed");
+
+    store.append([
+      {
+        type: "thread.deleted",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a" },
+      },
+    ]);
+    expect(store.getThread("thr_a")).toBeNull();
+    expect(store.listThreads()).toEqual([]);
+  });
+
+  test("project.removed hides the project and its threads without needing disk cleanup", () => {
+    setup();
+    store.append([
+      {
+        type: "project.created",
+        threadId: null,
+        payload: { projectId: "prj_a", name: "Alpha", rootPath: "/tmp/a" },
+      },
+      {
+        type: "thread.created",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", projectId: "prj_a", title: "Hello", provider: "mock" },
+      },
+      {
+        type: "project.removed",
+        threadId: null,
+        payload: { projectId: "prj_a" },
+      },
+    ]);
+    expect(store.listProjects()).toEqual([]);
+    expect(store.getProject("prj_a")).toBeNull();
+    expect(store.listThreads()).toEqual([]);
+  });
 });

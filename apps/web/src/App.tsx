@@ -10,14 +10,19 @@ import type {
   PermissionMode,
   ProjectView,
   ProviderView,
+  ModelCatalog,
   ThreadView,
 } from "@divisio/contracts";
 import { Client, type ConnectionState } from "./client.ts";
 import { useFiles } from "./hooks/useFiles.ts";
 import { useAttention } from "./hooks/useAttention.ts";
 import { AttentionToasts } from "./components/AttentionToasts.tsx";
+import { Onboarding } from "./components/onboarding/Onboarding.tsx";
+import { pickDirectory, reloadApp } from "./platform.ts";
+import { AddProjectDialog } from "./components/AddProjectDialog.tsx";
 import { ApprovalBar, type PendingApproval } from "./components/ApprovalBar.tsx";
 import { Composer } from "./components/Composer.tsx";
+import { ConfirmHost } from "./components/ConfirmDialog.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import type { WorkEntry } from "./components/WorkEntries.tsx";
 import { Transcript, type Bubble } from "./components/Transcript.tsx";
@@ -25,7 +30,7 @@ import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
 import { SessionBoard } from "./components/SessionBoard.tsx";
 import { ThreadTopbar } from "./components/ThreadTopbar.tsx";
 import { Button, IconButton } from "./components/ui/Button.tsx";
-import { CloseIcon, MenuIcon, SearchIcon } from "./components/ui/icons.ts";
+import { CloseIcon, MenuIcon, SearchIcon, SidebarShowIcon } from "./components/ui/icons.ts";
 import { SettingsShell, type SettingsSection } from "./components/SettingsShell.tsx";
 
 /**
@@ -156,6 +161,7 @@ export function App() {
   const [projects, setProjects] = useState<ProjectView[]>([]);
   const [threads, setThreads] = useState<ThreadView[]>([]);
   const [providers, setProviders] = useState<ProviderView[]>([]);
+  const [modelCatalogs, setModelCatalogs] = useState<Record<string, ModelCatalog>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [streaming, setStreaming] = useState<{ turnId: string; text: string } | null>(null);
@@ -163,6 +169,19 @@ export function App() {
   const [work, setWork] = useState<WorkEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState(false);
+  const [addProjectOpen, setAddProjectOpen] = useState(false);
+  /** When opening New chat from a project row (or lane), lock to that project. */
+  const [threadProjectId, setThreadProjectId] = useState<string | null>(null);
+  /**
+   * First run is decided by state, not by a stored "seen" flag: a user with no
+   * projects has nothing to return to, and one who dismissed it keeps that
+   * choice. Re-runnable from Settings if they want it back.
+   */
+  const [onboardingDismissed, setOnboardingDismissed] = useState(
+    () => localStorage.getItem("divisio:onboarded") === "1",
+  );
+  /** Settings → General can reopen welcome even when projects already exist. */
+  const [forceOnboarding, setForceOnboarding] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
   const [lanes, setLanes] = useState<LaneView[]>([]);
   const [view, setView] = useState<"thread" | "board">("thread");
@@ -186,6 +205,10 @@ export function App() {
   const [leftWidth, setLeftWidth] = useState(() => clampLeft(loadWidth("left", LEFT_DEFAULT)));
   /** Sidebar is an overlay below tablet width; this drives it. */
   const [navOpen, setNavOpen] = useState(false);
+  /** Desktop collapse — persists across sessions. */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem("divisio:sidebar-collapsed") === "1",
+  );
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
   const [laneBusy, setLaneBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
@@ -222,6 +245,12 @@ export function App() {
   activeIdRef.current = activeId;
 
   const activeThread = useMemo(() => threads.find((t) => t.id === activeId) ?? null, [threads, activeId]);
+  const threadRunning =
+    activeThread?.status === "running" ||
+    activeThread?.status === "stopping" ||
+    activeThread?.status === "awaiting_approval";
+  /** Stop / disable send — status can lag behind events, so OR both signals. */
+  const turnBusy = !!activeTurn || threadRunning || handoffBusy;
 
   const refresh = useCallback(async (client: Client) => {
     const list = await client.send("project.list", {});
@@ -279,11 +308,24 @@ export function App() {
     await refresh(client);
   }, []);
 
+  const [providersLoading, setProvidersLoading] = useState(false);
+
   const refreshProviders = useCallback(async () => {
     const client = clientRef.current;
     if (!client) return;
-    const r = await client.send("provider.detect", {});
-    setProviders(r.providers);
+    setProvidersLoading(true);
+    try {
+      const r = await client.send("provider.detect", {});
+      setProviders(r.providers);
+      try {
+        const models = await client.send("provider.models", {});
+        setModelCatalogs(models.catalogs);
+      } catch {
+        setModelCatalogs({});
+      }
+    } finally {
+      setProvidersLoading(false);
+    }
   }, []);
 
   const openThread = useCallback(async (threadId: string) => {
@@ -292,6 +334,7 @@ export function App() {
     setActiveId(threadId);
     setStreaming(null);
     setWork([]);
+    setActiveTurn(null);
     setError(null);
     setPendingApproval(null);
     setDiffByTurn(new Map());
@@ -301,6 +344,17 @@ export function App() {
     const snap = await client.send("thread.snapshot", { threadId });
     setMessages(snap.messages);
     setThreads((prev) => prev.map((t) => (t.id === snap.thread.id ? snap.thread : t)));
+    // Restore Stop/busy after refresh or handoff — turn.started may already have fired.
+    const running =
+      snap.thread.status === "running" ||
+      snap.thread.status === "stopping" ||
+      snap.thread.status === "awaiting_approval";
+    const restoredTurn =
+      snap.activeTurnId ??
+      (running
+        ? [...snap.messages].reverse().find((m) => m.role === "user")?.turnId ?? null
+        : null);
+    setActiveTurn(restoredTurn);
     const next = new Map<string, DiffFileEntry[]>();
     for (const d of snap.diffs) {
       if (d.files.length > 0) next.set(d.turnId, d.files);
@@ -419,8 +473,21 @@ export function App() {
           setThreads((prev) =>
             prev.map((t) => (t.id === p["threadId"] ? { ...t, status: p["status"] as never } : t)),
           );
-          if (p["status"] === "error" && p["threadId"] === activeIdRef.current) {
-            setError(String(p["detail"] ?? "session error"));
+          if (p["threadId"] === activeIdRef.current) {
+            const status = String(p["status"]);
+            if (status === "error") {
+              setError(String(p["detail"] ?? "session error"));
+            }
+            // Idle statuses without a matching turn.completed still clear the Stop button.
+            if (
+              status === "ready" ||
+              status === "closed" ||
+              status === "connecting" ||
+              status === "error"
+            ) {
+              setActiveTurn(null);
+              setStreaming(null);
+            }
           }
           break;
         case "thread.permission_mode_set":
@@ -431,8 +498,34 @@ export function App() {
           );
           break;
         case "project.created":
+        case "project.removed":
         case "thread.created":
+        case "thread.renamed":
+        case "thread.deleted":
           void (clientRef.current && refresh(clientRef.current));
+          if (event.type === "thread.deleted" && p["threadId"] === activeIdRef.current) {
+            setActiveId(null);
+            setMessages([]);
+            setStreaming(null);
+            setActiveTurn(null);
+            setWork([]);
+          }
+          if (event.type === "project.removed") {
+            const removedId = p["projectId"] as string;
+            setProjects((prev) => prev.filter((pr) => pr.id !== removedId));
+            setThreads((prev) => {
+              const open = prev.find((t) => t.id === activeIdRef.current);
+              if (open?.projectId === removedId) {
+                setActiveId(null);
+                setMessages([]);
+                setStreaming(null);
+                setActiveTurn(null);
+                setWork([]);
+              }
+              return prev.filter((t) => t.projectId !== removedId);
+            });
+            setLanes((prev) => prev.filter((l) => l.projectId !== removedId));
+          }
           break;
       }
     },
@@ -602,9 +695,17 @@ export function App() {
 
   const interrupt = async () => {
     const client = clientRef.current;
-    if (!client || !activeId || !activeTurn) return;
+    if (!client || !activeId) return;
+    const turnId =
+      activeTurn ??
+      [...messages].reverse().find((m) => m.role === "user")?.turnId ??
+      null;
+    if (!turnId) {
+      setError("Nothing to stop — no active turn id yet.");
+      return;
+    }
     try {
-      await client.send("turn.interrupt", { threadId: activeId, turnId: activeTurn });
+      await client.send("turn.interrupt", { threadId: activeId, turnId });
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     }
@@ -757,10 +858,95 @@ export function App() {
     });
     setDialog(false);
     setLaneForNewThread(null);
+    setThreadProjectId(null);
     await refresh(client);
     setView("thread");
     await openThread(res.thread.id);
   };
+
+  const cloneProject = useCallback(
+    async (url: string, parentPath: string, name?: string) => {
+      const client = clientRef.current;
+      if (!client) return null;
+      const res = await client.send("project.clone", { url, parentPath, ...(name ? { name } : {}) });
+      await refresh(client);
+      return res.project;
+    },
+    [refresh],
+  );
+
+  const openNewThread = useCallback((projectId?: string | null) => {
+    setThreadProjectId(projectId ?? null);
+    setLaneForNewThread(null);
+    setDialog(true);
+  }, []);
+
+  const setSidebarHidden = useCallback((hidden: boolean) => {
+    localStorage.setItem("divisio:sidebar-collapsed", hidden ? "1" : "0");
+    setSidebarCollapsed(hidden);
+  }, []);
+
+  const renameThread = useCallback(async (threadId: string, title: string) => {
+    const client = clientRef.current;
+    if (!client) return;
+    try {
+      const res = await client.send("thread.rename", { threadId, title });
+      setThreads((prev) => prev.map((t) => (t.id === res.thread.id ? res.thread : t)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const deleteThread = useCallback(
+    async (threadId: string) => {
+      const client = clientRef.current;
+      if (!client) return;
+      try {
+        await client.send("thread.delete", { threadId });
+        setThreads((prev) => prev.filter((t) => t.id !== threadId));
+        if (activeIdRef.current === threadId) {
+          setActiveId(null);
+          setMessages([]);
+          setStreaming(null);
+          setActiveTurn(null);
+          setWork([]);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [],
+  );
+
+  const removeProject = useCallback(async (projectId: string) => {
+    const client = clientRef.current;
+    if (!client) return;
+    try {
+      await client.send("project.remove", { projectId });
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      setThreads((prev) => {
+        const open = prev.find((t) => t.id === activeIdRef.current);
+        if (open?.projectId === projectId) {
+          setActiveId(null);
+          setMessages([]);
+          setStreaming(null);
+          setActiveTurn(null);
+          setWork([]);
+        }
+        return prev.filter((t) => t.projectId !== projectId);
+      });
+      setLanes((prev) => prev.filter((l) => l.projectId !== projectId));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/unknown command/i.test(msg)) {
+        setError(
+          "Daemon is outdated and does not support removing projects. Quit Divisio, stop any process on port 4577, then reopen — or press ⌘R after restarting.",
+        );
+      } else {
+        setError(msg);
+      }
+    }
+  }, []);
 
   /**
    * Hands the thread to another provider. Costs one turn on the source agent,
@@ -769,6 +955,10 @@ export function App() {
   const handoff = async (toProvider: string) => {
     const client = clientRef.current;
     if (!client || !activeId) return null;
+    if (activeTurn || threadRunning) {
+      setError("Stop the running turn before handing off.");
+      return null;
+    }
     setHandoffBusy(true);
     setError(null);
     try {
@@ -778,7 +968,12 @@ export function App() {
       await openThread(res.thread.id);
       return res.thread;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const raw = err instanceof Error ? err.message : String(err);
+      setError(
+        raw.includes("timed out")
+          ? "Handoff timed out while the source agent was writing the note. Try again — or stop any running turn first."
+          : raw,
+      );
       return null;
     } finally {
       setHandoffBusy(false);
@@ -859,13 +1054,45 @@ export function App() {
     if (client) setPairing(await client.send("pairing.status", {}));
   };
 
-  const createProject = async (name: string, rootPath: string) => {
+  const dismissOnboarding = useCallback(() => {
+    localStorage.setItem("divisio:onboarded", "1");
+    setOnboardingDismissed(true);
+    setForceOnboarding(false);
+  }, []);
+
+  const replayOnboarding = useCallback(() => {
+    localStorage.removeItem("divisio:onboarded");
+    setOnboardingDismissed(false);
+    setForceOnboarding(true);
+    setSettingsOpen(null);
+  }, []);
+
+  /** Creates the project, thread, and first turn as one action. */
+  const startFirstThread = useCallback(
+    async (projectId: string, providerKind: string, text: string) => {
+      const client = clientRef.current;
+      if (!client) throw new Error("not connected");
+      const res = await client.send("thread.create", {
+        projectId,
+        title: text.length > 48 ? `${text.slice(0, 48)}…` : text,
+        provider: providerKind,
+      });
+      dismissOnboarding();
+      await refresh(client);
+      setView("thread");
+      await openThread(res.thread.id);
+      await client.send("turn.send", { threadId: res.thread.id, text });
+    },
+    [dismissOnboarding, refresh, openThread],
+  );
+
+  const createProject = useCallback(async (name: string, rootPath: string) => {
     const client = clientRef.current;
     if (!client) return null;
     const res = await client.send("project.create", { name, rootPath });
     await refresh(client);
     return res.project;
-  };
+  }, [refresh]);
 
   const previewUrl = useMemo(() => {
     if (!activeThread?.laneId) return "http://127.0.0.1:3000";
@@ -875,9 +1102,11 @@ export function App() {
 
   const paletteActions: PaletteAction[] = useMemo(() => {
     const acts: PaletteAction[] = [
-      { id: "new", label: "New thread", group: "Thread", run: () => setDialog(true) },
+      { id: "new", label: "New chat", group: "Chat", run: () => openNewThread() },
+      { id: "add-project", label: "Add project…", group: "Project", run: () => setAddProjectOpen(true) },
       { id: "board", label: "Open board", group: "Navigate", run: () => { setSettingsOpen(null); setView("board"); } },
       { id: "providers", label: "Providers", group: "Navigate", run: () => openSettings("providers") },
+      { id: "profile", label: "Profile", group: "Navigate", run: () => openSettings("profile") },
       { id: "settings", label: "Settings", group: "Navigate", run: () => openSettings("providers") },
       {
         id: "devices",
@@ -909,17 +1138,26 @@ export function App() {
       );
     }
     return acts;
-  }, [activeThread, terminalDock, openSettings]);
+  }, [activeThread, terminalDock, openSettings, openNewThread]);
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--left-w", `${leftWidth}px`);
-  }, [leftWidth]);
+    document.documentElement.style.setProperty(
+      "--left-w",
+      sidebarCollapsed ? "0px" : `${leftWidth}px`,
+    );
+  }, [leftWidth, sidebarCollapsed]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+        return;
+      }
+      // ⌘R / Ctrl+R — reload the window (devtools often disable this by default).
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r" && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        reloadApp();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -965,6 +1203,9 @@ export function App() {
     );
   }
 
+  const showThinking =
+    turnBusy && !(streaming && streaming.text.length > 0) && work.length === 0;
+
   const bubbles: Bubble[] = [
     ...messages.map((m) => ({
       kind: m.role as "user" | "assistant",
@@ -979,10 +1220,36 @@ export function App() {
     ...(streaming && streaming.text.length > 0
       ? [{ kind: "streaming" as const, text: streaming.text, key: "streaming" }]
       : []),
+    ...(showThinking
+      ? [
+          {
+            kind: "thinking" as const,
+            text: handoffBusy ? "Writing handover…" : "Thinking…",
+            key: "thinking",
+          },
+        ]
+      : []),
   ];
 
   const showRight = view === "thread" && !!activeThread && rightSurface !== null;
   const inSettings = settingsOpen !== null;
+
+  // Shown when there is genuinely nothing to return to, or when Settings
+  // asks to replay the welcome checklist.
+  if (state === "open" && (forceOnboarding || (!onboardingDismissed && projects.length === 0))) {
+    return (
+      <Onboarding
+        providers={providers}
+        projects={projects}
+        detecting={providersLoading}
+        onRefreshProviders={refreshProviders}
+        onPickFolder={pickDirectory}
+        onCreateProject={createProject}
+        onStartThread={startFirstThread}
+        onSkip={dismissOnboarding}
+      />
+    );
+  }
 
   if (incompatible) {
     return (
@@ -1002,9 +1269,9 @@ export function App() {
 
   return (
     <div
-      className={`shell${inSettings ? " shell-settings" : showRight ? " shell-right" : ""}`}
+      className={`shell${inSettings ? " shell-settings" : showRight ? " shell-right" : ""}${sidebarCollapsed ? " shell-sidebar-collapsed" : ""}`}
       data-nav={navOpen ? "open" : "closed"}
-      style={{ ["--left-w" as string]: `${leftWidth}px` }}
+      style={{ ["--left-w" as string]: sidebarCollapsed ? "0px" : `${leftWidth}px` }}
     >
       {inSettings ? (
         <SettingsShell
@@ -1012,6 +1279,7 @@ export function App() {
           providers={providers}
           pairing={pairing}
           connectionState={state}
+          client={clientRef.current}
           initialSection={settingsOpen}
           onClose={() => setSettingsOpen(null)}
           onRefreshProviders={() => void refreshProviders()}
@@ -1020,6 +1288,11 @@ export function App() {
             const client = clientRef.current;
             if (!client) throw new Error("not connected");
             return client.send("toolchain.status", {});
+          }}
+          onLoadActivity={async () => {
+            const client = clientRef.current;
+            if (!client) throw new Error("not connected");
+            return client.send("stats.activity", {});
           }}
           onCreateToken={async () => {
             const client = clientRef.current;
@@ -1034,6 +1307,7 @@ export function App() {
             await clientRef.current?.send("pairing.revokeAll", {});
             await refreshPairing();
           }}
+          onReplayWelcome={replayOnboarding}
         />
       ) : (
         <>
@@ -1048,15 +1322,22 @@ export function App() {
           setNavOpen(false);
           void openThread(id);
         }}
-        onNew={() => setDialog(true)}
+        onNew={() => openNewThread()}
+        onNewInProject={(id) => openNewThread(id)}
+        onAddProject={() => setAddProjectOpen(true)}
         onProviders={() => openSettings("providers")}
         onSettings={() => openSettings("providers")}
+        onProfile={() => openSettings("profile")}
         onDevices={() => void openPairing()}
         onSearch={() => setPaletteOpen(true)}
         onLanes={() => {
           setView("board");
           setNavOpen(false);
         }}
+        onHideSidebar={() => setSidebarHidden(true)}
+        onRenameThread={(id, title) => void renameThread(id, title)}
+        onDeleteThread={(id) => void deleteThread(id)}
+        onRemoveProject={(id) => void removeProject(id)}
         laneCount={lanes.filter((l) => l.status !== "archived").length}
         view={view}
         onResizeWidth={(w) => {
@@ -1065,6 +1346,22 @@ export function App() {
         }}
         width={leftWidth}
       />
+      {sidebarCollapsed && (
+        <div className="sidebar-rail" role="toolbar" aria-label="Sidebar">
+          <IconButton
+            label="Show sidebar"
+            icon={<SidebarShowIcon />}
+            size="sm"
+            onClick={() => setSidebarHidden(false)}
+          />
+          <IconButton
+            label="Search (⌘K)"
+            icon={<SearchIcon />}
+            size="sm"
+            onClick={() => setPaletteOpen(true)}
+          />
+        </div>
+      )}
       {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}
 
       <main className="main">
@@ -1082,14 +1379,6 @@ export function App() {
               <span className="crumb-sep">·</span>
               <span className="crumb-project">parallel lanes</span>
             </div>
-            <div className="topbar-actions">
-              <IconButton
-                label="Search (\u2318K)"
-                icon={<SearchIcon />}
-                size="sm"
-                onClick={() => setPaletteOpen(true)}
-              />
-            </div>
           </header>
         ) : activeThread ? (
           <ThreadTopbar
@@ -1098,7 +1387,7 @@ export function App() {
             providers={providers}
             rightSurface={rightSurface}
             terminalDock={terminalDock}
-            busy={!!activeTurn}
+            busy={turnBusy}
             handoffBusy={handoffBusy}
             dirty={!!gitStatus?.dirty}
             workdir={
@@ -1107,7 +1396,6 @@ export function App() {
                 : (projects.find((p) => p.id === activeThread.projectId)?.rootPath ?? null)
             }
             onNav={() => setNavOpen((v) => !v)}
-            onPalette={() => setPaletteOpen(true)}
             onSurface={(surface) => openSurface(surface)}
             onCloseSurface={closeRight}
             onToggleDock={() => setTerminalDock((v) => !v)}
@@ -1119,7 +1407,7 @@ export function App() {
                   dirty={!!gitStatus.dirty}
                   hasRemote={!!gitStatus.hasRemote}
                   canPr={!!activeThread.laneId}
-                  busy={!!activeTurn}
+                  busy={turnBusy}
                   onCommit={(msg) => commitThread(msg)}
                   onPush={pushThread}
                   onOpenPr={activeThread.laneId ? openThreadPr : undefined}
@@ -1158,13 +1446,15 @@ export function App() {
               void openThread(id);
             }}
             onNewThread={(laneId) => {
+              const projectId = lanes.find((l) => l.id === laneId)?.projectId ?? null;
               setLaneForNewThread(laneId);
+              setThreadProjectId(projectId);
               setDialog(true);
             }}
           />
         ) : activeThread ? (
           <div className="thread-column">
-            {messages.length === 0 && !streaming && !activeTurn ? (
+            {messages.length === 0 && !streaming && !turnBusy ? (
               <div className="draft-stack">
                 <div className="draft-spacer" aria-hidden />
                 <div className="draft-hero">
@@ -1186,10 +1476,11 @@ export function App() {
                   dirty={!!gitStatus?.dirty}
                 />
                 <Composer
-                  busy={!!activeTurn || handoffBusy}
+                  busy={turnBusy}
                   provider={activeThread.provider}
                   model={activeThread.model ?? null}
                   providers={providers}
+                  catalogs={modelCatalogs}
                   permissionMode={activeThread.permissionMode ?? "supervised"}
                   hasHistory={false}
                   hero
@@ -1226,10 +1517,11 @@ export function App() {
                   dirty={!!gitStatus?.dirty}
                 />
                 <Composer
-                  busy={!!activeTurn || handoffBusy}
+                  busy={turnBusy}
                   provider={activeThread.provider}
                   model={activeThread.model ?? null}
                   providers={providers}
+                  catalogs={modelCatalogs}
                   permissionMode={activeThread.permissionMode ?? "supervised"}
                   hasHistory={messages.length > 0}
                   onSend={(text, model, images) => void send(text, model, images)}
@@ -1284,10 +1576,11 @@ export function App() {
           </div>
         ) : (
           <div className="empty quiet">
-            <h1>Pick a thread</h1>
+            <h1>Pick a chat</h1>
             <p>Or start a new one — Divisio runs agents under your own CLI logins.</p>
-            <Button variant="primary" onClick={() => setDialog(true)}>
-              New thread
+            {error && <div className="banner">{error}</div>}
+            <Button variant="primary" onClick={() => openNewThread()}>
+              New chat
             </Button>
           </div>
         )}
@@ -1389,16 +1682,27 @@ export function App() {
       {dialog && (
         <NewThreadDialog
           lockedProjectId={
-            laneForNewThread ? (lanes.find((l) => l.id === laneForNewThread)?.projectId ?? null) : null
+            threadProjectId ??
+            (laneForNewThread ? (lanes.find((l) => l.id === laneForNewThread)?.projectId ?? null) : null)
           }
           projects={projects}
           providers={providers}
-          onCreateProject={createProject}
           onCreate={createThread}
+          onAddProject={() => setAddProjectOpen(true)}
           onClose={() => {
             setDialog(false);
             setLaneForNewThread(null);
+            setThreadProjectId(null);
           }}
+        />
+      )}
+
+      {addProjectOpen && (
+        <AddProjectDialog
+          onCreateLocal={createProject}
+          onClone={cloneProject}
+          onClose={() => setAddProjectOpen(false)}
+          onAdded={(project) => openNewThread(project.id)}
         />
       )}
 
@@ -1409,6 +1713,8 @@ export function App() {
           onClose={() => setDiffView(null)}
         />
       )}
+
+      <ConfirmHost />
     </div>
   );
 }

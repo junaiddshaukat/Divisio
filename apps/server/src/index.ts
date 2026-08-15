@@ -13,6 +13,7 @@ import { TerminalManager, terminalsAvailable } from "./terminal/pty.ts";
 import { newId as newTerminalId } from "@divisio/shared/ids";
 import { PairingStore } from "./pairing/store.ts";
 import { InsecureBindError, reachableAddresses, resolveNetwork, type NetworkConfig } from "./pairing/network.ts";
+import { syncCustomAdapters } from "./syncCustomAdapters.ts";
 import { dirname, join, normalize } from "node:path";
 import { existsSync } from "node:fs";
 import { userDataDir } from "@divisio/shared/paths";
@@ -74,6 +75,7 @@ for (const adapter of createCommunityAdapters()) {
 }
 // Optional extra modules: userdata/adapters.json + DIVISIO_ADAPTER_MODULES.
 await loadCommunityAdapters({ registry, builtinModules: [] });
+syncCustomAdapters(registry);
 const hub = new WsHub(store, newId("env"));
 const pairingControls = {
   status: () => ({

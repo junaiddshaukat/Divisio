@@ -26,16 +26,24 @@
   --space-8: 32px;
   --space-9: 48px;
 
+  /* Density multiplies spacing and control geometry, never type size. */
+  --density-scale: 1;
+
   /* ---------------------------------- type ---------------------------------
    * Six sizes, each with a role. If a new size seems necessary, the role is
    * usually the thing that is actually missing.
+   *
+   * Three quiet colour levels live on the semantic tokens:
+   *   --foreground          primary
+   *   --muted-foreground    secondary (placeholders, section labels)
+   *   --foreground-subtle   tertiary (timestamps, resting icons)
    */
   --text-micro: 10px;   /* keycaps, counters */
   --text-meta: 11px;    /* timestamps, secondary labels */
-  --text-ui: 12px;      /* controls, sidebar rows, dense chrome */
-  --text-body: 13px;    /* chat prose, editor chrome */
+  --text-ui: 13px;      /* controls, sidebar rows, dense chrome */
+  --text-body: 13px;    /* chat chrome; body copy stays 14px on `body` */
   --text-lead: 15px;    /* section titles, thread title */
-  --text-display: 24px; /* empty-state headline only */
+  --text-display: 28px; /* empty-state headline only */
 
   --leading-tight: 1.25;
   --leading-normal: 1.5;
@@ -45,6 +53,8 @@
   --weight-medium: 500;
   --weight-semibold: 600;
 
+  --tracking-display: -0.02em;
+
   /* --------------------------------- icons ---------------------------------
    * One stroke width and two sizes. Mixed icon weights are the fastest way to
    * make an interface look assembled from parts.
@@ -52,45 +62,53 @@
   --icon-sm: 14px;
   --icon-md: 16px;
   --icon-stroke: 1.75;
+  --icon-rest: 0.72;
 
   /* --------------------------- semantic geometry ---------------------------
    * Named insets, not ad-hoc padding. Spacing drift is as visible as colour
    * drift, and almost nobody tokenises it — which is why panels that should
    * align quietly stop aligning.
    */
-  --inset-row: 10px;      /* horizontal padding inside a list row */
-  --inset-panel: 8px;     /* padding around a panel's content */
-  --inset-floating: 12px; /* menus, popovers, tooltips */
+  --inset-row: calc(10px * var(--density-scale));
+  --inset-panel: calc(8px * var(--density-scale));
+  --inset-floating: calc(12px * var(--density-scale));
 
   /* -------------------------------- controls ------------------------------- */
-  --control-height-sm: 26px;
-  --control-height-md: 30px;
-  --control-height-lg: 36px;
-  --row-height: 30px;
+  --control-height-sm: calc(26px * var(--density-scale));
+  --control-height-md: calc(30px * var(--density-scale));
+  --control-height-lg: calc(36px * var(--density-scale));
+  --row-height: calc(32px * var(--density-scale));
 
   /* -------------------------------- elevation ------------------------------
    * Three levels. Borders carry structure; shadow is reserved for things that
-   * genuinely float above the page.
+   * genuinely float above the page. Menus add a 1px foreground ring so the
+   * edge stays sharp on both polarities.
    */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.18);
+  --shadow-menu:
+    var(--shadow-md),
+    0 0 0 1px color-mix(in srgb, var(--foreground) 10%, transparent);
 
   /* --------------------------------- motion --------------------------------
    * Fast enough to feel like a response, not an animation. Nothing on a
    * high-frequency path animates at all (ADR 0007).
    */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --duration-instant: 80ms;
   --duration-fast: 140ms;
   --duration-slow: 220ms;
 }
 
 .dark {
-  /* Shadows need more opacity on dark surfaces to read at all. */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
+  --shadow-menu:
+    var(--shadow-md),
+    0 0 0 1px color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 /* ---------------------------------- icons ---------------------------------

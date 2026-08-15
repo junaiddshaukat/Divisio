@@ -38,6 +38,53 @@ export async function pickDirectory(): Promise<string | null> {
   }
 }
 
+/** Reloads the window UI (reconnects to the daemon). */
+export function reloadApp(): void {
+  window.location.reload();
+}
+
+/**
+ * Absolute path from a dropped folder, when the shell exposes one.
+ * Browsers never give a real path; Tauri/Chromium desktop often set `file.path`.
+ */
+export function pathFromDroppedFolder(dt: DataTransfer | null): string | null {
+  if (!dt?.files?.length && !dt?.items?.length) return null;
+
+  for (const file of Array.from(dt.files ?? [])) {
+    const path = (file as File & { path?: string }).path;
+    if (typeof path === "string" && path.length > 0) return path;
+  }
+
+  // Prefer directory entries when the browser reports them (still no path on web).
+  for (const item of Array.from(dt.items ?? [])) {
+    if (item.kind !== "file") continue;
+    const entry = typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null;
+    if (entry?.isDirectory) {
+      const file = item.getAsFile() as (File & { path?: string }) | null;
+      if (file?.path) return file.path;
+    }
+  }
+  return null;
+}
+
+/** Subscribe to native window folder drops (desktop shell). */
+export async function listenFolderDrop(
+  onPath: (path: string) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const unlisten = await getCurrentWindow().onDragDropEvent((event) => {
+      if (event.payload.type !== "drop") return;
+      const paths = event.payload.paths;
+      if (paths?.[0]) onPath(paths[0]);
+    });
+    return unlisten;
+  } catch {
+    return () => {};
+  }
+}
+
 /**
  * Reveal a path in the file manager, or open it in Cursor / VS Code.
  */

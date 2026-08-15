@@ -529,3 +529,51 @@ html:not(.dark) .settings-rows {
     padding: 20px 16px 40px;
   }
 }
+
+.settings-byok {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.settings-byok-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.settings-byok-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.settings-byok-copy {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  max-width: 52ch;
+}
+.settings-byok-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+.settings-byok-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-byok-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding-right: 8px;
+}

@@ -70,4 +70,12 @@ export {
   Palette as AppearanceIcon,
   Keyboard as KeybindingsIcon,
   Unplug as ConnectionsIcon,
+  CircleUser as ProfileIcon,
+  Link as LinkIcon,
+  SquarePen as NewThreadIcon,
+  PanelLeftClose as SidebarHideIcon,
+  PanelLeft as SidebarShowIcon,
+  LockOpen as UnlockIcon,
+  Pencil as EditIcon,
+  FolderPlus as AddProjectIcon,
 } from "lucide-react";

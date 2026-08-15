@@ -10,6 +10,11 @@ import type { ProviderRuntimeEvent } from "@divisio/contracts";
 export interface ClaudeNormalizeState {
   /** Vendor session id from the system/init line. */
   nativeId: string | null;
+  /**
+   * True once we have accepted a `stream_event` text delta. Later `assistant`
+   * snapshots then skip text so we do not double-count partial + final.
+   */
+  seenPartials?: boolean;
 }
 
 export interface ClaudeNormalizeResult {
@@ -32,13 +37,28 @@ export function normalizeClaudeStreamLine(
   const events: ProviderRuntimeEvent[] = [];
   let text = "";
   let nativeId = state.nativeId;
+  let seenPartials = state.seenPartials === true;
 
   const type = msg["type"];
 
   if (type === "system" && msg["subtype"] === "init") {
     const id = msg["session_id"];
     if (typeof id === "string") nativeId = id;
-    return { events, text, state: { nativeId } };
+    return { events, text, state: { nativeId, seenPartials } };
+  }
+
+  // Token-level streaming from `claude --include-partial-messages`.
+  if (type === "stream_event") {
+    const event = msg["event"] as Record<string, unknown> | undefined;
+    if (event?.["type"] === "content_block_delta") {
+      const delta = event["delta"] as Record<string, unknown> | undefined;
+      if (delta?.["type"] === "text_delta" && typeof delta["text"] === "string" && delta["text"]) {
+        text = delta["text"];
+        events.push({ type: "assistant.delta", turnId, text });
+        seenPartials = true;
+      }
+    }
+    return { events, text, state: { nativeId, seenPartials } };
   }
 
   if (type === "assistant") {
@@ -47,8 +67,12 @@ export function normalizeClaudeStreamLine(
     for (const block of content) {
       const b = block as Record<string, unknown>;
       if (b["type"] === "text" && typeof b["text"] === "string") {
-        text += b["text"];
-        events.push({ type: "assistant.delta", turnId, text: b["text"] });
+        // When partials already streamed, assistant snapshots are cumulative
+        // (or final) and must not append again.
+        if (!seenPartials) {
+          text += b["text"];
+          events.push({ type: "assistant.delta", turnId, text: b["text"] });
+        }
       } else if (b["type"] === "tool_use") {
         events.push({
           type: "tool.started",
@@ -59,7 +83,7 @@ export function normalizeClaudeStreamLine(
         });
       }
     }
-    return { events, text, state: { nativeId } };
+    return { events, text, state: { nativeId, seenPartials } };
   }
 
   if (type === "user") {
@@ -77,7 +101,7 @@ export function normalizeClaudeStreamLine(
         });
       }
     }
-    return { events, text, state: { nativeId } };
+    return { events, text, state: { nativeId, seenPartials } };
   }
 
   if (type === "result" && msg["is_error"] === true) {
@@ -88,5 +112,5 @@ export function normalizeClaudeStreamLine(
     });
   }
 
-  return { events, text, state: { nativeId } };
+  return { events, text, state: { nativeId, seenPartials } };
 }

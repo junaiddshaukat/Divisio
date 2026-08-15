@@ -9,11 +9,15 @@ import htmlWorker from "monaco-editor/language/html/html.worker?worker";
 import tsWorker from "monaco-editor/language/typescript/ts.worker?worker";
 
 /**
- * Monaco, themed from our design tokens rather than shipping VS Code's palette.
+ * Monaco, themed to match Divisio surfaces.
  *
  * Workers are wired explicitly: without them Monaco falls back to running
  * language services on the main thread, which stutters the whole UI while a
  * turn is streaming.
+ *
+ * Theme colors must be opaque `#RRGGBB`. Dark-mode CSS tokens are often
+ * `rgba(...)` for glass — feeding those into `defineTheme` crashes Monaco's
+ * `resolveParsedTokenThemeRules`.
  */
 self.MonacoEnvironment = {
   getWorker(_workerId: string, label: string) {
@@ -37,34 +41,45 @@ self.MonacoEnvironment = {
   },
 };
 
-/** Reads a CSS custom property so the editor matches the rest of the app. */
-function token(name: string, fallback: string): string {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
-}
+/** Solid hex surfaces — mirrors light/dark tokens without rgba/glass values. */
+const THEMES = {
+  "divisio-light": {
+    base: "vs" as const,
+    colors: {
+      "editor.background": "#ffffff",
+      "editorGutter.background": "#ffffff",
+      "editor.lineHighlightBackground": "#f4f4f5",
+      "editorLineNumber.foreground": "#71717a",
+    },
+  },
+  "divisio-dark": {
+    base: "vs-dark" as const,
+    colors: {
+      "editor.background": "#121212",
+      "editorGutter.background": "#121212",
+      "editor.lineHighlightBackground": "#1a1a1a",
+      "editorLineNumber.foreground": "#a3a3a3",
+    },
+  },
+};
 
 let themesDefined = false;
 function defineThemes() {
   if (themesDefined) return;
   themesDefined = true;
-  for (const [name, base] of [
-    ["divisio-light", "vs"],
-    ["divisio-dark", "vs-dark"],
-  ] as const) {
+  for (const [name, theme] of Object.entries(THEMES)) {
     monaco.editor.defineTheme(name, {
-      base,
+      base: theme.base,
       inherit: true,
       rules: [],
-      colors: {
-        // Only surfaces are overridden; syntax colours stay with the base theme,
-        // which is tuned for contrast in a way our neutral palette is not.
-        "editor.background": token("--card", base === "vs" ? "#ffffff" : "#121212"),
-        "editorGutter.background": token("--card", base === "vs" ? "#ffffff" : "#121212"),
-        "editor.lineHighlightBackground": token("--muted", "#00000008"),
-        "editorLineNumber.foreground": token("--muted-foreground", "#71717a"),
-      },
+      colors: theme.colors,
     });
   }
+}
+
+function monoFont(): string {
+  const value = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
+  return value || "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 }
 
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
@@ -110,7 +125,7 @@ export function CodeEditor({ path, value, readOnly, dark, onChange, onSave }: Pr
       minimap: { enabled: false },
       fontSize: 13,
       lineHeight: 20,
-      fontFamily: token("--font-mono", "monospace"),
+      fontFamily: monoFont(),
       scrollBeyondLastLine: false,
       renderLineHighlight: "line",
       smoothScrolling: false, // Animation on a high-frequency path; see ADR 0007.
@@ -139,6 +154,7 @@ export function CodeEditor({ path, value, readOnly, dark, onChange, onSave }: Pr
   }, [value]);
 
   useEffect(() => {
+    defineThemes();
     monaco.editor.setTheme(dark ? "divisio-dark" : "divisio-light");
   }, [dark]);
 

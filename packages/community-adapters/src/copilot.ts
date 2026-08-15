@@ -33,7 +33,7 @@ interface Session extends SessionHandle {
 const CAPABILITIES: AdapterCapabilities = {
   sessionResume: false,
   interruptTurn: true,
-  modelSwitch: false,
+  modelSwitch: true,
   approvals: false,
   handoffExport: false,
   worktreeAware: true,
@@ -81,6 +81,7 @@ export class CopilotAdapter implements ProviderAdapter {
     if (session.proc) throw new Error("turn already running");
 
     const args = ["-p", turn.text, "--output-format", "json", "-s", "--no-ask-user"];
+    if (turn.model) args.push("--model", turn.model);
     if (session.permissionMode === "full_access") {
       args.push("--allow-all");
     }

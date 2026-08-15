@@ -14,6 +14,7 @@ import {
   type AdapterCapabilities,
   type DetectResult,
   type EmitRuntimeEvent,
+  type ModelCatalog,
   type ProviderAdapter,
   type SendTurnInput,
   type SessionHandle,
@@ -28,13 +29,14 @@ import {
   type CodexNormalizeState,
 } from "./codex/normalize.ts";
 import { JsonRpcStdioClient, type JsonRpcId, type JsonRpcInbound } from "./jsonrpc/stdio.ts";
+import { readCodexModelCatalog } from "./codex/modelsCache.ts";
 
 const log = logger("adapter:codex");
 
 const CAPABILITIES: AdapterCapabilities = {
   sessionResume: true,
   interruptTurn: true,
-  modelSwitch: false,
+  modelSwitch: true,
   approvals: true,
   handoffExport: false,
   worktreeAware: true,
@@ -101,6 +103,10 @@ export class CodexAdapter implements ProviderAdapter {
         detail: "codex not on PATH — install the Codex CLI",
       };
     }
+  }
+
+  async listModels(): Promise<ModelCatalog> {
+    return readCodexModelCatalog();
   }
 
   async startSession(input: StartSessionInput, emit: EmitRuntimeEvent): Promise<SessionHandle> {
@@ -248,6 +254,7 @@ export class CodexAdapter implements ProviderAdapter {
       const result = await session.client.request("turn/start", {
         threadId: session.codexThreadId,
         input: [{ type: "text", text: turn.text }],
+        ...(turn.model ? { model: turn.model } : {}),
       });
       const codexTurnId = extractTurnId(result);
       if (codexTurnId) {

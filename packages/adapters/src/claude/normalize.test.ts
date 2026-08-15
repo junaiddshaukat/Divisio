@@ -62,4 +62,13 @@ describe("Claude stream normalizer (golden fixtures)", () => {
     expect(result.unparseable).toEqual(["not-json"]);
     expect(result.state.nativeId).toBe("x");
   });
+
+  test("partial stream_event deltas are preferred over assistant snapshots", () => {
+    const result = replayFixtureFile(join(fixtures, "partial-turn.ndjson"), "trn_partial");
+    expect(result.assistantText).toBe("Hi there.");
+    expect(result.events.filter((e) => e.type === "assistant.delta")).toEqual([
+      { type: "assistant.delta", turnId: "trn_partial", text: "Hi " },
+      { type: "assistant.delta", turnId: "trn_partial", text: "there." },
+    ]);
+  });
 });
