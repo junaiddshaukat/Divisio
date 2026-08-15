@@ -21,10 +21,11 @@ function rowsFromTranscripts(records: TranscriptUsage[]): UsageEventRow[] {
     outputTokens: rec.outputTokens,
     cacheReadTokens: rec.cacheReadTokens,
     cacheWriteTokens: rec.cacheWriteTokens,
+    totalTokens: rec.totalTokens,
   }));
 }
 
-const MACHINE_KINDS = new Set(["claude", "codex"]);
+const MACHINE_KINDS = new Set(["claude", "codex", "cursor", "grok", "qwen", "opencode"]);
 
 export async function collectUsageStats(store: EventStore, days: unknown): Promise<UsageStats> {
   const rangeDays = normalizeUsageRange(days) as UsageRangeDays;
@@ -37,7 +38,7 @@ export async function collectUsageStats(store: EventStore, days: unknown): Promi
     untilMs: startOfLocalDayMs(untilKey),
   });
 
-  const scanned = scan.claudeFiles + scan.codexFiles;
+  const scanned = Object.values(scan.files).reduce((sum, n) => sum + n, 0);
   if (scanned === 0 && scan.records.length === 0) {
     return logStats;
   }
@@ -63,8 +64,7 @@ export async function collectUsageStats(store: EventStore, days: unknown): Promi
     providers,
     coverage: {
       source: "machine",
-      claudeFiles: scan.claudeFiles,
-      codexFiles: scan.codexFiles,
+      files: scan.files,
       sessions: machine.totals.sessions,
       appTokens: logStats.totals.tokens,
       appMeteredTurns: logStats.totals.meteredTurns,

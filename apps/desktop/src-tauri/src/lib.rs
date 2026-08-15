@@ -121,7 +121,7 @@ fn dirs_home() -> PathBuf {
 /// Must match `DAEMON_GENERATION` in packages/contracts/src/protocol.ts.
 /// Bump both in the same commit. Command-name substring matching is not a
 /// substitute — that is how an older process on :4577 used to get adopted.
-const DAEMON_GENERATION: u32 = 1;
+const DAEMON_GENERATION: u32 = 2;
 
 #[derive(Deserialize)]
 struct Health {

@@ -199,8 +199,7 @@ export function assembleUsageStats(input: {
 
   const coverage: UsageCoverage = {
     source: "log",
-    claudeFiles: 0,
-    codexFiles: 0,
+    files: {},
     sessions: sessions.size,
     appTokens: tokens,
     appMeteredTurns: usageInRange.size,

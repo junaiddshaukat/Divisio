@@ -628,8 +628,8 @@ export class EventStore {
   }
 
   /**
-   * Token counts for Settings → Usage. Headline prefers Claude Code and Codex
-   * session files on this machine when those homes exist.
+   * Token counts Divisio recorded on the event log. Settings → Usage prefers
+   * CLI session files via collectUsageStats; this is the log fallback.
    */
   usageStats(days?: UsageRangeDays): UsageStats {
     const rangeDays = normalizeUsageRange(days ?? DEFAULT_USAGE_RANGE);

@@ -7,7 +7,7 @@
     ".": "./src/index.ts",
     "./sdk": "./src/sdk/index.ts",
     "./setup": "./src/shared/setup.ts",
-    "./usage": "./src/usage/transcripts.ts"
+    "./usage": "./src/usage/index.ts"
   },
   "dependencies": {
     "@divisio/contracts": "workspace:*",

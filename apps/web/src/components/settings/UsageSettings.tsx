@@ -63,11 +63,18 @@ export function UsageSettings({ load, providers }: Props) {
     ? stats.totals.inputTokens + stats.totals.cacheReadTokens + stats.totals.cacheWriteTokens
     : 0;
 
+  const unspecified = stats
+    ? stats.totals.tokens -
+      stats.totals.inputTokens -
+      stats.totals.outputTokens -
+      stats.totals.cacheReadTokens -
+      stats.totals.cacheWriteTokens
+    : 0;
   const metrics = useMemo(() => {
     if (!stats) return [];
     const t = stats.totals;
     const cacheShare = formatShare(t.cacheReadTokens, inputAll);
-    return [
+    const items = [
       {
         label: "Cache read",
         value: t.cacheReadTokens,
@@ -89,14 +96,22 @@ export function UsageSettings({ load, providers }: Props) {
         hint: null,
       },
     ];
-  }, [stats, inputAll]);
+    if (unspecified > 0) {
+      items.push({
+        label: "Turn total",
+        value: unspecified,
+        hint: "No input/output split",
+      });
+    }
+    return items;
+  }, [stats, inputAll, unspecified]);
 
   return (
     <div className="settings-section usage-section">
       <p className="usage-note">
         {machine
-          ? "Processed tokens from Claude Code and Codex session files on this machine. Cache reads are included. This is not a bill and not a vendor quota."
-          : "No Claude or Codex session files found. Showing turns Divisio recorded. This is not a bill."}
+          ? "Processed tokens from CLI session files on this machine. Cache reads are included. Grok only reports a cumulative total, so those rows have no input/output split. This is not a bill and not a vendor quota."
+          : "No CLI session files found. Showing turns Divisio recorded. This is not a bill."}
         {stats?.coverage.source === "machine" && stats.coverage.appMeteredTurns > 0
           ? ` Divisio recorded ${formatTokens(stats.coverage.appTokens)} in this window.`
           : ""}

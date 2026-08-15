@@ -103,7 +103,7 @@ export interface CommandPayloads {
   /**
    * Token counts for Settings → Usage.
    * `days` is 7, 30, or 90; default 30. Headline prefers CLI session files
-   * (Claude Code + Codex) when those homes exist. Not a bill.
+   * on this machine when those homes exist. Not a bill.
    */
   "stats.usage": { days?: 7 | 30 | 90 };
   /**
@@ -417,8 +417,8 @@ export type UsageSource = "machine" | "log";
  */
 export interface UsageCoverage {
   source: UsageSource;
-  claudeFiles: number;
-  codexFiles: number;
+  /** Scanned files or databases per provider kind. */
+  files: Record<string, number>;
   sessions: number;
   appTokens: number;
   appMeteredTurns: number;

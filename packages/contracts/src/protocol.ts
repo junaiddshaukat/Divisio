@@ -14,7 +14,7 @@ import type { CommandName } from "./wire.ts";
  * Desktop attach reads this from `/health`. Do not reintroduce a second
  * required-command list in the shell — bump this number instead.
  */
-export const DAEMON_GENERATION = 1;
+export const DAEMON_GENERATION = 2;
 
 /**
  * Commands this generation of the UI needs. Documents what generation N
@@ -31,6 +31,7 @@ export const REQUIRED_COMMANDS: readonly CommandName[] = [
   "file.tree",
   "file.read",
   "terminal.open",
+  "stats.usage",
 ];
 
 export interface DaemonIncompatibility {

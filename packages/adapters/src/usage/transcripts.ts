@@ -1,13 +1,16 @@
 /**
  * Vendor transcript parsers for Settings → Usage.
  *
- * Claude Code and Codex write token counters into on-disk JSONL. These helpers
- * map those lines onto disjoint token parts. They never read message text into
- * the returned record. Callers must dedupe Claude by `dedupeKey` — each
- * assistant content block repeats the parent message's full usage object.
+ * These helpers map on-disk counters onto disjoint token parts. They never
+ * read message text into the returned record. Callers must dedupe Claude by
+ * `dedupeKey` — each assistant content block repeats the parent message's
+ * full usage object.
+ *
+ * Grok only exposes a cumulative `totalTokens`. Those rows set `totalTokens`
+ * and leave the parts at 0 — never invent an input/output split.
  */
 
-export type TranscriptProvider = "claude" | "codex";
+export type TranscriptProvider = "claude" | "codex" | "cursor" | "grok" | "qwen" | "opencode";
 
 export interface TranscriptUsage {
   provider: TranscriptProvider;
@@ -18,6 +21,11 @@ export interface TranscriptUsage {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   outputTokens: number;
+  /**
+   * Fallback when the vendor only sent a single counter (Grok turn deltas).
+   * Never added on top of the disjoint parts.
+   */
+  totalTokens?: number;
   /**
    * Claude: `${messageId}:${requestId}`. Identical keys are the same request.
    * Codex: null — uniqueness is handled per-file (duplicate token_count skip).
@@ -30,18 +38,32 @@ export function processedTokens(u: {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   outputTokens: number;
+  totalTokens?: number;
 }): number {
-  return u.inputTokens + u.cacheReadTokens + u.cacheWriteTokens + u.outputTokens;
+  const parts = u.inputTokens + u.cacheReadTokens + u.cacheWriteTokens + u.outputTokens;
+  if (parts > 0) return parts;
+  return u.totalTokens && Number.isFinite(u.totalTokens) && u.totalTokens > 0 ? Math.trunc(u.totalTokens) : 0;
 }
 
-function int(value: unknown): number {
+export function int(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
 }
 
-function parseTimestampMs(value: unknown): number | null {
-  if (typeof value !== "string") return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
+export function parseTimestampMs(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    const ms = value > 1e12 ? value : value > 1e9 ? value * 1000 : value;
+    const year = new Date(ms).getFullYear();
+    return year >= 2020 && year <= 2100 ? Math.trunc(ms) : null;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const trimmed = value.trim();
+    if (/^\d+(\.\d+)?$/.test(trimmed)) return parseTimestampMs(Number(trimmed));
+    const parsed = Date.parse(trimmed);
+    if (Number.isNaN(parsed)) return null;
+    const year = new Date(parsed).getFullYear();
+    return year >= 2020 && year <= 2100 ? parsed : null;
+  }
+  return null;
 }
 
 /** Cheap gate before JSON.parse — most Claude jsonl lines are tool output. */
