@@ -1,0 +1,5 @@
+{"type":"system","subtype":"session_start","session_id":"qwen-sess-partial","cwd":"/tmp","model":"Qwen3"}
+{"type":"stream_event","session_id":"qwen-sess-partial","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello "}}}
+{"type":"stream_event","session_id":"qwen-sess-partial","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"from Qwen."}}}
+{"type":"assistant","session_id":"qwen-sess-partial","message":{"role":"assistant","content":[{"type":"text","text":"Hello from Qwen."}]}}
+{"type":"result","subtype":"success","session_id":"qwen-sess-partial","is_error":false,"result":"Hello from Qwen."}

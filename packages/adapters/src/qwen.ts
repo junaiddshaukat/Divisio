@@ -1,8 +1,9 @@
 /**
  * Qwen Code adapter — Stream tier.
  *
- * Drives `qwen -p … -o stream-json`. Wire format matches Claude stream-json
- * (system/init, assistant, result), so we reuse the Claude normalizer.
+ * Drives `qwen -p … -o stream-json --include-partial-messages`.
+ * Wire format matches Claude stream-json (system, stream_event, assistant,
+ * result), so we reuse the Claude normalizer.
  *
  * Auth stays in the CLI; Divisio never sees a key. Approvals are CLI-owned
  * in print mode (`approvals: false`).
@@ -90,8 +91,10 @@ export class QwenAdapter implements ProviderAdapter {
     if (!session) throw new Error(`no session for thread ${handle.threadId}`);
     if (session.proc) throw new Error("turn already running");
 
-    // Qwen Code: -p prompt, -o stream-json, -r session id.
-    const args = ["-p", turn.text, "-o", "stream-json"];
+    // Qwen Code: -p prompt, -o stream-json, token deltas, -r session id.
+    // `--include-partial-messages` is a hidden yargs flag; without it the CLI
+    // only emits a finished assistant snapshot after the turn.
+    const args = ["-p", turn.text, "-o", "stream-json", "--include-partial-messages"];
     if (session.nativeId) args.push("-r", session.nativeId);
     pushModelArg(args, turn.model);
 
