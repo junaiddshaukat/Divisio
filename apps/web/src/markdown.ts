@@ -105,7 +105,9 @@ marked.use({
       // every HTML parser identically, which a code block must.
       return `<div class="code-block">` +
         `<div class="code-head"><span class="code-lang">${escapeHtml(label)}</span>` +
-        `<button class="code-copy" type="button">Copy</button></div>` +
+        `<span class="code-head-actions">` +
+        `<button class="code-expand" type="button">Expand</button>` +
+        `<button class="code-copy" type="button">Copy</button></span></div>` +
         `<pre><code class="hljs language-${escapeHtml(label)}">${html}</code></pre></div>`;
     },
     link({ href, title, text }) {

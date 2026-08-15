@@ -41,6 +41,44 @@
 .msg-assistant .markdown {
   white-space: normal;
 }
+.msg-assistant-block {
+  position: relative;
+}
+.msg-assistant-block .msg-assistant {
+  padding-right: 4.5rem;
+}
+.msg-assistant-toolbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 80ms linear;
+}
+.msg-assistant-block:hover .msg-assistant-toolbar,
+.msg-assistant-block:focus-within .msg-assistant-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .msg-assistant-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.msg-copy {
+  border: 0;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--text-meta);
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.msg-copy:hover {
+  color: var(--foreground);
+}
 .msg-assistant.streaming::after {
   content: "";
   display: inline-block;

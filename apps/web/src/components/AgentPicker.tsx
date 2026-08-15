@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModelCatalog, ProviderView } from "@divisio/contracts";
 import { displayLabel, isProviderEnabled, loadProviderPrefs } from "../providerPrefs.ts";
 import {
-  modelLabel,
   modelsForProvider,
   setCustomProviderModels,
+  triggerModelLabel,
   type ProviderModelOption,
 } from "../providerModels.ts";
 import { ProviderMark } from "./ProviderMark.tsx";
@@ -80,7 +80,7 @@ export function AgentPicker({ provider, model, providers, catalogs, hasHistory, 
     };
   }, [open, provider]);
 
-  const triggerModel = modelLabel(provider, model, catalogs?.[provider]);
+  const triggerModel = triggerModelLabel(provider, model, catalogs?.[provider]);
   const triggerTitle = [currentLabel, triggerModel].filter(Boolean).join(" · ");
 
   const pickModel = (opt: ProviderModelOption) => {
@@ -143,9 +143,7 @@ export function AgentPicker({ provider, model, providers, catalogs, hasHistory, 
           <div className="agent-picker-main">
             <div className="agent-picker-section">
               {browseLabel}
-              {browse?.source === "community" ? (
-                <span className="agent-picker-section-meta">community</span>
-              ) : browse?.source === "custom" ? (
+              {browse?.source === "custom" ? (
                 <span className="agent-picker-section-meta">BYOK</span>
               ) : null}
             </div>

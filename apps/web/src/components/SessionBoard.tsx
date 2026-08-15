@@ -198,7 +198,7 @@ export function SessionBoard({
                           <button key={t.id} className="lane-thread" onClick={() => onOpenThread(t.id)}>
                             <span className={`status-dot dot-${statusOf(t.status).tone}${statusOf(t.status).pulse ? " is-pulsing" : ""}`} />
                             <span className="label">{t.title}</span>
-                            <span className="meta">{t.status}</span>
+                            <span className="meta">{statusOf(t.status).label}</span>
                           </button>
                         ))}
                       </div>

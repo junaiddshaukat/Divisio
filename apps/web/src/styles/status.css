@@ -157,7 +157,7 @@
 
 .lane-thread {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   width: 100%;
   padding: var(--space-2) var(--space-3);
@@ -172,9 +172,9 @@
   min-width: 0;
 }
 .lane-thread:hover { background: var(--accent); }
-.lane-thread .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-thread .label { flex: 1; min-width: 0; overflow: visible; text-overflow: unset; white-space: normal; word-break: break-word; }
 .lane-thread .meta { font-size: var(--text-micro); color: var(--muted-foreground); }
-.lane-thread .status-dot { margin-top: 0; }
+.lane-thread .status-dot { margin-top: 4px; }
 
 .board-column-title {
   font-size: var(--text-micro);

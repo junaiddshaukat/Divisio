@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ModelCatalog, PermissionMode, ProviderView } from "@divisio/contracts";
 import { PermissionModeSelect } from "./ApprovalBar.tsx";
 import { AgentPicker } from "./AgentPicker.tsx";
+import { MenuSelect } from "./MenuSelect.tsx";
 import { Button, IconButton } from "./ui/Button.tsx";
 import { AttachIcon, CloseIcon, SendIcon, StopIcon } from "./ui/icons.ts";
 import { capabilityOn, vendorResumeNote } from "../capabilityFlags.ts";
@@ -26,6 +27,11 @@ interface Props {
   vendorSessionId?: string | null;
   /** Larger textarea + draft placeholder for an empty draft thread. */
   hero?: boolean;
+  /** Home landing: real prompt before a thread exists. */
+  landing?: boolean;
+  projectId?: string;
+  projects?: Array<{ id: string; name: string }>;
+  onProjectChange?(id: string): void;
   onSend(
     text: string,
     model: string | null,
@@ -75,6 +81,10 @@ export function Composer({
   hasHistory,
   vendorSessionId = null,
   hero,
+  landing,
+  projectId,
+  projects,
+  onProjectChange,
   onSend,
   onInterrupt,
   onPermissionMode,
@@ -84,13 +94,14 @@ export function Composer({
   const [images, setImages] = useState<ComposerImage[]>([]);
   const area = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const tall = hero || landing;
 
   useEffect(() => {
     const el = area.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, hero ? 320 : 200)}px`;
-  }, [text, hero]);
+    el.style.height = `${Math.min(el.scrollHeight, tall ? 320 : 200)}px`;
+  }, [text, tall]);
 
   useEffect(() => {
     return () => {
@@ -100,7 +111,7 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canSend = (!!text.trim() || images.length > 0) && !busy;
+  const canSend = (!!text.trim() || images.length > 0) && !busy && !(landing && (!projects || projects.length === 0));
   const resumeNote = vendorResumeNote({
     hasHistory,
     sessionResume: capabilityOn(providers.find((p) => p.kind === provider)?.capabilities, "sessionResume"),
@@ -139,7 +150,7 @@ export function Composer({
 
   return (
     <div
-      className={`composer-wrap${hero ? " composer-hero" : ""}`}
+      className={`composer-wrap${tall ? " composer-hero" : ""}`}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes("Files")) {
           e.preventDefault();
@@ -173,8 +184,17 @@ export function Composer({
         <textarea
           ref={area}
           value={text}
-          rows={hero ? 3 : 1}
-          placeholder={busy ? "Running…" : hero ? "Describe what to build…" : "Ask for follow-up…"}
+          rows={tall ? 3 : 1}
+          autoFocus={landing}
+          placeholder={
+            busy
+              ? "Running…"
+              : landing
+                ? "Do anything."
+                : hero
+                  ? "Describe what to build…"
+                  : "Ask for follow-up…"
+          }
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
             const files = e.clipboardData?.files;
@@ -210,6 +230,19 @@ export function Composer({
             title="Attach images"
             onClick={() => fileRef.current?.click()}
           />
+          {landing && projects && projects.length > 1 && projectId && onProjectChange ? (
+            <MenuSelect
+              aria-label="Project"
+              className="composer-project"
+              value={projectId}
+              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+              onChange={onProjectChange}
+              disabled={busy}
+            />
+          ) : null}
+          {landing && projects && projects.length === 1 ? (
+            <span className="composer-project-label">{projects[0].name}</span>
+          ) : null}
           <AgentPicker
             provider={provider}
             model={model}
@@ -243,6 +276,9 @@ export function Composer({
         </div>
       </div>
       {resumeNote && <p className="composer-resume-note">{resumeNote}</p>}
+      {landing && (!projects || projects.length === 0) && (
+        <p className="composer-resume-note">Add a project first — the agent needs a folder to work in.</p>
+      )}
     </div>
   );
 }

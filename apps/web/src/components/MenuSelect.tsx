@@ -59,10 +59,18 @@ export function MenuSelect({
     const above = rect.top - gap - 8;
     const openDown = below >= Math.min(preferred, 120) || below >= above;
     const maxHeight = Math.max(120, Math.min(preferred, openDown ? below : above));
+    const width = Math.min(
+      Math.max(rect.width, 260),
+      Math.max(160, window.innerWidth - 16),
+    );
+    let left = rect.left;
+    if (left + width > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - 8 - width);
+    }
     setPos({
       top: openDown ? rect.bottom + gap : Math.max(8, rect.top - gap - maxHeight),
-      left: rect.left,
-      width: rect.width,
+      left,
+      width,
       maxHeight,
     });
   };

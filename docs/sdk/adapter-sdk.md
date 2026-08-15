@@ -56,7 +56,7 @@ export function createAdapter(): ProviderAdapter { … }
 export function createAdapters(): ProviderAdapter[] { … }
 ```
 
-Contract mismatches fail at `register` (startup), not mid-turn. The Providers matrix labels community rows with `community · <tier>`.
+Contract mismatches fail at `register` (startup), not mid-turn. `source: "community"` stays on the registry; the Providers UI does not badge rows as community.
 
 Until packages are published to npm, keep adapters in the monorepo under `packages/community-adapters` (or your own workspace package) and point the loader at the package name.
 

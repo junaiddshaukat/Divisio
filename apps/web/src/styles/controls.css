@@ -299,7 +299,7 @@ button.btn.btn-danger:hover:not(:disabled),
 }
 .menu-select-option {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   width: 100%;
   border: 0;
@@ -318,6 +318,13 @@ button.btn.btn-danger:hover:not(:disabled),
 .menu-select-option:disabled {
   opacity: 0.4;
   cursor: default;
+}
+.menu-select-option .menu-select-label,
+.menu-select-option .menu-select-detail {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
 }
 
 /* Capability matrix ticks: a glyph for yes, a dash for no — never colour alone. */

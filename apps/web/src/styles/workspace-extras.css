@@ -459,11 +459,12 @@
   transition: transform 120ms linear;
 }
 .provider-toggle input:checked + .provider-toggle-track {
-  background: color-mix(in srgb, var(--ring) 75%, #2563eb);
+  background: var(--primary);
   border-color: transparent;
 }
 .provider-toggle input:checked + .provider-toggle-track::after {
   transform: translateX(16px);
+  background: var(--primary-foreground);
 }
 .provider-toggle input:focus-visible + .provider-toggle-track {
   outline: 2px solid var(--ring);

@@ -77,6 +77,7 @@ import {
   saveWidth,
   TERMINAL_DEFAULT,
 } from "./panelPrefs.ts";
+import { isProviderEnabled, loadProviderPrefs } from "./providerPrefs.ts";
 
 const PORT = 4577;
 const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
@@ -196,6 +197,11 @@ export function App() {
   /** Bottom dock under the composer — the only terminal. */
   const [terminalDock, setTerminalDock] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(() => loadTerminalHeight(TERMINAL_DEFAULT));
+  const [draftProvider, setDraftProvider] = useState("claude");
+  const [draftModel, setDraftModel] = useState<string | null>(null);
+  const [draftPermission, setDraftPermission] = useState<PermissionMode>("supervised");
+  const [draftProjectId, setDraftProjectId] = useState("");
+  const [landingBusy, setLandingBusy] = useState(false);
 
   useEffect(() => {
     const onResize = () => setTerminalHeight((h) => clampTerminal(h));
@@ -899,6 +905,103 @@ export function App() {
     setDialog(true);
   }, []);
 
+  useEffect(() => {
+    const prefs = loadProviderPrefs();
+    const available = providers.filter((p) => p.available && isProviderEnabled(p.kind, prefs));
+    if (available.length === 0) return;
+    setDraftProvider((current) => {
+      if (available.some((p) => p.kind === current)) return current;
+      const saved = localStorage.getItem("divisio:draft-provider");
+      return available.find((p) => p.kind === saved)?.kind ?? available[0].kind;
+    });
+  }, [providers]);
+
+  useEffect(() => {
+    if (projects.length === 0) return;
+    setDraftProjectId((current) => {
+      if (current && projects.some((p) => p.id === current)) return current;
+      const saved = localStorage.getItem("divisio:draft-project");
+      const fromThread = threads[0]?.projectId;
+      return (
+        projects.find((p) => p.id === saved)?.id ??
+        projects.find((p) => p.id === fromThread)?.id ??
+        projects[0].id
+      );
+    });
+  }, [projects, threads]);
+
+  const createAndSend = useCallback(async (input: {
+    projectId: string;
+    provider: string;
+    model: string | null;
+    permissionMode: PermissionMode;
+    text: string;
+    images: Array<{ name: string; mimeType: string; dataBase64: string }>;
+  }) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("not connected");
+    const title =
+      input.text.length > 48 ? `${input.text.slice(0, 48)}…` : input.text.trim() || "New chat";
+    const res = await client.send("thread.create", {
+      projectId: input.projectId,
+      title,
+      provider: input.provider,
+    });
+    if (input.permissionMode !== "supervised") {
+      await client.send("thread.setPermissionMode", {
+        threadId: res.thread.id,
+        mode: input.permissionMode,
+      });
+    }
+    if (input.model) {
+      await client.send("thread.setProvider", {
+        threadId: res.thread.id,
+        provider: input.provider,
+        model: input.model,
+      });
+    }
+    await refresh(client);
+    setView("thread");
+    await openThread(res.thread.id);
+    const turn = await client.send("turn.send", {
+      threadId: res.thread.id,
+      text: input.text,
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.images.length ? { images: input.images } : {}),
+    });
+    setActiveTurn(turn.turnId);
+  }, [openThread, refresh]);
+
+  const sendFromLanding = async (
+    text: string,
+    model: string | null,
+    images: Array<{ name: string; mimeType: string; dataBase64: string }>,
+  ) => {
+    if (projects.length === 0) {
+      setAddProjectOpen(true);
+      return;
+    }
+    const projectId = draftProjectId || projects[0].id;
+    setLandingBusy(true);
+    setError(null);
+    try {
+      localStorage.setItem("divisio:draft-provider", draftProvider);
+      localStorage.setItem("divisio:draft-project", projectId);
+      await createAndSend({
+        projectId,
+        provider: draftProvider,
+        model,
+        permissionMode: draftPermission,
+        text,
+        images,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLandingBusy(false);
+    }
+  };
+
   const setSidebarHidden = useCallback((hidden: boolean) => {
     localStorage.setItem("divisio:sidebar-collapsed", hidden ? "1" : "0");
     setSidebarCollapsed(hidden);
@@ -1090,18 +1193,17 @@ export function App() {
     async (projectId: string, providerKind: string, text: string) => {
       const client = clientRef.current;
       if (!client) throw new Error("not connected");
-      const res = await client.send("thread.create", {
+      await createAndSend({
         projectId,
-        title: text.length > 48 ? `${text.slice(0, 48)}…` : text,
         provider: providerKind,
+        model: null,
+        permissionMode: "supervised",
+        text,
+        images: [],
       });
       dismissOnboarding();
-      await refresh(client);
-      setView("thread");
-      await openThread(res.thread.id);
-      await client.send("turn.send", { threadId: res.thread.id, text });
     },
-    [dismissOnboarding, refresh, openThread],
+    [createAndSend, dismissOnboarding],
   );
 
   const createProject = useCallback(async (name: string, rootPath: string) => {
@@ -1346,6 +1448,7 @@ export function App() {
         onAddProject={() => setAddProjectOpen(true)}
         onProviders={() => openSettings("providers")}
         onSettings={() => openSettings("providers")}
+        onConnection={() => openSettings("general")}
         onProfile={() => openSettings("profile")}
         onDevices={() => void openPairing()}
         onSearch={() => setPaletteOpen(true)}
@@ -1600,19 +1703,30 @@ export function App() {
                 <p className="draft-sub">Start a chat — agents run under your own CLI logins.</p>
               </div>
               {error && <div className="banner">{error}</div>}
-              <div className="composer-wrap composer-hero">
-                <button
-                  type="button"
-                  className="landing-composer"
-                  aria-label="Start a new chat"
-                  onClick={() => openNewThread()}
-                >
-                  <span className="landing-composer-placeholder">Do anything.</span>
-                  <span className="landing-composer-bar">
-                    <span className="landing-composer-send" aria-hidden />
-                  </span>
-                </button>
-              </div>
+              <Composer
+                busy={landingBusy}
+                landing
+                provider={draftProvider}
+                model={draftModel}
+                providers={providers}
+                catalogs={modelCatalogs}
+                permissionMode={draftPermission}
+                hasHistory={false}
+                projectId={draftProjectId}
+                projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+                onProjectChange={(id) => {
+                  setDraftProjectId(id);
+                  localStorage.setItem("divisio:draft-project", id);
+                }}
+                onSend={(text, model, images) => void sendFromLanding(text, model, images)}
+                onInterrupt={() => undefined}
+                onPermissionMode={setDraftPermission}
+                onAgentSelect={(next) => {
+                  setDraftProvider(next.provider);
+                  setDraftModel(next.model);
+                  localStorage.setItem("divisio:draft-provider", next.provider);
+                }}
+              />
             </div>
           </div>
         )}

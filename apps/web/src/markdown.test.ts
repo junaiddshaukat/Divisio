@@ -67,6 +67,12 @@ describe("code blocks", () => {
     expect(text).toContain("const a = 1;");
   });
 
+  test("code blocks include copy and expand controls", () => {
+    const html = renderMarkdown("```ts\nconst x = 1;\n```");
+    expect(html).toContain("code-copy");
+    expect(html).toContain("code-expand");
+  });
+
   test("an unlabelled block renders plainly rather than being guessed", () => {
     // highlightAuto used to label this CSS and colour it accordingly.
     const html = renderMarkdown("```\nplain text\n```");

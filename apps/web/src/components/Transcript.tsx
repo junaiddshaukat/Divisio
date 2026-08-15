@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DiffFileEntry } from "@divisio/contracts";
 import { useSmoothReveal } from "../hooks/useSmoothReveal.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -63,18 +63,53 @@ export function Transcript({
             return <StreamingAssistant key={b.key} text={b.text} />;
           }
           return (
-            <div key={b.key} className="msg-assistant">
-              <Markdown source={b.text} />
-              {b.changedFiles && b.changedFiles.length > 0 && b.turnId && onOpenChanges && (
-                <ChangedFilesChip
-                  turnId={b.turnId}
-                  files={b.changedFiles}
-                  onOpen={onOpenChanges}
-                />
-              )}
-            </div>
+            <AssistantMessage
+              key={b.key}
+              text={b.text}
+              turnId={b.turnId}
+              changedFiles={b.changedFiles}
+              onOpenChanges={onOpenChanges}
+            />
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function AssistantMessage({
+  text,
+  turnId,
+  changedFiles,
+  onOpenChanges,
+}: {
+  text: string;
+  turnId?: string;
+  changedFiles?: DiffFileEntry[];
+  onOpenChanges?(turnId: string, path?: string): void;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="msg-assistant-block">
+      <div className="msg-assistant-toolbar">
+        <button
+          type="button"
+          className="msg-copy"
+          onClick={() => {
+            void navigator.clipboard.writeText(text).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1200);
+            });
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <div className="msg-assistant">
+        <Markdown source={text} />
+        {changedFiles && changedFiles.length > 0 && turnId && onOpenChanges && (
+          <ChangedFilesChip turnId={turnId} files={changedFiles} onOpen={onOpenChanges} />
+        )}
       </div>
     </div>
   );

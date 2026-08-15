@@ -33,6 +33,8 @@ interface Props {
   onAddProject(): void;
   onProviders(): void;
   onSettings(): void;
+  /** Footer connection chip — opens General, where the daemon is explained. */
+  onConnection?(): void;
   onProfile(): void;
   onLanes(): void;
   onSearch?(): void;
@@ -81,6 +83,7 @@ export function Sidebar({
   onAddProject,
   onProviders,
   onSettings,
+  onConnection,
   onProfile,
   onLanes,
   onSearch,
@@ -360,7 +363,7 @@ export function Sidebar({
                           e.preventDefault();
                           startRename(thread.id);
                         }}
-                        title={lane ? `${thread.provider} · ${lane.branch}` : thread.provider}
+                        title={thread.title}
                       >
                         <StatusDot status={thread.status} />
                         <span className="thread-title">{thread.title}</span>
@@ -374,21 +377,31 @@ export function Sidebar({
       </nav>
 
       <footer className="sidebar-foot">
-        <span
+        <button
+          type="button"
           className={`sidebar-foot-status${state === "open" ? " is-online" : state === "connecting" ? " is-busy" : " is-offline"}`}
           title={
             state === "open"
-              ? "Daemon connected"
+              ? "Local daemon is connected — agents on this machine run through it"
               : state === "connecting"
-                ? "Connecting to daemon"
-                : `Daemon ${state}`
+                ? "Connecting to the local daemon"
+                : "Local daemon disconnected — chats will not run until it reconnects"
           }
+          aria-label={
+            state === "open"
+              ? "Connected to local daemon. Open General settings."
+              : state === "connecting"
+                ? "Connecting to local daemon. Open General settings."
+                : "Disconnected from local daemon. Open General settings."
+          }
+          onClick={() => (onConnection ?? onSettings)()}
         >
           <span
             className={`status-dot dot-${state === "open" ? "ready" : state === "connecting" ? "busy" : "error"}${state === "connecting" ? " is-pulsing" : ""}`}
+            aria-hidden
           />
-          {state === "open" ? "Online" : state === "connecting" ? "Connecting" : "Offline"}
-        </span>
+          {state === "open" ? "Connected" : state === "connecting" ? "Connecting" : "Disconnected"}
+        </button>
         <IconButton
           label="Settings"
           icon={<SettingsIcon />}

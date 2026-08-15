@@ -164,9 +164,24 @@ export function modelsForProvider(kind: string, live?: ModelCatalog | null): Pro
     const id = m.id.trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    out.push({ id, label: m.label.trim() || id });
+    out.push({ id, label: tidyModelLabel(m.label.trim() || id) });
   }
   return out;
+}
+
+/** Drop vendor tags like `[ModelScope]` so catalog names read as the model. */
+export function tidyModelLabel(raw: string): string {
+  return raw.replace(/^\[[^\]]+\]\s*/, "").trim() || raw;
+}
+
+/**
+ * Short name for the composer pill: last path segment, no vendor prefix.
+ * `Qwen-Ambassador/Qwen3.8-Max` → `Qwen3.8-Max`. `Fable 5` stays `Fable 5`.
+ */
+export function compactModelLabel(raw: string): string {
+  const tidy = tidyModelLabel(raw);
+  const slash = tidy.lastIndexOf("/");
+  return slash >= 0 ? tidy.slice(slash + 1) : tidy;
 }
 
 export function modelLabel(
@@ -174,12 +189,16 @@ export function modelLabel(
   modelId: string | null | undefined,
   live?: ModelCatalog | null,
 ): string | null {
-  if (!modelId || modelId === "default") {
-    if (live?.source === "live" && live.selectedId) {
-      const hit = modelsForProvider(kind, live).find((m) => m.id === live.selectedId);
-      return hit?.label ?? live.selectedId;
-    }
-    return null;
-  }
+  if (!modelId || modelId === "default") return null;
   return modelsForProvider(kind, live).find((m) => m.id === modelId)?.label ?? modelId;
+}
+
+/** Compact label for the composer trigger. Default/CLI choice shows the agent only. */
+export function triggerModelLabel(
+  kind: string,
+  modelId: string | null | undefined,
+  live?: ModelCatalog | null,
+): string | null {
+  const full = modelLabel(kind, modelId, live);
+  return full ? compactModelLabel(full) : null;
 }

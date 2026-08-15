@@ -634,8 +634,9 @@ button.pill.agent-picker-trigger {
   background: rgba(255, 255, 255, 0.06);
   border-color: var(--border);
   font: inherit;
-  max-width: min(360px, 100%);
+  max-width: 13.5rem;
   height: 28px;
+  min-height: 28px;
   padding: 0 10px;
   overflow: hidden;
   white-space: nowrap;
@@ -657,6 +658,10 @@ button.pill.agent-picker-trigger:disabled {
 .agent-picker-trigger-text {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1;
+  text-align: left;
+  min-width: 0;
 }
 .agent-picker-trigger-chevron {
   flex-shrink: 0;
@@ -1166,7 +1171,7 @@ button.btn.secondary {
 }
 .lane-thread {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   width: 100%;
   padding: 4px 6px;
@@ -1185,9 +1190,11 @@ button.btn.secondary {
 }
 .lane-thread .label {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
 }
 .lane-thread .meta {
   font-size: 10px;
@@ -1276,6 +1283,8 @@ button.btn.secondary {
 .handoff-row-label {
   font-size: 13px;
   font-weight: 500;
+  white-space: normal;
+  word-break: break-word;
 }
 .handoff-row-meta {
   font-size: 11px;
@@ -1824,8 +1833,8 @@ html.dark .diff-line.del {
   transition: border-color var(--duration-instant) linear, background-color var(--duration-instant) linear;
 }
 .surface-tile:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--ring) 45%, var(--border));
-  background: color-mix(in srgb, white 8%, var(--composer-surface));
+  border-color: color-mix(in srgb, var(--foreground) 22%, var(--border));
+  background: color-mix(in srgb, var(--foreground) 4%, var(--composer-surface));
 }
 .surface-tile:disabled {
   opacity: 0.45;
@@ -2286,8 +2295,14 @@ html.dark .diff-line.del {
   font-size: 11px;
   color: var(--muted-foreground);
 }
+.code-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
 .code-lang { font-family: var(--font-mono); }
-.code-copy {
+.code-copy,
+.code-expand {
   background: transparent;
   border: 0;
   color: var(--muted-foreground);
@@ -2297,12 +2312,32 @@ html.dark .diff-line.del {
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.code-copy:hover { background: var(--accent); color: var(--foreground); }
+.code-expand { display: none; }
+.code-block.is-collapsible .code-expand { display: inline; }
+.code-copy:hover,
+.code-expand:hover { background: var(--accent); color: var(--foreground); }
 
 .code-block pre {
   margin: 0;
   padding: 10px 12px;
   overflow-x: auto;
+}
+.code-block.is-collapsed pre {
+  max-height: 280px;
+  overflow: hidden;
+}
+.code-block.is-collapsed {
+  position: relative;
+}
+.code-block.is-collapsed::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--code-block));
 }
 .code-block code {
   font-family: var(--font-mono);

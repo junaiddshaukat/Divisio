@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { modelLabel, modelsForProvider } from "./providerModels.ts";
+import { compactModelLabel, modelLabel, modelsForProvider, triggerModelLabel } from "./providerModels.ts";
 import type { ModelCatalog } from "@divisio/contracts";
 
 const live: ModelCatalog = {
@@ -28,10 +28,15 @@ describe("modelsForProvider", () => {
     expect(opts.some((o) => o.id === "qwen3-coder-plus")).toBe(true);
   });
 
-  test("empty-thread trigger shows the CLI's selected live label", () => {
-    expect(modelLabel("qwen", null, live)).toBe("[ModelScope] Qwen-Ambassador/Qwen3.8-Max");
-    expect(modelLabel("qwen", "Qwen/Qwen3.5-397B-A17B", live)).toBe(
-      "[ModelScope] Qwen/Qwen3.5-397B-A17B",
-    );
+  test("live labels drop vendor tags like [ModelScope]", () => {
+    expect(modelLabel("qwen", null, live)).toBeNull();
+    expect(modelLabel("qwen", "Qwen/Qwen3.5-397B-A17B", live)).toBe("Qwen/Qwen3.5-397B-A17B");
+  });
+
+  test("composer trigger stays compact: agent only on default, short model otherwise", () => {
+    expect(triggerModelLabel("qwen", null, live)).toBeNull();
+    expect(triggerModelLabel("qwen", "Qwen-Ambassador/Qwen3.8-Max", live)).toBe("Qwen3.8-Max");
+    expect(compactModelLabel("[ModelScope] Qwen-Ambassador/Qwen3.8-Max")).toBe("Qwen3.8-Max");
+    expect(compactModelLabel("Fable 5")).toBe("Fable 5");
   });
 });

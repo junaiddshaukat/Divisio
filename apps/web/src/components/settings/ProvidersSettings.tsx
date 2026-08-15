@@ -170,8 +170,6 @@ export function ProvidersSettings({ providers, onRefresh, client }: Props) {
                   <span className={`settings-status ${p.available ? "ok" : "warn"}`}>
                     {p.available ? "Installed" : "Not installed"}
                   </span>
-                  <span className="settings-status info">Chat UI</span>
-                  {p.source === "community" ? <span className="settings-status">Community</span> : null}
                 </div>
                 <label
                   className="provider-toggle"
@@ -344,15 +342,16 @@ export function ProvidersSettings({ providers, onRefresh, client }: Props) {
                     <ProviderMark kind={c.kind} />
                     <div className="settings-row-copy">
                       <span className="settings-row-label">{c.label}</span>
-                      <span className="settings-row-meta is-wrap" title={`${c.modelId} · ${c.baseUrl}`}>
+                      <span
+                        className="settings-row-meta is-wrap"
+                        title={`${c.modelId} · ${c.baseUrl}${c.apiKeyPreview ? ` · ${c.apiKeyPreview}` : ""}`}
+                      >
                         {c.modelId}
-                        {c.apiKeyPreview ? ` · ${c.apiKeyPreview}` : ""}
                       </span>
                     </div>
                   </div>
                   <div className="provider-badges">
                     <span className="settings-status info">Chat UI</span>
-                    <span className="settings-status">Custom endpoint</span>
                   </div>
                   <div className="settings-byok-row-actions">
                     <Button
