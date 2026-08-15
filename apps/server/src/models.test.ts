@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CommandError } from "@divisio/contracts";
-import { validateModel } from "./models.ts";
+import { validateModel, validateNativeId } from "./models.ts";
 
 /**
  * The model slug is client-supplied and becomes an argv entry for a vendor CLI.
@@ -63,6 +63,30 @@ describe("model validation", () => {
 
   test("trims surrounding whitespace rather than rejecting it", () => {
     expect(validateModel("  claude-opus-4-6  ")).toBe("claude-opus-4-6");
+  });
+});
+
+describe("native session id validation", () => {
+  test("accepts the id shapes real CLIs emit", () => {
+    for (const id of [
+      "ses_fixture_text_001",
+      "mock-native-1",
+      "0194f0a2-3c1d-7b8e-9f01-23456789abcd",
+      "qwen/sess_1",
+    ]) {
+      expect(validateNativeId(id)).toBe(id);
+    }
+  });
+
+  test("rejects values that would become another argv flag or split", () => {
+    expect(validateNativeId(null)).toBeNull();
+    expect(validateNativeId("")).toBeNull();
+    expect(validateNativeId("  ")).toBeNull();
+    expect(validateNativeId("-r")).toBeNull();
+    expect(validateNativeId("--resume")).toBeNull();
+    expect(validateNativeId("id with space")).toBeNull();
+    expect(validateNativeId("a;rm")).toBeNull();
+    expect(validateNativeId("a".repeat(201))).toBeNull();
   });
 });
 

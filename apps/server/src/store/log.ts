@@ -12,6 +12,7 @@ import {
   type LaneView,
   type PermissionMode,
   type SessionStatus,
+  type ThreadView,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
 import { assembleActivityStats, localDateKey } from "./activity.ts";
@@ -142,6 +143,7 @@ export class EventStore {
     this.ensureColumn("threads", "permission_mode", "text not null default 'supervised'");
     this.ensureColumn("threads", "lane_id", "text");
     this.ensureColumn("threads", "model", "text");
+    this.ensureColumn("threads", "vendor_session_id", "text");
     this.ensureColumn("threads", "deleted_at", "text");
     this.ensureColumn("projects", "deleted_at", "text");
   }
@@ -303,9 +305,23 @@ export class EventStore {
       }
       case "thread.provider_set": {
         const p = e.payload as { threadId: string; provider: string; model: string | null };
+        // Clear the vendor session when the CLI changes — the id is not
+        // meaningful to the next adapter. Model-only updates keep it.
         this.db
-          .query("update threads set provider = ?, model = ?, updated_at = ? where id = ?")
-          .run(p.provider, p.model, e.at, p.threadId);
+          .query(
+            `update threads set
+               vendor_session_id = case when provider = ? then vendor_session_id else null end,
+               provider = ?, model = ?, updated_at = ?
+             where id = ?`,
+          )
+          .run(p.provider, p.provider, p.model, e.at, p.threadId);
+        break;
+      }
+      case "thread.vendor_session_set": {
+        const p = e.payload as { threadId: string; nativeId: string };
+        this.db
+          .query("update threads set vendor_session_id = ?, updated_at = ? where id = ?")
+          .run(p.nativeId, e.at, p.threadId);
         break;
       }
       case "turn.diff_ready": {
@@ -413,7 +429,7 @@ export class EventStore {
       .map((r) => ({ id: r.id, name: r.name, rootPath: r.root_path, createdAt: r.created_at }));
   }
 
-  listThreads() {
+  listThreads(): ThreadView[] {
     return this.db
       .query<
         {
@@ -425,11 +441,12 @@ export class EventStore {
           permission_mode: string;
           lane_id: string | null;
           model: string | null;
+          vendor_session_id: string | null;
           updated_at: string;
         },
         []
       >(
-        "select id, project_id, title, provider, status, permission_mode, lane_id, model, updated_at from threads where deleted_at is null order by updated_at desc",
+        "select id, project_id, title, provider, status, permission_mode, lane_id, model, vendor_session_id, updated_at from threads where deleted_at is null order by updated_at desc",
       )
       .all()
       .map((r) => ({
@@ -444,6 +461,7 @@ export class EventStore {
         laneId: r.lane_id,
         permissionMode: toPermissionMode(r.permission_mode),
         model: r.model ?? null,
+        vendorSessionId: r.vendor_session_id ?? null,
         updatedAt: r.updated_at,
       }));
   }

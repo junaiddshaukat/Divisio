@@ -45,3 +45,23 @@ export function validateModel(model: string | undefined | null): string | null {
 
   return value;
 }
+
+/**
+ * Vendor-native session ids become argv (`--resume`, `-r`, …). Same shape
+ * rules as model slugs, minus spaces: a space or a leading dash would split
+ * the argument or look like another flag.
+ *
+ * Returns null rather than throwing — these values come from vendor CLIs,
+ * not the client. A weird id means we skip resume, not that the turn fails.
+ */
+const NATIVE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@/\-]*$/;
+const NATIVE_MAX = 200;
+
+export function validateNativeId(id: string | null | undefined): string | null {
+  if (id === undefined || id === null) return null;
+  const value = id.trim();
+  if (value === "" || value.length > NATIVE_MAX) return null;
+  if (value.startsWith("-")) return null;
+  if (!NATIVE_ID.test(value)) return null;
+  return value;
+}

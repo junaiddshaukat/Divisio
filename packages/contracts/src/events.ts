@@ -19,6 +19,11 @@ export const EVENT_VERSIONS = {
   "thread.deleted": 1,
   "thread.permission_mode_set": 1,
   "thread.provider_set": 1,
+  /**
+   * Vendor-native session id captured from the CLI so the next daemon
+   * process can pass `resumeId` into `startSession`. New type, v1.
+   */
+  "thread.vendor_session_set": 1,
   "turn.started": 1,
   "turn.message": 1,
   "turn.completed": 1,
@@ -91,6 +96,16 @@ export interface EventPayloads {
     threadId: string;
     provider: string;
     model: string | null;
+  };
+  /**
+   * The CLI's own session id for this thread. Written when first seen
+   * (and if it later changes). Switching provider clears the projection
+   * because the id belongs to the previous CLI.
+   */
+  "thread.vendor_session_set": {
+    threadId: string;
+    nativeId: string;
+    provider: string;
   };
   "turn.started": { threadId: string; turnId: string; provider: string };
   /** A complete message. Streaming deltas are transport-only and never stored. */

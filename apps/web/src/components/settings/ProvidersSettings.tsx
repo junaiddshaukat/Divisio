@@ -14,6 +14,7 @@ import { setCustomProviderModels } from "../../providerModels.ts";
 import type { Client } from "../../client.ts";
 import { ProviderMark } from "../ProviderMark.tsx";
 import { Button } from "../ui/Button.tsx";
+import { CAPABILITY_FLAGS, capabilityOn } from "../../capabilityFlags.ts";
 
 interface Props {
   providers: ProviderView[];
@@ -44,7 +45,7 @@ const EMPTY_DRAFT: Draft = {
   apiKey: "",
 };
 
-/** Provider rows with enable toggle; expand for display name / accent + BYOK. */
+/** Provider rows with enable toggle; expand for display name, accent, and declared capabilities. */
 export function ProvidersSettings({ providers, onRefresh, client }: Props) {
   const [prefs, setPrefs] = useState<ProviderPrefsMap>(() => loadProviderPrefs());
   const [openKind, setOpenKind] = useState<string | null>(null);
@@ -231,6 +232,22 @@ export function ProvidersSettings({ providers, onRefresh, client }: Props) {
                       })}
                     </div>
                   </div>
+                  <div className="provider-pref-field">
+                    <span>What this CLI can do</span>
+                    <ul className="capability-matrix" aria-label="What this CLI can do">
+                      {CAPABILITY_FLAGS.map((flag) => {
+                        const on = capabilityOn(p.capabilities, flag.key);
+                        return (
+                          <li key={flag.key} className="capability-matrix-row" title={flag.detail}>
+                            <span className="capability-matrix-label">{flag.label}</span>
+                            <span className={`capability-matrix-value${on ? " is-on" : ""}`}>
+                              {on ? "Yes" : "No"}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
                 </div>
               )}
             </div>
@@ -321,7 +338,7 @@ export function ProvidersSettings({ providers, onRefresh, client }: Props) {
                     <div className="settings-row-copy">
                       <span className="settings-row-label">{c.label}</span>
                       <span className="settings-row-meta">
-                        {c.modelId} · {c.apiKeyPreview}
+                        {c.modelId} · {c.apiKeyPreview} · chat only
                       </span>
                     </div>
                   </div>

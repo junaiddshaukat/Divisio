@@ -35,6 +35,8 @@ export interface MockPeerOptions {
   script?: MockScriptStep[];
   /** When true, declare approvals capability (for supervised-mode tests). */
   approvals?: boolean;
+  /** Default true. Set false to assert we do not pass resumeId. */
+  sessionResume?: boolean;
 }
 
 interface MockSession extends SessionHandle {
@@ -69,6 +71,8 @@ export class MockPeerAdapter implements ProviderAdapter {
 
   readonly statusLog: string[] = [];
   readonly approvalLog: Array<{ approvalId: string; decision: "approve" | "deny" }> = [];
+  /** Inputs passed to startSession, in call order — used to assert resume. */
+  readonly startInputs: StartSessionInput[] = [];
 
   private readonly sessions = new Map<string, MockSession>();
   private readonly turnDelayMs: number;
@@ -76,7 +80,11 @@ export class MockPeerAdapter implements ProviderAdapter {
 
   constructor(options: MockPeerOptions = {}) {
     this.turnDelayMs = options.turnDelayMs ?? 50;
-    this.capabilities = { ...BASE_CAPABILITIES, approvals: options.approvals ?? false };
+    this.capabilities = {
+      ...BASE_CAPABILITIES,
+      approvals: options.approvals ?? false,
+      sessionResume: options.sessionResume ?? true,
+    };
     this.script = options.script ?? [
       { type: "assistant.delta", text: "hello " },
       { type: "assistant.delta", text: "world" },
@@ -89,6 +97,7 @@ export class MockPeerAdapter implements ProviderAdapter {
   }
 
   async startSession(input: StartSessionInput, emit: EmitRuntimeEvent): Promise<SessionHandle> {
+    this.startInputs.push(input);
     const session: MockSession = {
       threadId: input.threadId,
       nativeId: input.resumeId ?? "mock-native-1",

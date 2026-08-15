@@ -130,6 +130,11 @@ export interface ThreadView {
   permissionMode: PermissionMode;
   /** Preferred CLI model slug, or null for vendor default. */
   model: string | null;
+  /**
+   * Vendor-native session id last seen on this thread, or null.
+   * Resume only happens when the adapter also declares `sessionResume`.
+   */
+  vendorSessionId: string | null;
   updatedAt: string;
 }
 

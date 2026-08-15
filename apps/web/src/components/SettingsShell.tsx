@@ -69,7 +69,7 @@ const SECTION_COPY: Record<SettingsSection, string> = {
   profile: "Local coding activity on this machine — turns, streaks, and agents you used.",
   general: "About Divisio and this window.",
   appearance: "Color mode for the workspace.",
-  providers: "Turn agents on or off, or add OpenAI-compatible endpoints with your own keys.",
+  providers: "Turn agents on or off, see what each CLI actually supports, or add OpenAI-compatible endpoints with your own keys.",
   sourceControl: "Local git and host CLIs on this machine.",
   connections: "Pair another device when the daemon is reachable on the LAN or an overlay network.",
   keybindings: "Keyboard shortcuts for Divisio.",

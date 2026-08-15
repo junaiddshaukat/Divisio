@@ -21,7 +21,7 @@ import { basename, join } from "node:path";
 import { captureCheckpoint, checkpointRef, diffCheckpoints, restoreCheckpoint } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
 import { seedPrompt, summaryPrompt, formatHandoffTranscript, type PacketContext } from "./handoff.ts";
-import { validateModel } from "./models.ts";
+import { validateModel, validateNativeId } from "./models.ts";
 import {
   deleteCustomProvider as deleteCustomProviderRecord,
   listCustomProviders as listCustomProviderViews,
@@ -101,6 +101,8 @@ interface LiveSession {
   activeTurnId: string | null;
   /** Pending approvals for the active turn (approvalId → meta). */
   pendingApprovals: Map<string, { turnId: string }>;
+  /** Last native id written to the log for this live session. */
+  persistedNativeId: string | null;
 }
 
 /**
@@ -301,6 +303,7 @@ export class Orchestrator {
     for (const thread of threads) {
       const live = this.sessions.get(thread.id);
       if (live) {
+        this.persistVendorSession(thread.id);
         const adapter = this.registry.get(live.provider);
         await adapter?.stopSession(live.handle).catch(() => undefined);
         this.sessions.delete(thread.id);
@@ -388,6 +391,7 @@ export class Orchestrator {
       throw new CommandError("session_busy", "Stop the running turn before deleting this chat.");
     }
     if (live) {
+      this.persistVendorSession(p.threadId);
       const adapter = this.registry.get(live.provider);
       await adapter?.stopSession(live.handle).catch(() => undefined);
       this.sessions.delete(p.threadId);
@@ -451,6 +455,7 @@ export class Orchestrator {
       throw new CommandError("session_busy", "cannot change provider while a turn is running");
     }
     if (live && providerChanging) {
+      this.persistVendorSession(p.threadId);
       const adapter = this.registry.get(live.provider);
       try {
         await adapter?.stopSession(live.handle);
@@ -635,6 +640,7 @@ export class Orchestrator {
     for (const thread of this.store.listThreads().filter((t) => t.laneId === p.laneId)) {
       const live = this.sessions.get(thread.id);
       if (!live) continue;
+      this.persistVendorSession(thread.id);
       await this.registry.get(live.provider)?.stopSession(live.handle).catch(() => undefined);
       this.sessions.delete(thread.id);
     }
@@ -1190,8 +1196,15 @@ export class Orchestrator {
 
     // Lane-bound threads run inside their worktree; unbound threads run in the
     // primary checkout, which is the pre-lane behaviour.
+    const resumeId =
+      adapter.capabilities.sessionResume ? validateNativeId(thread.vendorSessionId) : null;
     const handle = await adapter.startSession(
-      { threadId, cwd: this.workdirFor(thread), permissionMode: thread.permissionMode },
+      {
+        threadId,
+        cwd: this.workdirFor(thread),
+        permissionMode: thread.permissionMode,
+        ...(resumeId ? { resumeId } : {}),
+      },
       (event) => this.onRuntimeEvent(threadId, event),
     );
 
@@ -1200,8 +1213,10 @@ export class Orchestrator {
       provider: thread.provider,
       activeTurnId: null,
       pendingApprovals: new Map(),
+      persistedNativeId: resumeId,
     };
     this.sessions.set(threadId, live);
+    this.persistVendorSession(threadId);
     return live;
   }
 
@@ -1414,8 +1429,29 @@ export class Orchestrator {
     }
   }
 
+  /**
+   * Writes `thread.vendor_session_set` when the live handle has a new native
+   * id. No-op when the session is not yet in the map (startSession emit
+   * before we insert) or when the id is unchanged / unusable as argv.
+   */
+  private persistVendorSession(threadId: string) {
+    const session = this.sessions.get(threadId);
+    if (!session) return;
+    const nativeId = validateNativeId(session.handle.nativeId);
+    if (!nativeId || nativeId === session.persistedNativeId) return;
+    this.commit([
+      {
+        type: "thread.vendor_session_set",
+        threadId,
+        payload: { threadId, nativeId, provider: session.provider },
+      },
+    ]);
+    session.persistedNativeId = nativeId;
+  }
+
   private onRuntimeEvent(threadId: string, event: ProviderRuntimeEvent) {
     const session = this.sessions.get(threadId);
+    this.persistVendorSession(threadId);
 
     switch (event.type) {
       case "assistant.delta":
@@ -1547,6 +1583,7 @@ export class Orchestrator {
         return;
 
       case "session.exited":
+        this.persistVendorSession(threadId);
         this.sessions.delete(threadId);
         this.commit([{ type: "session.status", threadId, payload: { threadId, status: "closed" } }]);
         return;
@@ -1588,6 +1625,7 @@ export class Orchestrator {
 
   async shutdown() {
     for (const [threadId, session] of this.sessions) {
+      this.persistVendorSession(threadId);
       const adapter = this.registry.get(session.provider);
       try {
         await adapter?.stopSession(session.handle);

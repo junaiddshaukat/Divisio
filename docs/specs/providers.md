@@ -63,6 +63,10 @@ If listing fails or the adapter has no `listModels`, the UI falls back to curate
 
 Never fake approvals. Print/headless modes leave permissions with the CLI (`approvals: false`) unless a mediated protocol exists.
 
+Settings → Providers shows the declared matrix as Yes/No. Missing flags render as No.
+
+Vendor session ids are persisted on the event log (`thread.vendor_session_set`) and passed back as `resumeId` only when `sessionResume` is true. If the CLI cannot resume, the composer says the next prompt starts a new vendor conversation.
+
 ## Related
 
 - [Adapter protocol](../architecture/adapter-protocol.md)

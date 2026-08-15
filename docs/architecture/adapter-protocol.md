@@ -30,6 +30,8 @@ Optional `listModels()` returns a `ModelCatalog`. `live` means the adapter read 
 
 Unknown = unsupported. Never fake a capability.
 
+When an adapter reports a vendor-native session id, the orchestrator writes `thread.vendor_session_set` and passes it as `resumeId` on the next `startSession` — only if `sessionResume` is true. Divisio’s transcript is independent: a CLI that cannot resume starts a fresh vendor conversation after a restart, and the UI says so.
+
 ## Interface sketch
 
 Names are illustrative; Phase 0 locks types in `packages/contracts`.
