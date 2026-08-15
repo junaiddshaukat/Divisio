@@ -10,8 +10,13 @@ interface Props {
   providers: ProviderView[];
   /** A turn is running — handoff needs a free source turn. */
   turnBusy: boolean;
-  /** Handoff RPC in flight (source agent writing the note). */
+  /** Handoff RPC in flight. */
   handoffBusy: boolean;
+  /**
+   * Skip asking the current CLI for a note — used when it has hit a usage
+   * limit and cannot take a turn.
+   */
+  logOnly?: boolean;
   /** Icon-only when the topbar is in compact chrome mode. */
   compact?: boolean;
   onHandoff(toProvider: string): void;
@@ -20,10 +25,18 @@ interface Props {
 /**
  * Moving a chat to another provider.
  *
- * The cost is stated up front: the source agent writes the handover note, so a
- * handoff spends one turn on the provider you are leaving.
+ * When the current CLI can still talk, it may write a handover note (one turn).
+ * If it is rate-limited, Divisio seeds the next agent from the saved transcript.
  */
-export function HandoffMenu({ current, providers, turnBusy, handoffBusy, compact, onHandoff }: Props) {
+export function HandoffMenu({
+  current,
+  providers,
+  turnBusy,
+  handoffBusy,
+  logOnly = false,
+  compact,
+  onHandoff,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [prefs, setPrefs] = useState(loadProviderPrefs);
   const rootRef = useRef<HTMLSpanElement>(null);
@@ -62,7 +75,7 @@ export function HandoffMenu({ current, providers, turnBusy, handoffBusy, compact
   if (targets.length === 0) return null;
 
   return (
-    <span className="handoff" ref={rootRef}>
+    <span className={logOnly ? "handoff handoff-inline" : "handoff"} ref={rootRef}>
       <Button
         variant="ghost"
         size="sm"
@@ -73,8 +86,10 @@ export function HandoffMenu({ current, providers, turnBusy, handoffBusy, compact
           turnBusy
             ? "Stop the running turn before handing off"
             : handoffBusy
-              ? "Source agent is writing the handover note…"
-              : "Continue this chat on another agent"
+              ? "Handing off…"
+              : logOnly
+                ? "Continue on another agent from the saved transcript"
+                : "Continue this chat on another agent"
         }
         aria-label={handoffBusy ? "Handing off…" : "Hand off"}
         aria-expanded={open}
@@ -90,8 +105,9 @@ export function HandoffMenu({ current, providers, turnBusy, handoffBusy, compact
           <div className="handoff-menu-copy">
             <strong>Continue on another agent</strong>
             <p>
-              {currentLabel} writes a short handover note first (costs one turn), then the
-              chosen agent picks up this chat with that context.
+              {logOnly
+                ? `${currentLabel} hit a usage limit, so Divisio will seed the next agent from this transcript — no extra turn on the limited CLI.`
+                : `If ${currentLabel} can still talk, it writes a short note first. If it is rate-limited, Divisio hands off from the saved transcript instead.`}
             </p>
           </div>
           {targets.map((p) => (

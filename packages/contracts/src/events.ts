@@ -184,9 +184,9 @@ export interface EventPayloads {
   "lane.status": { laneId: string; status: LaneStatus; detail?: string };
   "lane.archived": { laneId: string; branchDeleted: boolean; hadUncommittedChanges: boolean };
   /**
-   * Links a thread to its continuation on another provider. The summary is
-   * written by the source agent, since Divisio has no model of its own and
-   * does not proxy provider keys.
+   * Links a thread to its continuation on another provider. `summary` is the
+   * source-agent note when `packet` is `agent`; otherwise a short marker that
+   * the seed was built from the event log. Optional `packet` is additive.
    */
   "thread.handed_off": {
     fromThreadId: string;
@@ -194,6 +194,8 @@ export interface EventPayloads {
     fromProvider: string;
     toProvider: string;
     summary: string;
+    /** How the continuation seed was produced. Absent on events written before this field. */
+    packet?: "agent" | "log";
   };
 }
 

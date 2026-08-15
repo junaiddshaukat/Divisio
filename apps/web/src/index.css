@@ -752,6 +752,45 @@ button.icon:hover {
   font-size: 13px;
 }
 
+.usage-limit-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning-foreground);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+.usage-limit-copy {
+  min-width: 0;
+  flex: 1;
+}
+.usage-limit-banner strong {
+  display: block;
+  font-size: 13px;
+  color: var(--foreground);
+}
+.usage-limit-banner p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+.usage-limit-detail {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px !important;
+  opacity: 0.9;
+}
+.handoff-inline {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
 .dialog-backdrop {
   position: fixed;
   inset: 0;

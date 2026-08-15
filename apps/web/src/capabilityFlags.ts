@@ -33,7 +33,7 @@ export const CAPABILITY_FLAGS: {
   {
     key: "handoffExport",
     label: "Handoff packet",
-    detail: "The adapter can produce a continuation packet for another provider",
+    detail: "The adapter can produce extra vendor continuation state (Divisio can always seed from the transcript)",
   },
   {
     key: "worktreeAware",

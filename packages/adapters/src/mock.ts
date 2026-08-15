@@ -45,6 +45,11 @@ export interface MockPeerOptions {
   sessionResume?: boolean;
   /** Throw from startSession when resumeId is set. */
   failResume?: boolean;
+  /**
+   * After this many successful sendTurn calls, the next sendTurn throws.
+   * Used to simulate a usage-limit on the handoff summary turn.
+   */
+  failAfterTurns?: number;
 }
 
 interface MockSession extends SessionHandle {
@@ -81,15 +86,20 @@ export class MockPeerAdapter implements ProviderAdapter {
   readonly approvalLog: Array<{ approvalId: string; decision: "approve" | "deny" }> = [];
   /** Inputs passed to startSession, in call order — used to assert resume. */
   readonly startInputs: StartSessionInput[] = [];
+  /** Prompts passed to sendTurn, in call order. */
+  readonly sendTurnTexts: string[] = [];
 
   private readonly sessions = new Map<string, MockSession>();
   private readonly turnDelayMs: number;
   private readonly script: MockScriptStep[];
   private readonly failResume: boolean;
+  private readonly failAfterTurns: number | null;
+  private turnsSent = 0;
 
   constructor(options: MockPeerOptions = {}) {
     this.turnDelayMs = options.turnDelayMs ?? 50;
     this.failResume = options.failResume === true;
+    this.failAfterTurns = options.failAfterTurns ?? null;
     this.capabilities = {
       ...BASE_CAPABILITIES,
       approvals: options.approvals ?? false,
@@ -133,6 +143,12 @@ export class MockPeerAdapter implements ProviderAdapter {
     const session = this.sessions.get(handle.threadId);
     if (!session) throw new Error(`no mock session for ${handle.threadId}`);
     if (session.activeTurnId) throw new Error("turn already running");
+
+    this.sendTurnTexts.push(turn.text);
+    this.turnsSent += 1;
+    if (this.failAfterTurns !== null && this.turnsSent > this.failAfterTurns) {
+      throw new Error("rate_limit: too many requests");
+    }
 
     session.activeTurnId = turn.turnId;
     session.cancelled = false;

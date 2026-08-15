@@ -21,7 +21,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { captureCheckpoint, checkpointRef, diffCheckpoints, restoreCheckpoint } from "./checkpoint/store.ts";
 import type { EventStore } from "./store/log.ts";
-import { seedPrompt, summaryPrompt, formatHandoffTranscript, type PacketContext } from "./handoff.ts";
+import { seedPrompt, summaryPrompt, formatHandoffTranscript, logPacketPrompt, LOG_PACKET_SUMMARY, type PacketContext } from "./handoff.ts";
 import { validateModel, validateNativeId } from "./models.ts";
 import {
   deleteCustomProvider as deleteCustomProviderRecord,
@@ -1004,9 +1004,9 @@ export class Orchestrator {
   /**
    * Moves a thread to another provider.
    *
-   * The summary is produced by the source agent, because Divisio has no model
-   * and does not proxy keys. That costs one turn on the source provider, which
-   * the UI states rather than hides.
+   * Prefers a handover note from the source agent when it can still take a
+   * turn. If it cannot (usage limit, crash, or `packet: "log"`), Divisio
+   * seeds the target from the event log — we already have the transcript.
    */
   private async handoff(p: CommandPayloads["thread.handoff"]): Promise<CommandResults["thread.handoff"]> {
     const source = this.store.getThread(p.threadId);
@@ -1026,7 +1026,7 @@ export class Orchestrator {
     if (live?.activeTurnId) {
       throw new CommandError(
         "session_busy",
-        "Stop the running turn before handing off — the source agent needs a free turn to write the handover note.",
+        "Stop the running turn before handing off.",
       );
     }
 
@@ -1041,22 +1041,22 @@ export class Orchestrator {
     }
 
     const transcript = formatHandoffTranscript(history);
-
-    // Ask the source agent to describe state from the Divisio transcript.
-    const { turnId } = await this.sendTurn({ threadId: p.threadId, text: summaryPrompt(transcript) });
-    await this.waitForTurn(p.threadId, turnId, 180_000);
-
-    const summary = this.store
-      .listMessages(p.threadId)
-      .find((m) => m.turnId === turnId && m.role === "assistant")?.text;
-    if (!summary?.trim()) {
-      throw new CommandError("internal", "the source agent produced no handover summary");
-    }
-
     const context: PacketContext = {
       files: this.collectTouchedFiles(p.threadId),
       laneBranch: source.laneId ? (this.store.getLane(source.laneId)?.branch ?? null) : null,
     };
+
+    const skipAgent = p.packet === "log" || source.status === "error";
+    let agentNote: string | null = null;
+    if (!skipAgent) {
+      agentNote = await this.askSourceForHandoffNote(p.threadId, transcript);
+    }
+
+    const packet: "agent" | "log" = agentNote ? "agent" : "log";
+    const summary = agentNote ?? LOG_PACKET_SUMMARY;
+    const seed = agentNote
+      ? seedPrompt(agentNote, source.provider, context)
+      : logPacketPrompt(source.provider, transcript, context);
 
     // Continue in the same project and lane, so the working tree carries over.
     const { thread } = this.createThread({
@@ -1076,16 +1076,30 @@ export class Orchestrator {
           fromProvider: source.provider,
           toProvider: p.toProvider,
           summary,
+          packet,
         },
       },
     ]);
 
-    // Seed the target as its first turn, so its own history explains itself.
-    await this.sendTurn({ threadId: thread.id, text: seedPrompt(summary, source.provider, context) });
+    await this.sendTurn({ threadId: thread.id, text: seed });
 
     const created = this.store.getThread(thread.id);
     if (!created) throw new CommandError("internal", "thread projection missing after handoff");
-    return { thread: created, summary };
+    return { thread: created, summary, packet };
+  }
+
+  /** Returns the source-agent note, or null if that turn failed or was empty. */
+  private async askSourceForHandoffNote(threadId: string, transcript: string): Promise<string | null> {
+    try {
+      const { turnId } = await this.sendTurn({ threadId, text: summaryPrompt(transcript) });
+      await this.waitForTurn(threadId, turnId, 180_000);
+      const text = this.store
+        .listMessages(threadId)
+        .find((m) => m.turnId === turnId && m.role === "assistant")?.text;
+      return text?.trim() ? text : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Files recorded by checkpoint diffs across the thread. Mechanical and free. */

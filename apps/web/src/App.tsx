@@ -15,6 +15,7 @@ import type {
   DaemonIncompatibility,
   VendorResumeOutcome,
 } from "@divisio/contracts";
+import { looksLikeUsageLimit } from "@divisio/shared/usageLimit";
 import { Client, type ConnectionState } from "./client.ts";
 import { useFiles } from "./hooks/useFiles.ts";
 import { useAttention } from "./hooks/useAttention.ts";
@@ -31,6 +32,7 @@ import { Transcript, type Bubble } from "./components/Transcript.tsx";
 import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
 import { SessionBoard } from "./components/SessionBoard.tsx";
 import { ThreadTopbar } from "./components/ThreadTopbar.tsx";
+import { UsageLimitBanner } from "./components/UsageLimitBanner.tsx";
 import { Button, IconButton } from "./components/ui/Button.tsx";
 import { CloseIcon, MenuIcon, SearchIcon, SidebarShowIcon } from "./components/ui/icons.ts";
 import { SettingsShell, type SettingsSection } from "./components/SettingsShell.tsx";
@@ -1070,10 +1072,10 @@ export function App() {
   }, []);
 
   /**
-   * Hands the thread to another provider. Costs one turn on the source agent,
-   * which writes the handover note — we have no model of our own.
+   * Hands the thread to another provider. `log` skips asking the current CLI
+   * for a note — required when that CLI has hit a usage limit.
    */
-  const handoff = async (toProvider: string) => {
+  const handoff = async (toProvider: string, packet?: "log") => {
     const client = clientRef.current;
     if (!client || !activeId) return null;
     if (activeTurn || threadRunning) {
@@ -1083,7 +1085,11 @@ export function App() {
     setHandoffBusy(true);
     setError(null);
     try {
-      const res = await client.send("thread.handoff", { threadId: activeId, toProvider });
+      const res = await client.send("thread.handoff", {
+        threadId: activeId,
+        toProvider,
+        ...(packet ? { packet } : {}),
+      });
       await refresh(client);
       setView("thread");
       await openThread(res.thread.id);
@@ -1092,7 +1098,7 @@ export function App() {
       const raw = err instanceof Error ? err.message : String(err);
       setError(
         raw.includes("timed out")
-          ? "Handoff timed out while the source agent was writing the note. Try again — or stop any running turn first."
+          ? "Handoff timed out. Try again — or stop any running turn first."
           : raw,
       );
       return null;
@@ -1344,7 +1350,7 @@ export function App() {
       ? [
           {
             kind: "thinking" as const,
-            text: handoffBusy ? "Writing handover…" : "Thinking…",
+            text: handoffBusy ? "Handing off…" : "Thinking…",
             key: "thinking",
           },
         ]
@@ -1616,7 +1622,18 @@ export function App() {
                     bubbles={bubbles}
                     onOpenChanges={(turnId, path) => void showDiff(turnId, path)}
                   />
-                  {error && <div className="banner">{error}</div>}
+                  {error && looksLikeUsageLimit({ message: error }) && activeThread ? (
+                    <UsageLimitBanner
+                      message={error}
+                      current={activeThread.provider}
+                      providers={providers}
+                      turnBusy={turnBusy}
+                      handoffBusy={handoffBusy}
+                      onHandoff={(kind) => void handoff(kind, "log")}
+                    />
+                  ) : (
+                    error && <div className="banner">{error}</div>
+                  )}
                   {pendingApproval && (
                     <ApprovalBar pending={pendingApproval} onRespond={(d) => void respondApproval(d)} />
                   )}

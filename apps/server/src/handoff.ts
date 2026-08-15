@@ -1,15 +1,16 @@
 /**
  * Cross-provider handoff.
  *
- * Divisio has no model of its own and does not proxy provider keys, so the
- * continuation packet cannot be written by us. It is produced by the source
- * agent as a final turn — which means a handoff costs one turn on the source
- * provider, and the quality of the summary varies by provider. That cost is
- * stated plainly in the UI rather than hidden.
+ * Divisio has no model of its own and does not proxy provider keys. A
+ * continuation packet is therefore either:
  *
- * What we contribute is the shape: a fixed prompt so summaries are comparable
- * across providers, the Divisio transcript (CLI session memory is unreliable),
- * plus the file list we already hold from checkpoints.
+ *   - `agent` — the source CLI writes a handover note (costs one turn), or
+ *   - `log` — we assemble the transcript, checkpoint file list, and lane
+ *     branch we already store. No source turn.
+ *
+ * The log packet is what makes handoff possible when the current CLI has hit
+ * a usage or rate limit and cannot talk. The agent note is optional enrichment
+ * when that CLI can still take a turn.
  */
 
 export interface PacketContext {
@@ -85,6 +86,47 @@ export function seedPrompt(
 
   return parts.join("\n");
 }
+
+/**
+ * Continuation seed built only from Divisio records. Used when the source
+ * CLI cannot write a note (usage limit, crash, or an explicit log packet).
+ */
+export function logPacketPrompt(
+  fromProvider: string,
+  transcript: string,
+  context: PacketContext,
+): string {
+  const parts = [
+    `You are taking over work in progress from another coding agent (${fromProvider}).`,
+    "",
+    "The previous agent did not write a handover note. Divisio built this packet from the saved transcript and workspace diffs. Treat it as records, not as that agent's intent.",
+    "",
+    "--- BEGIN DIVISIO TRANSCRIPT ---",
+    transcript.trim() || "(no messages)",
+    "--- END DIVISIO TRANSCRIPT ---",
+    "",
+  ];
+
+  if (context.files.length > 0) {
+    parts.push(
+      `Files touched so far (recorded by the workspace): ${context.files.slice(0, 40).join(", ")}`,
+      "",
+    );
+  }
+  if (context.laneBranch) {
+    parts.push(`You are working on branch ${context.laneBranch}.`, "");
+  }
+
+  parts.push(
+    "Read the relevant files before changing anything. Confirm the current state, then continue the user's last request.",
+    "If the transcript is too thin to continue, ask the user what to work on instead of guessing.",
+  );
+
+  return parts.join("\n");
+}
+
+export const LOG_PACKET_SUMMARY =
+  "Divisio continuation packet from the event log (source agent did not write a note).";
 
 /** Compact transcript for the summary prompt (role-prefixed, newest messages capped). */
 export function formatHandoffTranscript(

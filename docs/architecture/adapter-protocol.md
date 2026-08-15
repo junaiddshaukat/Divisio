@@ -22,7 +22,7 @@ Each adapter declares what it supports. The UI uses this matrix instead of guess
 | `interruptTurn` | Can cancel an in-flight turn |
 | `modelSwitch` | In-session vs requires new session |
 | `approvals` | Emits permission requests Divisio can mediate |
-| `handoffExport` | Can produce a continuation packet for another provider |
+| `handoffExport` | Adapter can emit extra vendor continuation state. Orchestration can always build a log packet without this |
 | `worktreeAware` | Safe/expected to run with `cwd` set to a worktree |
 | `usageSignals` | Maps vendor token counts onto `usage.reported` when the CLI actually emits them — never invented |
 

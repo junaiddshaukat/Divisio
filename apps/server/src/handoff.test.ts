@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatHandoffTranscript, seedPrompt, summaryPrompt } from "./handoff.ts";
+import { formatHandoffTranscript, logPacketPrompt, seedPrompt, summaryPrompt } from "./handoff.ts";
 
 /**
  * The packet is written by the source agent, so what we control is its shape.
@@ -41,6 +41,20 @@ describe("handoff prompts", () => {
     const seed = seedPrompt("summary", "claude", { files, laneBranch: null });
     expect(seed).toContain("src/file-0.ts");
     expect(seed).not.toContain("src/file-100.ts");
+  });
+
+  test("the log packet is a continuation seed, not a fresh request", () => {
+    const seed = logPacketPrompt("claude", "USER:\nShip search.\n\nASSISTANT:\nWIP in src/search.ts.", {
+      files: ["src/search.ts"],
+      laneBranch: "divisio/search",
+    });
+    expect(seed).toContain("taking over work in progress");
+    expect(seed).toContain("did not write a handover note");
+    expect(seed).toContain("BEGIN DIVISIO TRANSCRIPT");
+    expect(seed).toContain("Ship search.");
+    expect(seed).toContain("src/search.ts");
+    expect(seed).toContain("divisio/search");
+    expect(seed).not.toContain("Write a handover note");
   });
 
   test("transcript formatter prefixes roles and skips empty text", () => {

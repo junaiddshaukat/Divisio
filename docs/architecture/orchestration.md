@@ -57,12 +57,17 @@ Each completed turn should end with a **checkpoint** (hidden git ref or document
 
 Handoff is an orchestration feature, not an adapter hack:
 
-1. Export a **continuation packet** (summary, goals, file touch list, open questions) from the source thread
+1. Export a **continuation packet** from the source thread
 2. Start or attach a session on the target provider
 3. Seed the new turn with that packet
 4. Record `thread.handed_off` in the event log linking source → target
 
-Adapters that cannot export rich state still participate via Divisio-authored summaries.
+The packet is built in one of two ways:
+
+- **Agent note** — when the source CLI can still take a turn, Divisio asks it to write a structured handover (costs one source turn).
+- **Log packet** — transcript, checkpoint file list, and lane branch we already store. Used when the source CLI has hit a usage/rate limit, crashed, or the client asked for `packet: "log"`. No source turn.
+
+Adapters that declare `handoffExport` could add vendor-native extra later. None do today. Orchestration never invents a quota percentage; a usage-limit banner is shown only when the CLI's own error looks like a rate/quota refusal.
 
 ## Persistence
 

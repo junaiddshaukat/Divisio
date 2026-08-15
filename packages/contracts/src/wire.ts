@@ -72,7 +72,16 @@ export interface CommandPayloads {
     apiKey?: string;
   };
   "customProvider.delete": { id: string };
-  "thread.handoff": { threadId: string; toProvider: string; title?: string };
+  "thread.handoff": {
+    threadId: string;
+    toProvider: string;
+    title?: string;
+    /**
+     * `log` skips asking the source CLI for a note (usage-limit path).
+     * Omit or `auto` to try the source agent, then fall back to the log.
+     */
+    packet?: "log" | "auto";
+  };
   /** Paths are relative to the thread's working directory (lane root or project). */
   "terminal.open": { threadId: string; cols: number; rows: number };
   "terminal.input": { sessionId: string; data: string };
@@ -259,7 +268,7 @@ export interface CommandResults {
   "customProvider.list": { providers: CustomProviderView[] };
   "customProvider.upsert": { provider: CustomProviderView };
   "customProvider.delete": { deleted: boolean };
-  "thread.handoff": { thread: ThreadView; summary: string };
+  "thread.handoff": { thread: ThreadView; summary: string; packet?: "agent" | "log" };
   "terminal.open": { sessionId: string };
   "terminal.input": Record<string, never>;
   "terminal.resize": Record<string, never>;

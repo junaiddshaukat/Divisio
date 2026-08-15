@@ -9,6 +9,7 @@
     "./ids": "./src/ids.ts",
     "./log": "./src/log.ts",
     "./path-env": "./src/path-env.ts",
-    "./spawn": "./src/spawn.ts"
+    "./spawn": "./src/spawn.ts",
+    "./usageLimit": "./src/usageLimit.ts"
   }
 }
