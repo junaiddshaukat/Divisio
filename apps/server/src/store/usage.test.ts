@@ -49,7 +49,10 @@ describe("assembleUsageStats", () => {
       cacheWriteTokens: 0,
       meteredTurns: 0,
       unmeteredTurns: 0,
+      sessions: 0,
     });
+    expect(stats.models).toEqual([]);
+    expect(stats.coverage.source).toBe("log");
   });
 
   test("meters usage and marks started turns without usage as unmetered", () => {

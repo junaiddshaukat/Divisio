@@ -194,7 +194,13 @@ export class Client {
     // Handoff waits on a full source-agent turn (up to ~3 min server-side).
     const timeoutMs =
       opts?.timeoutMs ??
-      (cmd === "thread.handoff" ? 210_000 : cmd === "project.clone" ? 120_000 : 30_000);
+      (cmd === "thread.handoff"
+        ? 210_000
+        : cmd === "project.clone"
+          ? 120_000
+          : cmd === "stats.usage"
+            ? 90_000
+            : 30_000);
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
       ws.send(JSON.stringify({ t: "req", id, cmd, payload }));

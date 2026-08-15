@@ -101,8 +101,9 @@ export interface CommandPayloads {
    */
   "stats.activity": Record<string, never>;
   /**
-   * Token counts Divisio recorded from CLIs that emit usage.
-   * `days` is 7, 30, or 90; default 30. Not a bill.
+   * Token counts for Settings → Usage.
+   * `days` is 7, 30, or 90; default 30. Headline prefers CLI session files
+   * (Claude Code + Codex) when those homes exist. Not a bill.
    */
   "stats.usage": { days?: 7 | 30 | 90 };
   /**
@@ -389,6 +390,13 @@ export interface UsageProviderShare {
   unmeteredTurns: number;
 }
 
+export interface UsageModelShare {
+  model: string;
+  provider: string;
+  tokens: number;
+  events: number;
+}
+
 export interface UsageTotals {
   tokens: number;
   inputTokens: number;
@@ -397,11 +405,28 @@ export interface UsageTotals {
   cacheWriteTokens: number;
   meteredTurns: number;
   unmeteredTurns: number;
+  /** Distinct vendor session ids in the window. Additive. */
+  sessions: number;
+}
+
+export type UsageSource = "machine" | "log";
+
+/**
+ * Where the headline numbers came from. `appTokens` is Divisio-orchestrated
+ * usage in the same window and is never added on top of machine totals.
+ */
+export interface UsageCoverage {
+  source: UsageSource;
+  claudeFiles: number;
+  codexFiles: number;
+  sessions: number;
+  appTokens: number;
+  appMeteredTurns: number;
 }
 
 /**
- * Settings → Usage. Counts from `turn.usage` on this machine.
- * Missing counters stay zero — never a guessed dollar cost.
+ * Settings → Usage. Headline is CLI session files when those homes exist;
+ * otherwise the event log. Never a guessed dollar cost.
  */
 export interface UsageStats {
   rangeDays: UsageRangeDays;
@@ -409,7 +434,9 @@ export interface UsageStats {
   to: string;
   days: UsageDay[];
   providers: UsageProviderShare[];
+  models: UsageModelShare[];
   totals: UsageTotals;
+  coverage: UsageCoverage;
 }
 
 export interface PrResult {

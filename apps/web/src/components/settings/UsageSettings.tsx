@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ProviderView, UsageRangeDays, UsageStats } from "@divisio/contracts";
 import { compactModelLabel } from "../../providerModels.ts";
-import { formatDayShort, formatTokenCount, formatTokens } from "../../tokenFormat.ts";
+import { formatDayShort, formatShare, formatTokenCount, formatTokens } from "../../tokenFormat.ts";
 import { ProviderMark } from "../ProviderMark.tsx";
+import { UsageChart } from "./UsageChart.tsx";
 
 interface Props {
   load(days: UsageRangeDays): Promise<UsageStats>;
@@ -57,36 +58,38 @@ export function UsageSettings({ load, providers }: Props) {
   }, [load, days]);
 
   const labelFor = (kind: string) => providers.find((p) => p.kind === kind)?.label ?? kind;
-
-  const maxDay = useMemo(
-    () => Math.max(1, ...(stats?.days.map((d) => d.tokens) ?? [1])),
-    [stats],
-  );
-  const maxProvider = useMemo(
-    () => Math.max(1, ...(stats?.providers.map((p) => p.tokens) ?? [1])),
-    [stats],
-  );
-  const maxModel = useMemo(
-    () => Math.max(1, ...(stats?.models.map((m) => m.tokens) ?? [1])),
-    [stats],
-  );
-
-  const composition = useMemo(() => {
-    if (!stats) return [];
-    const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, tokens } = stats.totals;
-    const parts = [
-      { id: "cache-read", label: "Cache read", value: cacheReadTokens },
-      { id: "input", label: "Input", value: inputTokens },
-      { id: "output", label: "Output", value: outputTokens },
-      { id: "cache-write", label: "Cache write", value: cacheWriteTokens },
-    ].filter((p) => p.value > 0);
-    if (parts.length > 0) return parts;
-    if (tokens > 0) return [{ id: "reported", label: "Reported", value: tokens }];
-    return [];
-  }, [stats]);
-
-  const compositionTotal = composition.reduce((n, p) => n + p.value, 0);
   const machine = stats?.coverage.source === "machine";
+  const inputAll = stats
+    ? stats.totals.inputTokens + stats.totals.cacheReadTokens + stats.totals.cacheWriteTokens
+    : 0;
+
+  const metrics = useMemo(() => {
+    if (!stats) return [];
+    const t = stats.totals;
+    const cacheShare = formatShare(t.cacheReadTokens, inputAll);
+    return [
+      {
+        label: "Cache read",
+        value: t.cacheReadTokens,
+        hint: cacheShare === "—" ? null : cacheShare,
+      },
+      {
+        label: "Input",
+        value: t.inputTokens,
+        hint: "Uncached",
+      },
+      {
+        label: "Output",
+        value: t.outputTokens,
+        hint: null,
+      },
+      {
+        label: "Cache write",
+        value: t.cacheWriteTokens,
+        hint: null,
+      },
+    ];
+  }, [stats, inputAll]);
 
   return (
     <div className="settings-section usage-section">
@@ -94,7 +97,7 @@ export function UsageSettings({ load, providers }: Props) {
         {machine
           ? "Processed tokens from Claude Code and Codex session files on this machine. Cache reads are included. This is not a bill and not a vendor quota."
           : "No Claude or Codex session files found. Showing turns Divisio recorded. This is not a bill."}
-        {machine && stats.coverage.appMeteredTurns > 0
+        {stats?.coverage.source === "machine" && stats.coverage.appMeteredTurns > 0
           ? ` Divisio recorded ${formatTokens(stats.coverage.appTokens)} in this window.`
           : ""}
       </p>
@@ -120,130 +123,103 @@ export function UsageSettings({ load, providers }: Props) {
 
       {stats && (
         <>
-          <section className="usage-card" aria-label="Processed tokens">
-            <div className="usage-hero">
+          <section className="usage-stage" aria-label="Processed tokens">
+            <div className="usage-stage-head">
               <div>
                 <div className="usage-kicker">{machine ? "Processed tokens" : "Reported tokens"}</div>
                 <div className="usage-hero-value">{formatTokens(stats.totals.tokens)}</div>
+                <p className="usage-hero-meta">
+                  {machine
+                    ? `${sessionsLabel(stats.coverage.sessions)} · ${formatTokenCount(stats.totals.meteredTurns)} requests`
+                    : stats.totals.meteredTurns === 1
+                      ? "1 metered turn"
+                      : `${formatTokenCount(stats.totals.meteredTurns)} metered turns`}
+                  {!machine && stats.totals.unmeteredTurns > 0
+                    ? ` · ${formatTokenCount(stats.totals.unmeteredTurns)} unmetered`
+                    : ""}
+                </p>
               </div>
-              <p className="usage-hero-meta">
-                {machine
-                  ? `${sessionsLabel(stats.coverage.sessions)} · ${formatTokenCount(stats.totals.meteredTurns)} requests`
-                  : stats.totals.meteredTurns === 1
-                    ? "1 metered turn"
-                    : `${formatTokenCount(stats.totals.meteredTurns)} metered turns`}
-                {!machine && stats.totals.unmeteredTurns > 0
-                  ? ` · ${formatTokenCount(stats.totals.unmeteredTurns)} unmetered`
-                  : ""}
-              </p>
             </div>
-
-            <div className="usage-days" role="img" aria-label="Tokens by day">
-              {stats.days.map((d) => {
-                const pct = d.tokens > 0 ? Math.max(6, (d.tokens / maxDay) * 100) : 0;
-                return (
-                  <div
-                    key={d.date}
-                    className="usage-day"
-                    title={`${formatDayShort(d.date)} · ${formatTokenCount(d.tokens)} tokens`}
-                  >
-                    <span
-                      className={d.tokens > 0 ? "usage-day-fill" : "usage-day-empty"}
-                      style={d.tokens > 0 ? { ["--h" as string]: `${pct}%` } : undefined}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+            <UsageChart days={stats.days} />
             <div className="usage-days-axis">
               <span>{formatDayShort(stats.from)}</span>
+              <span />
               <span>{formatDayShort(stats.to)}</span>
             </div>
           </section>
 
-          <section className="usage-block">
-            <h4 className="settings-group-title">Composition</h4>
-            {composition.length === 0 ? (
-              <p className="settings-section-desc">
-                {machine
-                  ? "No Claude or Codex usage in this window."
-                  : "No token reports in this window."}
-              </p>
-            ) : (
-              <>
-                <div className="usage-stack" role="img" aria-label="Token composition">
-                  {composition.map((part) => (
-                    <span
-                      key={part.id}
-                      className="usage-stack-seg"
-                      data-part={part.id}
-                      style={{ ["--w" as string]: `${(part.value / compositionTotal) * 100}%` }}
-                      title={`${part.label} · ${formatTokenCount(part.value)}`}
-                    />
-                  ))}
+          {stats.totals.tokens > 0 && (
+            <dl className="usage-metrics">
+              {metrics.map((m) => (
+                <div key={m.label}>
+                  <dt>{m.label}</dt>
+                  <dd>{formatTokens(m.value)}</dd>
+                  {m.hint && <span>{m.hint}</span>}
                 </div>
-                <ul className="usage-legend">
-                  {composition.map((part) => (
-                    <li key={part.id}>
-                      <span className="usage-legend-swatch" data-part={part.id} />
-                      <span>{part.label}</span>
-                      <span className="usage-legend-value">{formatTokens(part.value)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </section>
+              ))}
+            </dl>
+          )}
 
           <section className="usage-block">
             <h4 className="settings-group-title">By agent</h4>
             {stats.providers.length === 0 ? (
-              <p className="settings-section-desc">No turns in this window.</p>
+              <p className="settings-section-desc">No usage in this window.</p>
             ) : (
-              <ul className="usage-providers">
-                {stats.providers.map((p) => {
-                  const share = p.tokens > 0 ? (p.tokens / maxProvider) * 100 : 0;
-                  const meta = [
-                    p.tokens > 0 ? formatTokens(p.tokens) : "—",
-                    p.meteredTurns > 0 ? `${formatTokenCount(p.meteredTurns)} requests` : null,
-                    p.unmeteredTurns > 0 ? `${p.unmeteredTurns} unmetered` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ");
-                  return (
-                    <li key={p.kind}>
-                      <ProviderMark kind={p.kind} />
-                      <span className="usage-provider-label">{labelFor(p.kind)}</span>
-                      <span className="usage-provider-meta">{meta}</span>
-                      <span
-                        className="usage-provider-bar"
-                        aria-hidden
-                        style={{ ["--share" as string]: `${share}%` }}
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
+              <table className="usage-table">
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>Share</th>
+                    <th>Tokens</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.providers.map((p) => (
+                    <tr key={p.kind}>
+                      <td>
+                        <span className="usage-table-agent">
+                          <ProviderMark kind={p.kind} />
+                          {labelFor(p.kind)}
+                        </span>
+                      </td>
+                      <td>{formatShare(p.tokens, stats.totals.tokens)}</td>
+                      <td>
+                        {p.tokens > 0 ? formatTokens(p.tokens) : "—"}
+                        {p.unmeteredTurns > 0 ? ` · ${p.unmeteredTurns} unmetered` : ""}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </section>
 
           {stats.models.length > 0 && (
             <section className="usage-block">
               <h4 className="settings-group-title">By model</h4>
-              <ul className="usage-providers">
-                {stats.models.map((m) => (
-                  <li key={`${m.provider}:${m.model}`}>
-                    <ProviderMark kind={m.provider} />
-                    <span className="usage-provider-label">{compactModelLabel(m.model)}</span>
-                    <span className="usage-provider-meta">{formatTokens(m.tokens)}</span>
-                    <span
-                      className="usage-provider-bar"
-                      aria-hidden
-                      style={{ ["--share" as string]: `${(m.tokens / maxModel) * 100}%` }}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <table className="usage-table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Share</th>
+                    <th>Tokens</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.models.map((m) => (
+                    <tr key={`${m.provider}:${m.model}`}>
+                      <td>
+                        <span className="usage-table-agent">
+                          <ProviderMark kind={m.provider} />
+                          {compactModelLabel(m.model)}
+                        </span>
+                      </td>
+                      <td>{formatShare(m.tokens, stats.totals.tokens)}</td>
+                      <td>{formatTokens(m.tokens)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </section>
           )}
         </>

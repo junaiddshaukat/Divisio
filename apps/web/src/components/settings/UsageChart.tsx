@@ -46,7 +46,7 @@ export function UsageChart({ days }: Props) {
         className="usage-chart-svg"
         viewBox={`0 0 ${CHART.width} ${CHART.height}`}
         role="img"
-        aria-label="Reported tokens by day"
+        aria-label="Processed tokens by day"
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
       >

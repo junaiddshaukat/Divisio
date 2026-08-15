@@ -38,7 +38,7 @@ import {
 } from "./files/service.ts";
 import type { PairingStatus } from "@divisio/contracts";
 import { probeToolchain } from "./toolchain.ts";
-import { normalizeUsageRange } from "./store/usage.ts";
+import { collectUsageStats } from "./usage/collectUsage.ts";
 import { setupFor } from "@divisio/adapters/setup";
 
 /** What the orchestrator needs from pairing, so it does not depend on transport. */
@@ -198,7 +198,7 @@ export class Orchestrator {
       case "stats.activity":
         return this.store.activityStats();
       case "stats.usage":
-        return this.store.usageStats(normalizeUsageRange((payload as { days?: unknown }).days));
+        return await collectUsageStats(this.store, (payload as { days?: unknown }).days);
       case "lane.create":
         return await this.createLane(payload);
       case "lane.list":

@@ -628,8 +628,8 @@ export class EventStore {
   }
 
   /**
-   * Token counts for Settings → Usage. From `turn.usage` on this log —
-   * not a vendor bill, not a scan of CLI home directories.
+   * Token counts for Settings → Usage. Headline prefers Claude Code and Codex
+   * session files on this machine when those homes exist.
    */
   usageStats(days?: UsageRangeDays): UsageStats {
     const rangeDays = normalizeUsageRange(days ?? DEFAULT_USAGE_RANGE);

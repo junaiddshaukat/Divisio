@@ -1,5 +1,7 @@
 import type {
+  UsageCoverage,
   UsageDay,
+  UsageModelShare,
   UsageProviderShare,
   UsageRangeDays,
   UsageStats,
@@ -17,6 +19,8 @@ export interface UsageEventRow {
   date: string;
   turnId: string;
   provider?: string;
+  model?: string;
+  sessionId?: string;
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
@@ -107,6 +111,8 @@ export function assembleUsageStats(input: {
 
   const dayMap = new Map<string, { tokens: number; meteredTurns: number }>();
   const providers = new Map<string, { tokens: number; meteredTurns: number; unmeteredTurns: number }>();
+  const models = new Map<string, { provider: string; tokens: number; events: number }>();
+  const sessions = new Set<string>();
 
   let inputTokens = 0;
   let outputTokens = 0;
@@ -131,6 +137,15 @@ export function assembleUsageStats(input: {
     const p = slot(providers, kind);
     p.tokens += count;
     p.meteredTurns += 1;
+
+    if (u.sessionId) sessions.add(u.sessionId);
+    if (u.model) {
+      const key = `${kind}\0${u.model}`;
+      const m = models.get(key) ?? { provider: kind, tokens: 0, events: 0 };
+      m.tokens += count;
+      m.events += 1;
+      models.set(key, m);
+    }
   }
 
   let unmeteredTurns = 0;
@@ -162,6 +177,15 @@ export function assembleUsageStats(input: {
         a.kind.localeCompare(b.kind),
     );
 
+  const modelShares: UsageModelShare[] = [...models.entries()]
+    .map(([key, v]) => ({
+      model: key.slice(key.indexOf("\0") + 1),
+      provider: v.provider,
+      tokens: v.tokens,
+      events: v.events,
+    }))
+    .sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model));
+
   const totals: UsageTotals = {
     tokens,
     inputTokens,
@@ -170,6 +194,16 @@ export function assembleUsageStats(input: {
     cacheWriteTokens,
     meteredTurns: usageInRange.size,
     unmeteredTurns,
+    sessions: sessions.size,
+  };
+
+  const coverage: UsageCoverage = {
+    source: "log",
+    claudeFiles: 0,
+    codexFiles: 0,
+    sessions: sessions.size,
+    appTokens: tokens,
+    appMeteredTurns: usageInRange.size,
   };
 
   return {
@@ -178,6 +212,8 @@ export function assembleUsageStats(input: {
     to,
     days,
     providers: providerShares,
+    models: modelShares,
     totals,
+    coverage,
   };
 }
