@@ -168,4 +168,36 @@ describe("scanVendorHomes", () => {
       cacheWriteTokens: 1,
     });
   });
+
+  test("coalesces concurrent scans of the same window", async () => {
+    dir = mkdtempSync(join(tmpdir(), "divisio-usage-"));
+    const projects = join(dir, "claude", "projects", "demo");
+    mkdirSync(projects, { recursive: true });
+    writeFileSync(
+      join(projects, "session.jsonl"),
+      `${JSON.stringify({
+        type: "assistant",
+        timestamp: new Date().toISOString(),
+        sessionId: "ses_coalesce",
+        message: {
+          id: "msg_1",
+          role: "assistant",
+          model: "claude-opus-4",
+          content: [{ type: "text" }],
+          usage: { input_tokens: 3, output_tokens: 1 },
+        },
+      })}\n`,
+    );
+    const now = Date.now();
+    const input = {
+      sinceMs: now - 24 * 60 * 60 * 1000,
+      untilMs: now + 24 * 60 * 60 * 1000,
+      claudeDirs: [join(dir, "claude", "projects")],
+    };
+    const [a, b] = await Promise.all([scanVendorHomes(input), scanVendorHomes(input)]);
+    expect(a).toBe(b);
+    expect(a.records).toHaveLength(1);
+    const again = await scanVendorHomes(input);
+    expect(again).toBe(a);
+  });
 });

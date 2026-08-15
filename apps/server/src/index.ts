@@ -242,8 +242,14 @@ const server = Bun.serve<SocketData>({
     open(ws) {
       hub.open(ws, WS_SUBPROTOCOL);
     },
-    async message(ws, message) {
-      await hub.message(ws, typeof message === "string" ? message : new TextDecoder().decode(message));
+    message(ws, message) {
+      // Do not await: stats.usage walks CLI homes and must not stall stats.activity
+      // or other commands on the same socket.
+      void hub
+        .message(ws, typeof message === "string" ? message : new TextDecoder().decode(message))
+        .catch((err) => {
+          log.error("websocket handler failed", { err: String(err) });
+        });
     },
     close(ws) {
       hub.close(ws);

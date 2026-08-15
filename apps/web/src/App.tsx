@@ -13,6 +13,7 @@ import type {
   ModelCatalog,
   ThreadView,
   DaemonIncompatibility,
+  UsageRangeDays,
   VendorResumeOutcome,
 } from "@divisio/contracts";
 import { looksLikeUsageLimit } from "@divisio/shared/usageLimit";
@@ -1163,6 +1164,24 @@ export function App() {
     setSettingsOpen(section);
   }, []);
 
+  const loadSettingsToolchain = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) throw new Error("not connected");
+    return client.send("toolchain.status", {});
+  }, []);
+
+  const loadSettingsActivity = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) throw new Error("not connected");
+    return client.send("stats.activity", {});
+  }, []);
+
+  const loadSettingsUsage = useCallback(async (days: UsageRangeDays) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("not connected");
+    return client.send("stats.usage", { days });
+  }, []);
+
   const openPairing = async () => {
     const client = clientRef.current;
     if (!client) return;
@@ -1412,21 +1431,9 @@ export function App() {
           onClose={() => setSettingsOpen(null)}
           onRefreshProviders={() => void refreshProviders()}
           onEnsurePairing={ensurePairing}
-          onLoadToolchain={async () => {
-            const client = clientRef.current;
-            if (!client) throw new Error("not connected");
-            return client.send("toolchain.status", {});
-          }}
-          onLoadActivity={async () => {
-            const client = clientRef.current;
-            if (!client) throw new Error("not connected");
-            return client.send("stats.activity", {});
-          }}
-          onLoadUsage={async (days) => {
-            const client = clientRef.current;
-            if (!client) throw new Error("not connected");
-            return client.send("stats.usage", { days });
-          }}
+          onLoadToolchain={loadSettingsToolchain}
+          onLoadActivity={loadSettingsActivity}
+          onLoadUsage={loadSettingsUsage}
           onCreateToken={async () => {
             const client = clientRef.current;
             if (!client) throw new Error("not connected");

@@ -81,7 +81,7 @@ export function ProfileSettings({ load, providers }: Props) {
         <div className="profile-identity-copy">
           <p className="profile-name">{name}</p>
           <span className="profile-identity-meta">
-            {stats && !loading
+            {stats
               ? `On this machine · ${weekTurns} turn${weekTurns === 1 ? "" : "s"} this week`
               : "On this machine · activity stays local"}
           </span>
@@ -90,7 +90,7 @@ export function ProfileSettings({ load, providers }: Props) {
           <Button variant="secondary" size="sm" icon={<EditIcon />} onClick={() => setEditing(true)}>
             Edit
           </Button>
-          {stats && !loading && (
+          {stats && (
             <Button variant="secondary" size="sm" onClick={() => setSharing(true)}>
               Share activity
             </Button>
@@ -98,10 +98,10 @@ export function ProfileSettings({ load, providers }: Props) {
         </div>
       </div>
 
-      {loading && <p className="settings-section-desc">Loading activity…</p>}
+      {loading && !stats && <p className="settings-section-desc">Loading activity…</p>}
       {error && <p className="hint danger">{error}</p>}
 
-      {stats && !loading && (
+      {stats && (
         <>
           <div className="profile-block">
             <div className="profile-block-head">

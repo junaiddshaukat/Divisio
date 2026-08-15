@@ -6,7 +6,6 @@ import {
   UpcastError,
   type ActivityStats,
   type DomainEvent,
-  type EventPayloads,
   type EventType,
   type NewEvent,
   type UsageRangeDays,
@@ -578,8 +577,10 @@ export class EventStore {
    */
   activityStats(): ActivityStats {
     const turnRows = this.db
-      .query<{ at: string; payload: string }, []>(
-        "select at, payload from events where type = 'turn.started'",
+      .query<{ at: string; provider: string | null }, []>(
+        `select at,
+                coalesce(nullif(json_extract(payload, '$.provider'), ''), 'unknown') as provider
+         from events where type = 'turn.started'`,
       )
       .all();
 
@@ -592,13 +593,7 @@ export class EventStore {
     for (const row of turnRows) {
       const key = localDateKey(row.at);
       turnByDay.set(key, (turnByDay.get(key) ?? 0) + 1);
-      let provider = "unknown";
-      try {
-        const payload = JSON.parse(row.payload) as { provider?: string };
-        if (payload.provider) provider = payload.provider;
-      } catch {
-        /* keep unknown */
-      }
+      const provider = row.provider || "unknown";
       providerTurns.set(provider, (providerTurns.get(provider) ?? 0) + 1);
     }
 
@@ -634,51 +629,64 @@ export class EventStore {
   usageStats(days?: UsageRangeDays): UsageStats {
     const rangeDays = normalizeUsageRange(days ?? DEFAULT_USAGE_RANGE);
     const startedRows = this.db
-      .query<{ at: string; payload: string }, []>(
-        "select at, payload from events where type = 'turn.started' order by seq",
+      .query<{ at: string; turnId: string | null; provider: string | null }, []>(
+        `select at,
+                json_extract(payload, '$.turnId') as turnId,
+                json_extract(payload, '$.provider') as provider
+         from events where type = 'turn.started' order by seq`,
       )
       .all();
     const usageRows = this.db
-      .query<{ at: string; payload: string }, []>(
-        "select at, payload from events where type = 'turn.usage' order by seq",
+      .query<
+        {
+          at: string;
+          turnId: string | null;
+          provider: string | null;
+          inputTokens: number | null;
+          outputTokens: number | null;
+          totalTokens: number | null;
+          cacheReadTokens: number | null;
+          cacheWriteTokens: number | null;
+        },
+        []
+      >(
+        `select at,
+                json_extract(payload, '$.turnId') as turnId,
+                json_extract(payload, '$.provider') as provider,
+                json_extract(payload, '$.inputTokens') as inputTokens,
+                json_extract(payload, '$.outputTokens') as outputTokens,
+                json_extract(payload, '$.totalTokens') as totalTokens,
+                json_extract(payload, '$.cacheReadTokens') as cacheReadTokens,
+                json_extract(payload, '$.cacheWriteTokens') as cacheWriteTokens
+         from events where type = 'turn.usage' order by seq`,
       )
       .all();
 
     const started = startedRows.flatMap((row) => {
-      try {
-        const payload = JSON.parse(row.payload) as EventPayloads["turn.started"];
-        if (!payload.turnId) return [];
-        return [
-          {
-            date: localDateKey(row.at),
-            turnId: payload.turnId,
-            provider: payload.provider || "unknown",
-          },
-        ];
-      } catch {
-        return [];
-      }
+      if (!row.turnId) return [];
+      return [
+        {
+          date: localDateKey(row.at),
+          turnId: row.turnId,
+          provider: row.provider || "unknown",
+        },
+      ];
     });
 
     const usage = usageRows.flatMap((row) => {
-      try {
-        const payload = JSON.parse(row.payload) as EventPayloads["turn.usage"];
-        if (!payload.turnId) return [];
-        return [
-          {
-            date: localDateKey(row.at),
-            turnId: payload.turnId,
-            ...(payload.provider ? { provider: payload.provider } : {}),
-            ...(payload.inputTokens !== undefined ? { inputTokens: payload.inputTokens } : {}),
-            ...(payload.outputTokens !== undefined ? { outputTokens: payload.outputTokens } : {}),
-            ...(payload.totalTokens !== undefined ? { totalTokens: payload.totalTokens } : {}),
-            ...(payload.cacheReadTokens !== undefined ? { cacheReadTokens: payload.cacheReadTokens } : {}),
-            ...(payload.cacheWriteTokens !== undefined ? { cacheWriteTokens: payload.cacheWriteTokens } : {}),
-          },
-        ];
-      } catch {
-        return [];
-      }
+      if (!row.turnId) return [];
+      return [
+        {
+          date: localDateKey(row.at),
+          turnId: row.turnId,
+          ...(row.provider ? { provider: row.provider } : {}),
+          ...(row.inputTokens != null ? { inputTokens: Number(row.inputTokens) } : {}),
+          ...(row.outputTokens != null ? { outputTokens: Number(row.outputTokens) } : {}),
+          ...(row.totalTokens != null ? { totalTokens: Number(row.totalTokens) } : {}),
+          ...(row.cacheReadTokens != null ? { cacheReadTokens: Number(row.cacheReadTokens) } : {}),
+          ...(row.cacheWriteTokens != null ? { cacheWriteTokens: Number(row.cacheWriteTokens) } : {}),
+        },
+      ];
     });
 
     return assembleUsageStats({ started, usage, rangeDays });

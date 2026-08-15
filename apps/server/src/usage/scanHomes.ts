@@ -1,8 +1,9 @@
 /**
  * Walk vendor homes and collect token records.
  *
- * Reads counters only. Prompt text is never returned. Results are cached in
- * process memory by file mtime+size so opening Settings twice is cheap.
+ * Reads counters only. Prompt text is never returned. Per-file results are
+ * cached by mtime+size; identical windows coalesce and reuse a short TTL so
+ * reopening Settings does not walk CLI homes again.
  *
  * When any location override is passed, unspecified kinds are skipped so
  * tests do not touch the real home directories.
@@ -57,9 +58,31 @@ interface FileCacheEntry {
 }
 
 const fileCache = new Map<string, FileCacheEntry>();
+const WINDOW_TTL_MS = 20_000;
+const FILE_CONCURRENCY = 8;
+
+const windowCache = new Map<string, { at: number; result: ScanHomesResult }>();
+const windowInflight = new Map<string, Promise<ScanHomesResult>>();
 
 export function resetUsageScanCache(): void {
   fileCache.clear();
+  windowCache.clear();
+  windowInflight.clear();
+}
+
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  if (items.length === 0) return [];
+  const out = new Array<R>(items.length);
+  let next = 0;
+  async function worker() {
+    for (;;) {
+      const idx = next++;
+      if (idx >= items.length) return;
+      out[idx] = await fn(items[idx]!);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return out;
 }
 
 function unique(paths: string[]): string[] {
@@ -161,20 +184,32 @@ async function firstExistingFile(candidates: string[]): Promise<string | null> {
 
 async function walkFiles(root: string, match: (name: string) => boolean): Promise<string[]> {
   const out: string[] = [];
-  async function walk(dir: string): Promise<void> {
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile() && match(entry.name)) out.push(path);
+  const pending = [root];
+  while (pending.length > 0) {
+    const batch = pending.splice(0, FILE_CONCURRENCY);
+    const nested = await Promise.all(
+      batch.map(async (dir) => {
+        const subdirs: string[] = [];
+        const files: string[] = [];
+        let entries;
+        try {
+          entries = await readdir(dir, { withFileTypes: true });
+        } catch {
+          return { subdirs, files };
+        }
+        for (const entry of entries) {
+          const path = join(dir, entry.name);
+          if (entry.isDirectory()) subdirs.push(path);
+          else if (entry.isFile() && match(entry.name)) files.push(path);
+        }
+        return { subdirs, files };
+      }),
+    );
+    for (const part of nested) {
+      out.push(...part.files);
+      pending.push(...part.subdirs);
     }
   }
-  await walk(root);
   return out;
 }
 
@@ -280,34 +315,34 @@ async function scanJsonlDir(
   sinceMs: number,
   untilMs: number,
 ): Promise<{ records: TranscriptUsage[]; files: number }> {
-  const records: TranscriptUsage[] = [];
   const seenFiles = new Set<string>();
-  let files = 0;
-  const floor = sinceMs - MTIME_SLACK_MS;
-
+  const allPaths: string[] = [];
   for (const dir of dirs) {
-    const paths = await walkFiles(dir, match);
-    for (const path of paths) {
+    for (const path of await walkFiles(dir, match)) {
       if (seenFiles.has(path)) continue;
       seenFiles.add(path);
-      let st;
-      try {
-        st = await stat(path);
-      } catch {
-        continue;
-      }
-      if (st.mtimeMs < floor) continue;
-      files += 1;
-      const parsed = await recordsForFile(path, st.size, st.mtimeMs, kind);
-      for (const rec of parsed) {
-        if (rec.timestampMs < sinceMs || rec.timestampMs >= untilMs) continue;
-        records.push(rec);
-      }
-      await Bun.sleep(0);
+      allPaths.push(path);
     }
   }
 
-  return { records, files };
+  const floor = sinceMs - MTIME_SLACK_MS;
+  const parts = await mapPool(allPaths, FILE_CONCURRENCY, async (path) => {
+    let st;
+    try {
+      st = await stat(path);
+    } catch {
+      return { records: [] as TranscriptUsage[], counted: 0 };
+    }
+    if (st.mtimeMs < floor) return { records: [], counted: 0 };
+    const parsed = await recordsForFile(path, st.size, st.mtimeMs, kind);
+    const records = parsed.filter((rec) => rec.timestampMs >= sinceMs && rec.timestampMs < untilMs);
+    return { records, counted: 1 };
+  });
+
+  return {
+    records: parts.flatMap((p) => p.records),
+    files: parts.reduce((n, p) => n + p.counted, 0),
+  };
 }
 
 async function scanLooseFiles(
@@ -316,29 +351,29 @@ async function scanLooseFiles(
   sinceMs: number,
   untilMs: number,
 ): Promise<{ records: TranscriptUsage[]; files: number }> {
-  const records: TranscriptUsage[] = [];
-  let files = 0;
-  const floor = sinceMs - MTIME_SLACK_MS;
   const seen = new Set<string>();
-  for (const path of paths) {
-    if (seen.has(path)) continue;
+  const uniquePaths = paths.filter((path) => {
+    if (seen.has(path)) return false;
     seen.add(path);
+    return true;
+  });
+  const floor = sinceMs - MTIME_SLACK_MS;
+  const parts = await mapPool(uniquePaths, FILE_CONCURRENCY, async (path) => {
     let st;
     try {
       st = await stat(path);
     } catch {
-      continue;
+      return { records: [] as TranscriptUsage[], counted: 0 };
     }
-    if (!st.isFile() || st.mtimeMs < floor) continue;
-    files += 1;
+    if (!st.isFile() || st.mtimeMs < floor) return { records: [], counted: 0 };
     const parsed = await recordsForFile(path, st.size, st.mtimeMs, kind);
-    for (const rec of parsed) {
-      if (rec.timestampMs < sinceMs || rec.timestampMs >= untilMs) continue;
-      records.push(rec);
-    }
-    await Bun.sleep(0);
-  }
-  return { records, files };
+    const records = parsed.filter((rec) => rec.timestampMs >= sinceMs && rec.timestampMs < untilMs);
+    return { records, counted: 1 };
+  });
+  return {
+    records: parts.flatMap((p) => p.records),
+    files: parts.reduce((n, p) => n + p.counted, 0),
+  };
 }
 
 async function scanSqlite(
@@ -357,15 +392,14 @@ async function scanSqlite(
   }
   const cacheKey = `${kind}:${path}`;
   const hit = fileCache.get(cacheKey);
-  let parsed: TranscriptUsage[];
+  let parsedAll: TranscriptUsage[];
   if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) {
-    parsed = hit.records;
+    parsedAll = hit.records;
   } else {
-    parsed = kind === "cursor" ? readCursorDb(path) : readOpenCodeDb(path);
-    fileCache.set(cacheKey, { mtimeMs: st.mtimeMs, size: st.size, records: parsed });
+    parsedAll = kind === "cursor" ? readCursorDb(path) : readOpenCodeDb(path);
+    fileCache.set(cacheKey, { mtimeMs: st.mtimeMs, size: st.size, records: parsedAll });
   }
-  const records = parsed.filter((rec) => rec.timestampMs >= sinceMs && rec.timestampMs < untilMs);
-  await Bun.sleep(0);
+  const records = parsedAll.filter((rec) => rec.timestampMs >= sinceMs && rec.timestampMs < untilMs);
   return { records, files: 1 };
 }
 
@@ -378,43 +412,59 @@ function pushDedupe(into: TranscriptUsage[], rec: TranscriptUsage, seen: Set<str
   into.push(rec);
 }
 
-/**
- * Scan vendor homes. `untilMs` should be start of tomorrow local, so today is included.
- */
-export async function scanVendorHomes(input: ScanHomesInput): Promise<ScanHomesResult> {
+function windowKey(input: ScanHomesInput): string {
+  return JSON.stringify([
+    input.sinceMs,
+    input.untilMs,
+    input.claudeDirs,
+    input.codexDirs,
+    input.grokDirs,
+    input.qwenDirs,
+    input.qwenFiles,
+    input.cursorDbPaths,
+    input.opencodeDbPaths,
+  ]);
+}
+
+async function scanVendorHomesUncached(input: ScanHomesInput): Promise<ScanHomesResult> {
   const skipDefaults = isolated(input);
-  const claudeRoots = await existingDirs(
-    input.claudeDirs ?? (skipDefaults ? [] : claudeProjectsDirs()),
-    ["/projects"],
-  );
-  const codexRoots = await existingDirs(
-    input.codexDirs ?? (skipDefaults ? [] : codexSessionsDirs()),
-    ["/sessions"],
-  );
-  const grokRoots = await existingDirs(input.grokDirs ?? (skipDefaults ? [] : grokSessionDirs()), ["/sessions"]);
-  const qwenRoots = await existingDirs(input.qwenDirs ?? (skipDefaults ? [] : qwenUsageDirs()), ["/usage"]);
+  const [claudeRoots, codexRoots, grokRoots, qwenRoots] = await Promise.all([
+    existingDirs(input.claudeDirs ?? (skipDefaults ? [] : claudeProjectsDirs()), ["/projects"]),
+    existingDirs(input.codexDirs ?? (skipDefaults ? [] : codexSessionsDirs()), ["/sessions"]),
+    existingDirs(input.grokDirs ?? (skipDefaults ? [] : grokSessionDirs()), ["/sessions"]),
+    existingDirs(input.qwenDirs ?? (skipDefaults ? [] : qwenUsageDirs()), ["/usage"]),
+  ]);
   const qwenLoose = input.qwenFiles ?? (skipDefaults ? [] : qwenUsageFiles());
   const cursorDbs = input.cursorDbPaths ?? (skipDefaults ? [] : cursorStateDbCandidates());
   const opencodeDbs = input.opencodeDbPaths ?? (skipDefaults ? [] : opencodeDbCandidates());
 
-  const claude = await scanJsonlDir(claudeRoots, "claude", (n) => n.endsWith(".jsonl"), input.sinceMs, input.untilMs);
-  const codex = await scanJsonlDir(codexRoots, "codex", (n) => n.endsWith(".jsonl"), input.sinceMs, input.untilMs);
-  const grok = await scanJsonlDir(grokRoots, "grok", (n) => n === "updates.jsonl", input.sinceMs, input.untilMs);
-  const qwenDir = await scanJsonlDir(
-    qwenRoots,
-    "qwen",
-    (n) => n.startsWith("token-usage") && n.endsWith(".jsonl"),
-    input.sinceMs,
-    input.untilMs,
-  );
-  const qwenFile = await scanLooseFiles(qwenLoose, "qwen", input.sinceMs, input.untilMs);
-  const cursor = await scanSqlite(cursorDbs, "cursor", input.sinceMs, input.untilMs);
-  const opencode = await scanSqlite(opencodeDbs, "opencode", input.sinceMs, input.untilMs);
+  const [claude, codex, grok, qwenDir, qwenFile, cursor, opencode] = await Promise.all([
+    scanJsonlDir(claudeRoots, "claude", (n) => n.endsWith(".jsonl"), input.sinceMs, input.untilMs),
+    scanJsonlDir(codexRoots, "codex", (n) => n.endsWith(".jsonl"), input.sinceMs, input.untilMs),
+    scanJsonlDir(grokRoots, "grok", (n) => n === "updates.jsonl", input.sinceMs, input.untilMs),
+    scanJsonlDir(
+      qwenRoots,
+      "qwen",
+      (n) => n.startsWith("token-usage") && n.endsWith(".jsonl"),
+      input.sinceMs,
+      input.untilMs,
+    ),
+    scanLooseFiles(qwenLoose, "qwen", input.sinceMs, input.untilMs),
+    scanSqlite(cursorDbs, "cursor", input.sinceMs, input.untilMs),
+    scanSqlite(opencodeDbs, "opencode", input.sinceMs, input.untilMs),
+  ]);
 
   const seen = new Set<string>();
   const records: TranscriptUsage[] = [];
   for (const rec of claude.records) pushDedupe(records, rec, seen);
-  for (const rec of [...codex.records, ...grok.records, ...qwenDir.records, ...qwenFile.records, ...cursor.records, ...opencode.records]) {
+  for (const rec of [
+    ...codex.records,
+    ...grok.records,
+    ...qwenDir.records,
+    ...qwenFile.records,
+    ...cursor.records,
+    ...opencode.records,
+  ]) {
     pushDedupe(records, rec, seen);
   }
 
@@ -429,4 +479,31 @@ export async function scanVendorHomes(input: ScanHomesInput): Promise<ScanHomesR
       opencode: opencode.files,
     },
   };
+}
+
+/**
+ * Scan vendor homes. `untilMs` should be start of tomorrow local, so today is included.
+ * Identical windows within WINDOW_TTL_MS share one walk so Settings can reopen immediately.
+ */
+export async function scanVendorHomes(input: ScanHomesInput): Promise<ScanHomesResult> {
+  const key = windowKey(input);
+  const now = Date.now();
+  const cached = windowCache.get(key);
+  if (cached && now - cached.at < WINDOW_TTL_MS) return cached.result;
+  const pending = windowInflight.get(key);
+  if (pending) return pending;
+
+  const promise = scanVendorHomesUncached(input).then(
+    (result) => {
+      windowCache.set(key, { at: Date.now(), result });
+      windowInflight.delete(key);
+      return result;
+    },
+    (err: unknown) => {
+      windowInflight.delete(key);
+      throw err;
+    },
+  );
+  windowInflight.set(key, promise);
+  return promise;
 }
