@@ -430,26 +430,16 @@ export interface ReadyFrame {
   environmentId: string;
   seq: number;
   /**
-   * Commands this daemon actually routes.
-   *
-   * A running daemon can be older than the UI talking to it — a stale dev
-   * process holding the port, or a desktop app that adopted one. Without this
-   * the only symptom is "unknown command" appearing wherever the user happens
-   * to click, which names the symptom and not the cause.
+   * Compatibility generation. Absent on daemons from before this field
+   * existed — treat as incompatible. See `DAEMON_GENERATION` in protocol.ts.
+   */
+  generation?: number;
+  /**
+   * Commands this daemon actually routes. Documents the generation; attach
+   * decisions use `generation`, not a substring search of this list.
    */
   commands: string[];
 }
-
-/** Commands the UI needs before it can present itself as working. */
-export const REQUIRED_COMMANDS: readonly CommandName[] = [
-  "project.list",
-  "thread.create",
-  "thread.setProvider",
-  "turn.send",
-  "file.tree",
-  "file.read",
-  "terminal.open",
-];
 
 export interface SubFrame {
   t: "sub";

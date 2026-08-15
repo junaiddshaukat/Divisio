@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import {
   CommandError,
+  DAEMON_GENERATION,
   type ClientFrame,
   type DomainEvent,
   type ServerFrame,
@@ -64,6 +65,7 @@ export class WsHub {
       protocol,
       environmentId: this.environmentId,
       seq: this.store.head(),
+      generation: DAEMON_GENERATION,
       commands: this.supportedCommands,
     });
   }

@@ -1,5 +1,6 @@
 import { AdapterRegistry, loadCommunityAdapters } from "@divisio/adapters";
 import { createAdapters as createCommunityAdapters } from "@divisio/community-adapters";
+import { DAEMON_GENERATION } from "@divisio/contracts";
 import { DEFAULT_PORT, ENV_PREFIX, PRODUCT_NAME, WS_SUBPROTOCOL } from "@divisio/shared/brand";
 import { newId } from "@divisio/shared/ids";
 import { logger } from "@divisio/shared/log";
@@ -189,6 +190,7 @@ const server = Bun.serve<SocketData>({
         product: PRODUCT_NAME,
         seq: store.head(),
         protocol: WS_SUBPROTOCOL,
+        generation: DAEMON_GENERATION,
         commands: hub.supportedCommands,
       });
     }

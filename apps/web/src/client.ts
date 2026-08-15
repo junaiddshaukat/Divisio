@@ -1,10 +1,13 @@
-import { REQUIRED_COMMANDS } from "@divisio/contracts";
-import type {
-  CommandName,
-  CommandPayloads,
-  CommandResults,
-  DomainEvent,
-  ServerFrame,
+import {
+  DAEMON_GENERATION,
+  REQUIRED_COMMANDS,
+  incompatibilityOf,
+  type CommandName,
+  type CommandPayloads,
+  type CommandResults,
+  type DaemonIncompatibility,
+  type DomainEvent,
+  type ServerFrame,
 } from "@divisio/contracts";
 
 /**
@@ -21,8 +24,8 @@ export type ConnectionState = "connecting" | "open" | "closed";
 type TerminalSink = { data(chunk: string): void; exit(code: number): void };
 
 interface Handlers {
-  /** Commands the UI needs that this daemon does not route. */
-  onIncompatible(missing: string[]): void;
+  /** Daemon is older than this UI (generation miss or missing required commands). */
+  onIncompatible(info: DaemonIncompatibility): void;
   onEvent(event: DomainEvent): void;
   onDelta(threadId: string, turnId: string, text: string): void;
   onState(state: ConnectionState): void;
@@ -96,18 +99,11 @@ export class Client {
   private handleFrame(frame: ServerFrame) {
     switch (frame.t) {
       case "ready": {
-        // A daemon can be older than the UI — a stale dev process holding the
-        // port, or a desktop shell that adopted one. Report that once, by name,
-        // instead of letting every feature fail separately with
-        // "unknown command" wherever the user happens to click.
-        // Only usable when the daemon is new enough to advertise. An older one
-        // sends nothing here, which is precisely the case that needs catching —
-        // so the authoritative check is the `unknown_command` reply below.
-        if (frame.commands) {
-          const advertised = new Set(frame.commands);
-          const missing = REQUIRED_COMMANDS.filter((c) => !advertised.has(c));
-          if (missing.length > 0) this.handlers.onIncompatible(missing);
-        }
+        // Generation is the contract. A stale process on :4577 used to look
+        // fine because command names appeared in /health JSON. Missing
+        // generation, or a smaller one, is incompatible — report once.
+        const miss = incompatibilityOf(frame);
+        if (miss) this.handlers.onIncompatible(miss);
         // First connection starts at head; a reconnect asks for its gap.
         if (this.seq === 0) this.seq = frame.seq;
         else void this.resume();
@@ -148,7 +144,11 @@ export class Client {
         if (frame.code === "unknown_command") {
           const name = frame.message.replace(/^unknown command:\s*/, "").trim();
           if ((REQUIRED_COMMANDS as readonly string[]).includes(name)) {
-            this.handlers.onIncompatible([name]);
+            this.handlers.onIncompatible({
+              have: null,
+              need: DAEMON_GENERATION,
+              missing: REQUIRED_COMMANDS.filter((c) => c === name),
+            });
           }
         }
         const p = this.pending.get(frame.id);

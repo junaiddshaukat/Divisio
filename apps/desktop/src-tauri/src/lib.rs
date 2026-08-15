@@ -3,6 +3,7 @@
 //! The shell is not a second brain: orchestration stays in `apps/server`.
 //! Bun must be on PATH (sidecar bundling comes later).
 
+use serde::Deserialize;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::net::TcpStream;
@@ -117,19 +118,16 @@ fn dirs_home() -> PathBuf {
     .expect("HOME")
 }
 
-/// Commands a daemon must advertise before this shell will adopt it.
-///
-/// An already-running daemon is usually a convenience — `bun run dev:server`
-/// during development. It becomes a trap when that process is older than the
-/// app: the shell attaches happily and every newer feature fails separately
-/// with "unknown command". Checking first turns that into one clear message.
-const REQUIRED_COMMANDS: &[&str] = &[
-  "file.tree",
-  "terminal.open",
-  "turn.restore",
-  "thread.setProvider",
-  "project.remove",
-];
+/// Must match `DAEMON_GENERATION` in packages/contracts/src/protocol.ts.
+/// Bump both in the same commit. Command-name substring matching is not a
+/// substitute — that is how an older process on :4577 used to get adopted.
+const DAEMON_GENERATION: u32 = 1;
+
+#[derive(Deserialize)]
+struct Health {
+  #[serde(default)]
+  generation: Option<u32>,
+}
 
 fn health_body() -> Option<String> {
   let out = Command::new("curl")
@@ -147,15 +145,25 @@ fn health_body() -> Option<String> {
   String::from_utf8(out.stdout).ok()
 }
 
+/// Whether a `/health` JSON body is new enough for this shell to attach.
+fn daemon_is_compatible(health_json: &str) -> bool {
+  let parsed: Health = match serde_json::from_str(health_json) {
+    Ok(v) => v,
+    Err(_) => return false,
+  };
+  parsed
+    .generation
+    .map(|g| g >= DAEMON_GENERATION)
+    .unwrap_or(false)
+}
+
 /// Whether a daemon already on the port is new enough to use.
 fn existing_daemon_is_compatible() -> bool {
   let Some(body) = health_body() else {
     // No curl, or no answer. The caller falls back to starting our own.
     return false;
   };
-  REQUIRED_COMMANDS
-    .iter()
-    .all(|cmd| body.contains(&format!("\"{cmd}\"")))
+  daemon_is_compatible(&body)
 }
 
 fn wait_for_health(timeout: Duration) -> bool {
@@ -280,8 +288,9 @@ fn bootstrap_daemon(app: &AppHandle) -> Result<(), String> {
 
   if wait_for_health(Duration::from_millis(200)) {
     return Err(format!(
-      "A daemon is already running on port {DAEMON_PORT}, but it is an older build that this app \
-       cannot use. Stop it (likely an earlier `bun run dev:server`) and reopen Divisio."
+      "A daemon is already running on port {DAEMON_PORT}, but it reports an older generation \
+       than this app needs ({DAEMON_GENERATION}). Stop it (likely an earlier `bun run dev:server`) \
+       and reopen Divisio."
     ));
   }
 
@@ -348,4 +357,38 @@ pub fn run() {
     })
     .run(tauri::generate_context!())
     .expect("error while running Divisio");
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{daemon_is_compatible, DAEMON_GENERATION};
+
+  #[test]
+  fn missing_generation_is_incompatible_even_when_command_names_appear() {
+    assert!(!daemon_is_compatible(
+      r#"{"ok":true,"commands":["project.remove","turn.restore","file.tree"]}"#
+    ));
+  }
+
+  #[test]
+  fn current_generation_is_compatible() {
+    let body = format!(r#"{{"ok":true,"generation":{DAEMON_GENERATION},"commands":[]}}"#);
+    assert!(daemon_is_compatible(&body));
+  }
+
+  #[test]
+  fn newer_generation_is_compatible() {
+    let body = format!(r#"{{"ok":true,"generation":{}}}"#, DAEMON_GENERATION + 1);
+    assert!(daemon_is_compatible(&body));
+  }
+
+  #[test]
+  fn older_generation_is_incompatible() {
+    assert!(!daemon_is_compatible(r#"{"ok":true,"generation":0}"#));
+  }
+
+  #[test]
+  fn garbage_json_is_incompatible() {
+    assert!(!daemon_is_compatible("not json"));
+  }
 }

@@ -12,6 +12,7 @@ import type {
   ProviderView,
   ModelCatalog,
   ThreadView,
+  DaemonIncompatibility,
 } from "@divisio/contracts";
 import { Client, type ConnectionState } from "./client.ts";
 import { useFiles } from "./hooks/useFiles.ts";
@@ -188,7 +189,7 @@ export function App() {
   /** Set when the new-thread dialog was opened from a lane card. */
   const [laneForNewThread, setLaneForNewThread] = useState<string | null>(null);
   const [handoffBusy, setHandoffBusy] = useState(false);
-  const [incompatible, setIncompatible] = useState<string[] | null>(null);
+  const [incompatible, setIncompatible] = useState<DaemonIncompatibility | null>(null);
   const [pairing, setPairing] = useState<PairingStatus | null>(null);
   const [rightSurface, setRightSurface] = useState<RightSurfaceId | null>(null);
   /** Bottom dock under the composer — the only terminal. */
@@ -1259,16 +1260,17 @@ export function App() {
   }
 
   if (incompatible) {
+    const have = incompatible.have == null ? "none" : String(incompatible.have);
     return (
       <div className="empty">
         <h1>The daemon is out of date</h1>
         <p>
-          It is running an older build than this app and does not support{" "}
-          <code>{incompatible.join(", ")}</code>.
+          This app needs daemon generation {incompatible.need}; the process on port 4577 reports{" "}
+          {have}.
         </p>
         <p>
-          Usually an earlier <code>bun run dev:server</code> is still holding port 4577 and the app
-          attached to it. Stop that process and reopen Divisio.
+          Usually an earlier <code>bun run dev:server</code> is still holding the port. Stop that
+          process and reopen Divisio.
         </p>
       </div>
     );

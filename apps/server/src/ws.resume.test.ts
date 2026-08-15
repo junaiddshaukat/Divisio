@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerFrame } from "@divisio/contracts";
+import { DAEMON_GENERATION } from "@divisio/contracts";
 import type { ServerWebSocket } from "bun";
 import { EventStore } from "./store/log.ts";
 import { WsHub, type SocketData } from "./ws.ts";
@@ -46,6 +47,17 @@ describe("session.resume", () => {
     const hub = new WsHub(store, "env_test", { replayWindow });
     return hub;
   }
+
+  test("ready frame advertises the current daemon generation", () => {
+    const hub = setup(10);
+    const ws = fakeWs();
+    hub.open(ws, "divisio.v1");
+    expect(ws.sent[0]).toMatchObject({
+      t: "ready",
+      protocol: "divisio.v1",
+      generation: DAEMON_GENERATION,
+    });
+  });
 
   test("inside retention → replay + gap events", async () => {
     const hub = setup(10);

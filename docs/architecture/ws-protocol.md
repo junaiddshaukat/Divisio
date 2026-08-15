@@ -14,10 +14,12 @@ Design constraints, in priority order:
 | --- | --- |
 | Endpoint | `/ws` on the daemon's HTTP listener |
 | Frames | UTF-8 JSON text frames (v1). Binary reserved for future transcript bulk transfer |
-| Version | Negotiated via WebSocket subprotocol: `orchestrator.v1` |
+| Version | Negotiated via WebSocket subprotocol: `divisio.v1` |
 | Keepalive | Native WS ping/pong, server-initiated, 20s interval, 3 missed → close |
 
-Breaking changes mint a new subprotocol (`orchestrator.v2`). The daemon may accept several concurrently during a migration window. A client that offers no recognized subprotocol is rejected at upgrade — never silently downgraded.
+Breaking changes mint a new subprotocol (`divisio.v2`). The daemon may accept several concurrently during a migration window. A client that offers no recognized subprotocol is rejected at upgrade — never silently downgraded.
+
+`/health` and the `ready` frame also carry **`generation`**: an integer from `DAEMON_GENERATION` in `packages/contracts`. Desktop attach and the UI refuse a daemon that omits it or reports a smaller number. Command lists on those payloads are documentation, not the attach decision — substring matching on `/health` is how an old process on `:4577` used to get adopted.
 
 ## Handshake
 
@@ -36,10 +38,17 @@ Rules and rationale for each live in [security.md](security.md#required-controls
 On success the server sends `ready` as the first frame:
 
 ```jsonc
-{ "t": "ready", "protocol": "orchestrator.v1", "environmentId": "env_01H…", "seq": 48213 }
+{
+  "t": "ready",
+  "protocol": "divisio.v1",
+  "environmentId": "env_01H…",
+  "seq": 48213,
+  "generation": 1,
+  "commands": ["project.list", "turn.send"]
+}
 ```
 
-`seq` is the current head of the event log — the client's starting cursor if it has no prior state.
+`seq` is the current head of the event log — the client's starting cursor if it has no prior state. `generation` is the compatibility contract; a missing field means the daemon predates this check and must not be attached.
 
 ## Envelope
 
