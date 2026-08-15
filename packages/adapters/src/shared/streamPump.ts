@@ -1,6 +1,6 @@
 /**
  * Shared NDJSON stream pump helpers for Claude-like stream-json CLIs
- * (Claude, Qwen, Grok Messages wire format).
+ * (Claude, Qwen, and Grok when it still emits Messages-shaped lines).
  */
 
 import type { EmitRuntimeEvent, ProviderRuntimeEvent } from "@divisio/contracts";
@@ -9,6 +9,7 @@ import { spawnWithEnv } from "@divisio/shared/spawn";
 import type { DetectResult } from "@divisio/contracts";
 import {
   normalizeClaudeStreamLine,
+  type ClaudeNormalizeResult,
   type ClaudeNormalizeState,
 } from "../claude/normalize.ts";
 
@@ -47,10 +48,17 @@ export async function pumpClaudeLikeStream(opts: {
   isCurrent(): boolean;
   clearProc(): void;
   failLabel: string;
+  /** Defaults to the Claude stream-json mapper. */
+  normalize?: (
+    msg: Record<string, unknown>,
+    turnId: string,
+    state: ClaudeNormalizeState,
+  ) => ClaudeNormalizeResult;
 }): Promise<void> {
   let assistantText = "";
   let buffer = "";
   let normState: ClaudeNormalizeState = { nativeId: opts.getNativeId() };
+  const normalize = opts.normalize ?? normalizeClaudeStreamLine;
 
   try {
     const reader = opts.proc.stdout.getReader();
@@ -73,7 +81,7 @@ export async function pumpClaudeLikeStream(opts: {
           log.warn("unparseable stream line", { sample: trimmed.slice(0, 120) });
           continue;
         }
-        const result = normalizeClaudeStreamLine(msg, opts.turnId, normState);
+        const result = normalize(msg, opts.turnId, normState);
         normState = result.state;
         if (normState.nativeId) opts.setNativeId(normState.nativeId);
         for (const event of result.events) opts.emit(event);

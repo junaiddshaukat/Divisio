@@ -1,0 +1,4 @@
+{"type":"text","data":"Hello "}
+{"type":"thought","data":"keep this off the transcript"}
+{"type":"text","data":"from Grok."}
+{"type":"end","sessionId":"grok-sess-stream","stopReason":"stop","requestId":"req_1"}

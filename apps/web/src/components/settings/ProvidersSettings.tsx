@@ -23,11 +23,10 @@ interface Props {
   client: Client | null;
 }
 
-function shortStatus(p: ProviderView): { label: string; tone: "ok" | "warn" | "muted"; title?: string } {
-  if (!p.available) return { label: "Not found", tone: "warn", title: p.detail ?? undefined };
-  if (p.source === "custom") return { label: "BYOK", tone: "ok" };
-  if (p.version) return { label: `v${p.version}`, tone: "ok" };
-  return { label: "Ready", tone: "ok" };
+function statusMeta(p: ProviderView): string | null {
+  if (p.version) return `v${p.version}`;
+  if (!p.available) return p.detail;
+  return null;
 }
 
 type Draft = {
@@ -139,7 +138,7 @@ export function ProvidersSettings({ providers, onRefresh, client }: Props) {
           const label = displayLabel(p.kind, p.label, prefs);
           const enabled = isProviderEnabled(p.kind, prefs);
           const expanded = openKind === p.kind;
-          const status = shortStatus(p);
+          const meta = statusMeta(p);
           return (
             <div
               key={p.kind}
@@ -153,19 +152,27 @@ export function ProvidersSettings({ providers, onRefresh, client }: Props) {
                   aria-expanded={expanded}
                 >
                   <span
-                    className={`provider-status-dot tone-${status.tone}`}
-                    title={status.title ?? status.label}
+                    className={`provider-status-dot ${p.available ? "tone-ok" : "tone-warn"}`}
+                    title={p.available ? "Installed" : (p.detail ?? "Not installed")}
                     aria-hidden
                   />
                   <ProviderMark kind={p.kind} accent={pref?.accent} />
                   <div className="settings-row-copy">
                     <span className="settings-row-label">{label}</span>
-                    <span className="settings-row-meta" title={status.title}>
-                      {status.label}
-                      {p.source === "community" ? " · community" : ""}
-                    </span>
+                    {meta ? (
+                      <span className="settings-row-meta" title={p.detail ?? meta}>
+                        {meta}
+                      </span>
+                    ) : null}
                   </div>
                 </button>
+                <div className="provider-badges">
+                  <span className={`settings-status ${p.available ? "ok" : "warn"}`}>
+                    {p.available ? "Installed" : "Not installed"}
+                  </span>
+                  <span className="settings-status info">Chat UI</span>
+                  {p.source === "community" ? <span className="settings-status">Community</span> : null}
+                </div>
                 <label
                   className="provider-toggle"
                   title={enabled ? "Disable for new sessions" : "Enable for new sessions"}
@@ -337,10 +344,15 @@ export function ProvidersSettings({ providers, onRefresh, client }: Props) {
                     <ProviderMark kind={c.kind} />
                     <div className="settings-row-copy">
                       <span className="settings-row-label">{c.label}</span>
-                      <span className="settings-row-meta">
-                        {c.modelId} · {c.apiKeyPreview} · chat only
+                      <span className="settings-row-meta is-wrap" title={`${c.modelId} · ${c.baseUrl}`}>
+                        {c.modelId}
+                        {c.apiKeyPreview ? ` · ${c.apiKeyPreview}` : ""}
                       </span>
                     </div>
+                  </div>
+                  <div className="provider-badges">
+                    <span className="settings-status info">Chat UI</span>
+                    <span className="settings-status">Custom endpoint</span>
                   </div>
                   <div className="settings-byok-row-actions">
                     <Button

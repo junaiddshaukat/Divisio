@@ -81,6 +81,7 @@ export function AgentPicker({ provider, model, providers, catalogs, hasHistory, 
   }, [open, provider]);
 
   const triggerModel = modelLabel(provider, model, catalogs?.[provider]);
+  const triggerTitle = [currentLabel, triggerModel].filter(Boolean).join(" · ");
 
   const pickModel = (opt: ProviderModelOption) => {
     const nextModel = opt.isDefault ? null : opt.id;
@@ -95,6 +96,7 @@ export function AgentPicker({ provider, model, providers, catalogs, hasHistory, 
         type="button"
         className="pill agent-picker-trigger"
         disabled={busy}
+        title={triggerTitle}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -166,15 +168,21 @@ export function AgentPicker({ provider, model, providers, catalogs, hasHistory, 
               {filtered.map((opt) => {
                 const selected =
                   browseKind === provider && (opt.isDefault ? !model : model === opt.id);
+                const showId = !opt.isDefault && opt.id !== opt.label;
+                const optionTitle = showId ? `${opt.label} (${opt.id})` : opt.label;
                 return (
                   <li key={opt.id}>
                     <button
                       type="button"
                       className={`agent-picker-option${selected ? " selected" : ""}`}
                       disabled={!browse?.available && browseKind !== provider}
+                      title={optionTitle}
                       onClick={() => pickModel(opt)}
                     >
-                      <span className="agent-picker-option-label">{opt.label}</span>
+                      <span className="agent-picker-option-copy">
+                        <span className="agent-picker-option-label">{opt.label}</span>
+                        {showId ? <span className="agent-picker-option-id">{opt.id}</span> : null}
+                      </span>
                       {opt.isDefault && <span className="agent-picker-option-tag">Default</span>}
                       <span className="agent-picker-trailing">
                         {selected ? <CheckIcon className="agent-picker-check" /> : null}

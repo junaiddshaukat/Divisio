@@ -15,6 +15,8 @@ export interface ClaudeNormalizeState {
    * snapshots then skip text so we do not double-count partial + final.
    */
   seenPartials?: boolean;
+  /** Trailing assistant text — used to space snapshot blocks (`file.` + `Done.`). */
+  assistantTail?: string;
 }
 
 export interface ClaudeNormalizeResult {
@@ -22,6 +24,21 @@ export interface ClaudeNormalizeResult {
   /** Text contributed by this line (for assistant message accumulation). */
   text: string;
   state: ClaudeNormalizeState;
+}
+
+function spaceSnapshotPiece(prev: string | undefined, piece: string): string {
+  if (!piece) return "";
+  if (!prev) return piece;
+  if (/\s$/.test(prev) || /^\s/.test(piece)) return piece;
+  if (/[.!?]$/.test(prev) && /^[A-Za-z]/.test(piece)) return ` ${piece}`;
+  return piece;
+}
+
+function takeTextDelta(delta: Record<string, unknown> | undefined): string {
+  if (delta?.["type"] === "text_delta" && typeof delta["text"] === "string") {
+    return delta["text"];
+  }
+  return "";
 }
 
 /**
@@ -38,27 +55,43 @@ export function normalizeClaudeStreamLine(
   let text = "";
   let nativeId = state.nativeId;
   let seenPartials = state.seenPartials === true;
+  let assistantTail = state.assistantTail;
+
+  const nextState = (): ClaudeNormalizeState => ({ nativeId, seenPartials, assistantTail });
 
   const type = msg["type"];
 
   if (type === "system" && msg["subtype"] === "init") {
     const id = msg["session_id"];
     if (typeof id === "string") nativeId = id;
-    return { events, text, state: { nativeId, seenPartials } };
+    return { events, text, state: nextState() };
+  }
+
+  // Anthropic Messages streaming (unwrapped) — some CLIs emit this directly.
+  if (type === "content_block_delta") {
+    const piece = takeTextDelta(msg["delta"] as Record<string, unknown> | undefined);
+    if (piece) {
+      text = piece;
+      events.push({ type: "assistant.delta", turnId, text: piece });
+      seenPartials = true;
+      assistantTail = piece.slice(-8);
+    }
+    return { events, text, state: nextState() };
   }
 
   // Token-level streaming from `claude --include-partial-messages`.
   if (type === "stream_event") {
     const event = msg["event"] as Record<string, unknown> | undefined;
     if (event?.["type"] === "content_block_delta") {
-      const delta = event["delta"] as Record<string, unknown> | undefined;
-      if (delta?.["type"] === "text_delta" && typeof delta["text"] === "string" && delta["text"]) {
-        text = delta["text"];
-        events.push({ type: "assistant.delta", turnId, text });
+      const piece = takeTextDelta(event["delta"] as Record<string, unknown> | undefined);
+      if (piece) {
+        text = piece;
+        events.push({ type: "assistant.delta", turnId, text: piece });
         seenPartials = true;
+        assistantTail = piece.slice(-8);
       }
     }
-    return { events, text, state: { nativeId, seenPartials } };
+    return { events, text, state: nextState() };
   }
 
   if (type === "assistant") {
@@ -70,8 +103,10 @@ export function normalizeClaudeStreamLine(
         // When partials already streamed, assistant snapshots are cumulative
         // (or final) and must not append again.
         if (!seenPartials) {
-          text += b["text"];
-          events.push({ type: "assistant.delta", turnId, text: b["text"] });
+          const piece = spaceSnapshotPiece(assistantTail, b["text"]);
+          text += piece;
+          events.push({ type: "assistant.delta", turnId, text: piece });
+          assistantTail = piece.slice(-8);
         }
       } else if (b["type"] === "tool_use") {
         events.push({
@@ -83,7 +118,7 @@ export function normalizeClaudeStreamLine(
         });
       }
     }
-    return { events, text, state: { nativeId, seenPartials } };
+    return { events, text, state: nextState() };
   }
 
   if (type === "user") {
@@ -101,7 +136,7 @@ export function normalizeClaudeStreamLine(
         });
       }
     }
-    return { events, text, state: { nativeId, seenPartials } };
+    return { events, text, state: nextState() };
   }
 
   if (type === "result" && msg["is_error"] === true) {
@@ -112,5 +147,5 @@ export function normalizeClaudeStreamLine(
     });
   }
 
-  return { events, text, state: { nativeId, seenPartials } };
+  return { events, text, state: nextState() };
 }

@@ -35,8 +35,11 @@
    available to code and makes long answers harder to read, not easier. */
 .msg-assistant {
   font-size: var(--text-body);
-  line-height: 1.45;
+  line-height: var(--leading-relaxed);
   word-break: break-word;
+}
+.msg-assistant .markdown {
+  white-space: normal;
 }
 .msg-assistant.streaming::after {
   content: "";

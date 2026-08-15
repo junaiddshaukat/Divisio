@@ -354,9 +354,46 @@ html:not(.dark) .settings-rows {
   background: color-mix(in srgb, var(--success, #3d9a5f) 14%, transparent);
 }
 
-.settings-status.warn {
-  color: var(--warning, #c9892e);
-  background: color-mix(in srgb, var(--warning, #c9892e) 14%, transparent);
+.settings-status.info {
+  color: var(--info, #3b82f6);
+  background: color-mix(in srgb, var(--info, #3b82f6) 14%, transparent);
+}
+
+.provider-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 52%;
+}
+
+.settings-row-meta.is-wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.settings-row.provider-row {
+  padding: 0;
+  transition: none;
+}
+.settings-row.provider-row .provider-row-main {
+  padding: 12px 14px;
+}
+.settings-row.provider-row .provider-pref-panel {
+  padding: 4px 14px 12px;
+}
+.provider-row .settings-row-button:hover {
+  background: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-row.provider-row .provider-row-main:hover {
+    background: var(--menu-row-hover, rgba(127, 127, 127, 0.08));
+  }
 }
 
 .settings-cap-chips {

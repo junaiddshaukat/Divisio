@@ -33,7 +33,7 @@ Divisio drives **already-authenticated** CLIs. Installing Divisio does not repla
 | Codex | Structured (`codex app-server`) | `CodexAdapter` | builtin |
 | Claude Code | Stream (`stream-json`) | `ClaudeAdapter` | builtin |
 | Cursor | Stream (`cursor-agent` stream-json) | `CursorAdapter` | builtin |
-| Grok Build | Stream (`streaming-messages-json`) | `GrokAdapter` | builtin |
+| Grok Build | Stream (`streaming-json`) | `GrokAdapter` | builtin |
 | Qwen Code | Stream (`stream-json`) | `QwenAdapter` | builtin |
 | OpenCode | Stream (`opencode run --format json`) | `OpenCodeAdapter` | builtin |
 | Gemini CLI | Stream (`--output-format stream-json`) | `GeminiAdapter` | community |

@@ -13,6 +13,7 @@ export { CursorAdapter } from "./cursor.ts";
 export { normalizeCursorStreamLine } from "./cursor/normalize.ts";
 export type { CursorNormalizeResult, CursorNormalizeState } from "./cursor/normalize.ts";
 export { GrokAdapter } from "./grok.ts";
+export { normalizeGrokStreamLine } from "./grok/normalize.ts";
 export { JsonRpcStdioClient } from "./jsonrpc/stdio.ts";
 export { MockPeerAdapter } from "./mock.ts";
 export type { MockPeerOptions, MockScriptStep } from "./mock.ts";

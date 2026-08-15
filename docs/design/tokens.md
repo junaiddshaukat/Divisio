@@ -16,7 +16,7 @@ Apply with `color-scheme: light | dark`. Prefer `oklch` / zinc scales where note
 | `--radius-user-message` | `0.8rem` | User bubbles |
 | `--control-radius` | `0.5rem` | Compact controls |
 | `--workspace-topbar-height` | `52px` | Titlebar / drag region |
-| `--app-scrollbar-width` | `6px` | Thin overlay scrollbars |
+| `--app-scrollbar-width` | `8px` | Visible overlay scrollbars |
 
 ## Light mode (`:root`)
 
@@ -74,24 +74,24 @@ Target: near-black canvas, luminosity-driven state.
 
 | Token | Value | Role |
 | --- | --- | --- |
-| `--background` | `#0E0E0E` | App canvas |
+| `--background` | `#111111` | App canvas (lifted charcoal) |
 | `--app-chrome-background` | `var(--background)` | |
-| `--foreground` | `#F1F3F7` | Primary text (slightly cool white) |
-| `--foreground-subtle` | `#737373` | Tertiary chrome |
-| `--card` | `#121212` | Lifted panel |
+| `--foreground` | `#F4F4F5` | Primary text |
+| `--foreground-subtle` | `#8A8A8A` | Tertiary chrome |
+| `--card` | `#181818` | Lifted panel |
 | `--card-foreground` | `var(--foreground)` | |
-| `--popover` | `#161616` | Menus |
+| `--popover` | `#1C1C1C` | Menus |
 | `--popover-foreground` | `var(--foreground)` | |
 | `--primary` | `#F4F4F5` | Solid CTA on dark |
 | `--primary-foreground` | `#18181B` | |
 | `--secondary` | `rgba(255,255,255,0.04)` | |
 | `--secondary-foreground` | `var(--foreground)` | |
-| `--muted` | `rgba(255,255,255,0.04)` | |
-| `--muted-foreground` | `#A3A3A3` | Secondary copy, placeholders |
-| `--accent` | `rgba(255,255,255,0.04)` | Hover wash |
+| `--muted` | `rgba(255,255,255,0.06)` | |
+| `--muted-foreground` | `#A8A8AE` | Secondary copy, placeholders |
+| `--accent` | `rgba(255,255,255,0.07)` | Hover wash |
 | `--accent-foreground` | `var(--foreground)` | |
-| `--border` | `rgba(255,255,255,0.08)` | Hairlines |
-| `--input` | `rgba(255,255,255,0.08)` | |
+| `--border` | `rgba(255,255,255,0.10)` | Hairlines |
+| `--input` | `rgba(255,255,255,0.12)` | |
 | `--ring` | `#6073CC` | Focus |
 | `--destructive` | color-mix red toward white | |
 | `--destructive-foreground` | `#F87171` | |
@@ -101,7 +101,7 @@ Target: near-black canvas, luminosity-driven state.
 | `--success-foreground` | `#34D399` | |
 | `--warning` | `#F59E0B` | |
 | `--warning-foreground` | `#FBBF24` | |
-| `--sidebar` | `#111111` | Sunken rail, one step below the canvas |
+| `--sidebar` | `#0C0C0C` | Sunken rail, darker than the canvas |
 | `--sidebar-foreground` | `var(--foreground)` | |
 | `--sidebar-muted-foreground` | `var(--muted-foreground)` | |
 | `--sidebar-control-surface` | `var(--muted)` | |
@@ -111,11 +111,11 @@ Target: near-black canvas, luminosity-driven state.
 | `--sidebar-border` | `var(--border)` | |
 | `--user-bubble` | `rgba(255,255,255,0.06)` | |
 | `--code-block` | `rgba(255,255,255,0.05)` | |
-| `--chat-composer-outline` | `rgba(255,255,255,0.08)` | |
-| `--app-scrollbar-thumb` | `rgb(255 255 255 / 8%)` | |
-| `--app-scrollbar-thumb-hover` | `rgb(255 255 255 / 12%)` | |
+| `--chat-composer-outline` | white @ 14% | |
+| `--app-scrollbar-thumb` | `rgb(255 255 255 / 22%)` | |
+| `--app-scrollbar-thumb-hover` | `rgb(255 255 255 / 36%)` | |
 
-True-black option: `--background: #000` is allowed as an “OLED” preference later; default ships `#0E0E0E`, which reads softer on most panels.
+True-black option: `--background: #000` is allowed as an “OLED” preference later; default ships `#111111` so the rail and composer can sit darker / lighter against it.
 
 On desktop the **window** may be vibrant; `--background` on `.main` stays opaque so wallpaper cannot wash the canvas. The sidebar may sit slightly translucent (`~88%`) as a sunken rail — never CSS-blurred on top of native vibrancy.
 

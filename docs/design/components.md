@@ -39,7 +39,7 @@ Large shell with a compact control bar along the bottom:
 | Shell | `--card` fill, `--chat-composer-outline`, `--radius-xl`, generous padding |
 | Placeholder | “Ask for follow-up…” / “Do anything.” in muted |
 | Permission pill | “Allow commands…” or “Full access” — warning-tint when elevated |
-| Model select | Dropdown inside composer footer |
+| Model select | Nested menu: agents left, models right. The model list **scrolls** (visible scrollbar). Labels **wrap in full** — never ellipsis a catalog id |
 | Privacy / mode | Second select (Full access / supervised) |
 | Send | Circular or rounded `--primary` control; disabled when empty |
 | Attach | `+` leading control |

@@ -42,7 +42,7 @@ describe("Claude stream normalizer (golden fixtures)", () => {
       output: "# Divisio\n",
     });
 
-    expect(result.assistantText).toBe("I'll read the file.Done.");
+    expect(result.assistantText).toBe("I'll read the file. Done.");
   });
 
   test("error-result: emits provider_error", () => {
@@ -70,5 +70,23 @@ describe("Claude stream normalizer (golden fixtures)", () => {
       { type: "assistant.delta", turnId: "trn_partial", text: "Hi " },
       { type: "assistant.delta", turnId: "trn_partial", text: "there." },
     ]);
+  });
+
+  test("unwrapped content_block_delta streams tokens", () => {
+    const result = replayNdjson(
+      JSON.stringify({
+        type: "content_block_delta",
+        delta: { type: "text_delta", text: "Hello " },
+      }) +
+        "\n" +
+        JSON.stringify({
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "there." },
+        }) +
+        "\n",
+      "trn_unwrap",
+    );
+    expect(result.assistantText).toBe("Hello there.");
+    expect(result.events.filter((e) => e.type === "assistant.delta")).toHaveLength(2);
   });
 });

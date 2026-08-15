@@ -1,9 +1,9 @@
 /**
  * Grok Build (xAI) adapter — Stream tier.
  *
- * Drives `grok -p … --output-format streaming-messages-json`. The wire format
- * is Anthropic Messages-shaped NDJSON (same family as Claude stream-json), so
- * the Claude normalizer applies. Prefer binary `grok` (not bare `agent`).
+ * Drives `grok -p … --output-format streaming-json`. Current CLIs emit
+ * `{type:"text",data}` token deltas; older Messages-shaped NDJSON still maps.
+ * Prefer binary `grok` (not bare `agent`).
  *
  * Full-access threads pass `--always-approve`. Approvals are otherwise
  * CLI-owned (`approvals: false`).
@@ -23,6 +23,7 @@ import {
 import { logger } from "@divisio/shared/log";
 import { detectCli, interruptProcess, pumpClaudeLikeStream, type TurnProcess } from "./shared/streamPump.ts";
 import { pushModelArg } from "./shared/modelArg.ts";
+import { normalizeGrokStreamLine } from "./grok/normalize.ts";
 
 const log = logger("adapter:grok");
 const BINARY = "grok";
@@ -89,9 +90,11 @@ export class GrokAdapter implements ProviderAdapter {
       "-p",
       turn.text,
       "--output-format",
-      "streaming-messages-json",
+      "streaming-json",
       "--cwd",
       session.cwd,
+      "--no-alt-screen",
+      "--no-auto-update",
     ];
     if (session.permissionMode === "full_access") args.push("--always-approve");
     if (session.nativeId) args.push("-r", session.nativeId);
@@ -122,6 +125,7 @@ export class GrokAdapter implements ProviderAdapter {
         session.proc = null;
       },
       failLabel: "grok",
+      normalize: normalizeGrokStreamLine,
     });
   }
 
