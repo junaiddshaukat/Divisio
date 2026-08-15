@@ -72,7 +72,7 @@ const NAV_GROUPS: { label: string; items: { id: SettingsSection; label: string; 
 
 const SECTION_COPY: Record<SettingsSection, string> = {
   profile: "Local coding activity on this machine — turns, streaks, and agents you used.",
-  usage: "Processed tokens from CLI session files on this machine. Cache included. Not a bill.",
+  usage: "Tokens this machine recorded — cache included.",
   general: "About Divisio and this window.",
   appearance: "Color mode for the workspace.",
   providers: "Turn agents on or off, see what each CLI actually supports, or add OpenAI-compatible endpoints with your own keys.",

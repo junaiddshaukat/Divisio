@@ -113,7 +113,7 @@ state.
 
 ## Usage
 
-Settings → Usage is recorded tokens from `turn.usage`, never a bill or quota.
+Settings → Usage is recorded tokens on this machine, cache included.
 
 | Element | Spec |
 | --- | --- |

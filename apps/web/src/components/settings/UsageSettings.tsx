@@ -108,15 +108,6 @@ export function UsageSettings({ load, providers }: Props) {
 
   return (
     <div className="settings-section usage-section">
-      <p className="usage-note">
-        {machine
-          ? "Processed tokens from CLI session files on this machine. Cache reads are included. Grok only reports a cumulative total, so those rows have no input/output split. This is not a bill and not a vendor quota."
-          : "No CLI session files found. Showing turns Divisio recorded. This is not a bill."}
-        {stats?.coverage.source === "machine" && stats.coverage.appMeteredTurns > 0
-          ? ` Divisio recorded ${formatTokens(stats.coverage.appTokens)} in this window.`
-          : ""}
-      </p>
-
       <div className="usage-toolbar">
         <div className="segmented" role="group" aria-label="Usage range">
           {RANGES.map((r) => (
@@ -133,7 +124,7 @@ export function UsageSettings({ load, providers }: Props) {
         </div>
       </div>
 
-      {loading && !stats && <p className="settings-section-desc">Reading CLI session files…</p>}
+      {loading && !stats && <p className="settings-section-desc">Loading usage…</p>}
       {error && <p className="settings-inline-error">{error}</p>}
 
       {stats && (

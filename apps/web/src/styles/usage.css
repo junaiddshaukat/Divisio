@@ -7,14 +7,6 @@
   gap: var(--space-7);
 }
 
-.usage-note {
-  margin: 0;
-  font-size: var(--text-ui);
-  line-height: var(--leading-normal);
-  color: var(--muted-foreground);
-  max-width: 58ch;
-}
-
 .usage-toolbar {
   display: flex;
   align-items: center;
@@ -172,7 +164,7 @@
 }
 
 .usage-metrics > div {
-  padding: var(--space-6) var(--space-5) var(--space-6) 0;
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -273,13 +265,16 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .usage-metrics > div:nth-child(2) {
+  .usage-metrics > div:nth-child(odd) {
+    padding-left: 0;
+  }
+
+  .usage-metrics > div:nth-child(even) {
     border-right: 0;
     padding-right: 0;
   }
 
-  .usage-metrics > div:nth-child(3),
-  .usage-metrics > div:nth-child(4) {
+  .usage-metrics > div:nth-child(n + 3) {
     border-top: 1px solid var(--border);
   }
 }
