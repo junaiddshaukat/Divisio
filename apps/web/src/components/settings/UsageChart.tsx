@@ -1,6 +1,6 @@
 import { useId, useMemo, useState, type PointerEvent } from "react";
 import type { UsageDay } from "@divisio/contracts";
-import { formatDayShort, formatTokenCount, formatTokens } from "../tokenFormat.ts";
+import { formatDayShort, formatTokenCount, formatTokens } from "../../tokenFormat.ts";
 import {
   CHART,
   areaPath,
@@ -9,7 +9,7 @@ import {
   nearestIndex,
   niceMax,
   polylinePath,
-} from "../usageChart.ts";
+} from "../../usageChart.ts";
 
 interface Props {
   days: UsageDay[];
