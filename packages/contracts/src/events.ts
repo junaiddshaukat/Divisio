@@ -24,11 +24,18 @@ export const EVENT_VERSIONS = {
    * process can pass `resumeId` into `startSession`. New type, v1.
    */
   "thread.vendor_session_set": 1,
+  /**
+   * Whether this live session asked the CLI to resume, started cold, or
+   * could not resume. New type, v1.
+   */
+  "session.resume_outcome": 1,
   "turn.started": 1,
   "turn.message": 1,
   "turn.completed": 1,
   "turn.interrupted": 1,
   "turn.failed": 1,
+  /** Token counts from the CLI when the adapter actually maps them. */
+  "turn.usage": 1,
   "session.status": 1,
   "approval.requested": 1,
   "approval.resolved": 1,
@@ -64,6 +71,9 @@ export type TurnRole = "user" | "assistant";
  * See docs/specs/worktrees.md.
  */
 export type LaneStatus = "preparing" | "ready" | "error" | "archived";
+
+/** How the last `startSession` related to a stored vendor session id. */
+export type VendorResumeOutcome = "resumed" | "cold" | "unsupported" | "failed";
 
 export interface DiffFileEntry {
   path: string;
@@ -107,12 +117,30 @@ export interface EventPayloads {
     nativeId: string;
     provider: string;
   };
+  "session.resume_outcome": {
+    threadId: string;
+    outcome: VendorResumeOutcome;
+    /** Id passed as resumeId, when we had one. */
+    nativeId?: string | null;
+    detail?: string;
+  };
   "turn.started": { threadId: string; turnId: string; provider: string };
   /** A complete message. Streaming deltas are transport-only and never stored. */
   "turn.message": { threadId: string; turnId: string; role: TurnRole; text: string };
   "turn.completed": { threadId: string; turnId: string };
   "turn.interrupted": { threadId: string; turnId: string };
   "turn.failed": { threadId: string; turnId: string; code: string; message: string };
+  /**
+   * Optional token counts from the CLI. Absent fields mean the vendor did
+   * not report that counter — never invent a number.
+   */
+  "turn.usage": {
+    threadId: string;
+    turnId: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
   "session.status": { threadId: string; status: SessionStatus; detail?: string };
   "approval.requested": {
     threadId: string;

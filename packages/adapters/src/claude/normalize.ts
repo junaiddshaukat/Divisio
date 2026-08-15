@@ -41,6 +41,30 @@ function takeTextDelta(delta: Record<string, unknown> | undefined): string {
   return "";
 }
 
+function finiteToken(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** Maps Claude `result.usage` counters. Absent fields stay absent — never invented. */
+function usageFromResult(msg: Record<string, unknown>, turnId: string): ProviderRuntimeEvent | null {
+  const raw = msg["usage"];
+  if (!raw || typeof raw !== "object") return null;
+  const u = raw as Record<string, unknown>;
+  const inputTokens = finiteToken(u["input_tokens"]);
+  const outputTokens = finiteToken(u["output_tokens"]);
+  const totalTokens = finiteToken(u["total_tokens"]);
+  if (inputTokens === undefined && outputTokens === undefined && totalTokens === undefined) {
+    return null;
+  }
+  return {
+    type: "usage.reported",
+    turnId,
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(totalTokens !== undefined ? { totalTokens } : {}),
+  };
+}
+
 /**
  * Maps one parsed Claude stream-json object onto normalized runtime events.
  * Does not emit turn.completed — that is the adapter's responsibility when
@@ -61,7 +85,8 @@ export function normalizeClaudeStreamLine(
 
   const type = msg["type"];
 
-  if (type === "system" && msg["subtype"] === "init") {
+  if (type === "system" && (msg["subtype"] === "init" || msg["subtype"] === "session_start")) {
+    // Claude uses "init"; Qwen Code uses "session_start". Both carry session_id.
     const id = msg["session_id"];
     if (typeof id === "string") nativeId = id;
     return { events, text, state: nextState() };
@@ -139,12 +164,16 @@ export function normalizeClaudeStreamLine(
     return { events, text, state: nextState() };
   }
 
-  if (type === "result" && msg["is_error"] === true) {
-    events.push({
-      type: "error",
-      code: "provider_error",
-      message: String(msg["result"] ?? "provider reported an error"),
-    });
+  if (type === "result") {
+    if (msg["is_error"] === true) {
+      events.push({
+        type: "error",
+        code: "provider_error",
+        message: String(msg["result"] ?? "provider reported an error"),
+      });
+    }
+    const usage = usageFromResult(msg, turnId);
+    if (usage) events.push(usage);
   }
 
   return { events, text, state: nextState() };

@@ -13,6 +13,7 @@ import type {
   ModelCatalog,
   ThreadView,
   DaemonIncompatibility,
+  VendorResumeOutcome,
 } from "@divisio/contracts";
 import { Client, type ConnectionState } from "./client.ts";
 import { useFiles } from "./hooks/useFiles.ts";
@@ -502,6 +503,15 @@ export function App() {
           setThreads((prev) =>
             prev.map((t) =>
               t.id === p["threadId"] ? { ...t, vendorSessionId: String(p["nativeId"]) } : t,
+            ),
+          );
+          break;
+        case "session.resume_outcome":
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === p["threadId"]
+                ? { ...t, vendorResume: p["outcome"] as VendorResumeOutcome }
+                : t,
             ),
           );
           break;

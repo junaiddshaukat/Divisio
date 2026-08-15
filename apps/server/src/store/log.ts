@@ -13,6 +13,7 @@ import {
   type PermissionMode,
   type SessionStatus,
   type ThreadView,
+  type VendorResumeOutcome,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
 import { assembleActivityStats, localDateKey } from "./activity.ts";
@@ -33,6 +34,15 @@ function toSessionStatus(value: string): SessionStatus {
   if ((SESSION_STATUSES as readonly string[]).includes(value)) return value as SessionStatus;
   log.warn("unknown session status in projection", { value });
   return "closed";
+}
+
+const VENDOR_RESUMES: readonly VendorResumeOutcome[] = ["resumed", "cold", "unsupported", "failed"];
+
+function toVendorResume(value: string | null): VendorResumeOutcome | null {
+  if (value == null || value === "") return null;
+  if ((VENDOR_RESUMES as readonly string[]).includes(value)) return value as VendorResumeOutcome;
+  log.warn("unknown vendor resume in projection", { value });
+  return null;
 }
 
 interface LaneRow {
@@ -144,6 +154,7 @@ export class EventStore {
     this.ensureColumn("threads", "lane_id", "text");
     this.ensureColumn("threads", "model", "text");
     this.ensureColumn("threads", "vendor_session_id", "text");
+    this.ensureColumn("threads", "vendor_resume", "text");
     this.ensureColumn("threads", "deleted_at", "text");
     this.ensureColumn("projects", "deleted_at", "text");
   }
@@ -311,10 +322,11 @@ export class EventStore {
           .query(
             `update threads set
                vendor_session_id = case when provider = ? then vendor_session_id else null end,
+               vendor_resume = case when provider = ? then vendor_resume else null end,
                provider = ?, model = ?, updated_at = ?
              where id = ?`,
           )
-          .run(p.provider, p.provider, p.model, e.at, p.threadId);
+          .run(p.provider, p.provider, p.provider, p.model, e.at, p.threadId);
         break;
       }
       case "thread.vendor_session_set": {
@@ -322,6 +334,13 @@ export class EventStore {
         this.db
           .query("update threads set vendor_session_id = ?, updated_at = ? where id = ?")
           .run(p.nativeId, e.at, p.threadId);
+        break;
+      }
+      case "session.resume_outcome": {
+        const p = e.payload as { threadId: string; outcome: string };
+        this.db
+          .query("update threads set vendor_resume = ?, updated_at = ? where id = ?")
+          .run(p.outcome, e.at, p.threadId);
         break;
       }
       case "turn.diff_ready": {
@@ -442,11 +461,12 @@ export class EventStore {
           lane_id: string | null;
           model: string | null;
           vendor_session_id: string | null;
+          vendor_resume: string | null;
           updated_at: string;
         },
         []
       >(
-        "select id, project_id, title, provider, status, permission_mode, lane_id, model, vendor_session_id, updated_at from threads where deleted_at is null order by updated_at desc",
+        "select id, project_id, title, provider, status, permission_mode, lane_id, model, vendor_session_id, vendor_resume, updated_at from threads where deleted_at is null order by updated_at desc",
       )
       .all()
       .map((r) => ({
@@ -462,6 +482,7 @@ export class EventStore {
         permissionMode: toPermissionMode(r.permission_mode),
         model: r.model ?? null,
         vendorSessionId: r.vendor_session_id ?? null,
+        vendorResume: toVendorResume(r.vendor_resume),
         updatedAt: r.updated_at,
       }));
   }

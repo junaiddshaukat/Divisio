@@ -24,6 +24,7 @@ export interface AdapterCapabilities {
   approvals: boolean;
   handoffExport: boolean;
   worktreeAware: boolean;
+  /** True only when this adapter maps vendor token counts onto `usage.reported`. */
   usageSignals: boolean;
 }
 
@@ -108,6 +109,13 @@ export type ProviderRuntimeEvent =
   | { type: "tool.finished"; turnId: string; toolCallId: string; ok: boolean; output?: string }
   | { type: "approval.requested"; turnId: string; approvalId: string; category: string; summary: string }
   | { type: "turn.completed"; turnId: string }
+  | {
+      type: "usage.reported";
+      turnId: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+    }
   | { type: "status"; status: SessionStatus; detail?: string }
   | { type: "session.exited"; code: number | null; signal: string | null }
   | { type: "error"; code: string; message: string };

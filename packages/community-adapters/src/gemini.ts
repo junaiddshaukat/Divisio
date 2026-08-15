@@ -37,7 +37,7 @@ const CAPABILITIES: AdapterCapabilities = {
   approvals: false,
   handoffExport: false,
   worktreeAware: true,
-  usageSignals: true,
+  usageSignals: false,
 };
 
 export class GeminiAdapter implements ProviderAdapter {

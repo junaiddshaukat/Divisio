@@ -24,13 +24,13 @@ Each adapter declares what it supports. The UI uses this matrix instead of guess
 | `approvals` | Emits permission requests Divisio can mediate |
 | `handoffExport` | Can produce a continuation packet for another provider |
 | `worktreeAware` | Safe/expected to run with `cwd` set to a worktree |
-| `usageSignals` | Exposes quota/rate-limit hints when available |
+| `usageSignals` | Maps vendor token counts onto `usage.reported` when the CLI actually emits them — never invented |
 
 Optional `listModels()` returns a `ModelCatalog`. `live` means the adapter read the vendor CLI’s own settings or cache (side-effect-free). `none` means the UI may fall back to curated aliases. Secrets in vendor config files must never appear in the catalog.
 
 Unknown = unsupported. Never fake a capability.
 
-When an adapter reports a vendor-native session id, the orchestrator writes `thread.vendor_session_set` and passes it as `resumeId` on the next `startSession` — only if `sessionResume` is true. Divisio’s transcript is independent: a CLI that cannot resume starts a fresh vendor conversation after a restart, and the UI says so.
+When an adapter reports a vendor-native session id, the orchestrator writes `thread.vendor_session_set` and passes it as `resumeId` on the next `startSession` — only if `sessionResume` is true. Each live start also writes `session.resume_outcome` (`resumed` | `cold` | `unsupported` | `failed`) so a CLI that ignored `--resume` is visible on the log instead of looking continuous. Divisio’s transcript is independent: a CLI that cannot resume starts a fresh vendor conversation after a restart, and the UI says so.
 
 ## Interface sketch
 
@@ -57,7 +57,7 @@ interface ProviderAdapter {
 }
 ```
 
-Normalized `ProviderRuntimeEvent` examples: `assistant.delta`, `tool.started`, `tool.finished`, `approval.requested`, `turn.completed`, `session.error`.
+Normalized `ProviderRuntimeEvent` examples: `assistant.delta`, `tool.started`, `tool.finished`, `approval.requested`, `turn.completed`, `usage.reported`, `session.error`.
 
 ## Registry
 

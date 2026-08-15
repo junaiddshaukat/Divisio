@@ -7,7 +7,7 @@
  */
 
 import type { ModelCatalog } from "./adapter.ts";
-import type { DiffFileEntry, DomainEvent, LaneStatus, PermissionMode, SessionStatus } from "./events.ts";
+import type { DiffFileEntry, DomainEvent, LaneStatus, PermissionMode, SessionStatus, VendorResumeOutcome } from "./events.ts";
 
 export interface CommandPayloads {
   "session.resume": { since: number; threads: string[] };
@@ -135,6 +135,11 @@ export interface ThreadView {
    * Resume only happens when the adapter also declares `sessionResume`.
    */
   vendorSessionId: string | null;
+  /**
+   * Last `startSession` resume outcome, or null if this thread has not
+   * started a live session since the field existed.
+   */
+  vendorResume: VendorResumeOutcome | null;
   updatedAt: string;
 }
 

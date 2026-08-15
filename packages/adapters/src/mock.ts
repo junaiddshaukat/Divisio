@@ -20,7 +20,7 @@ import {
 export type MockScriptStep =
   | { type: "assistant.delta"; text: string }
   | { type: "assistant.message"; text: string }
-  | { type: "status"; status: "running" | "ready" | "stopping" | "awaiting_approval" }
+  | { type: "status"; status: "ready" | "running" | "stopping" | "awaiting_approval" }
   | {
       type: "approval.requested";
       approvalId: string;
@@ -28,6 +28,12 @@ export type MockScriptStep =
       summary: string;
       /** Wait for respondToApproval before continuing the script. */
       wait?: boolean;
+    }
+  | {
+      type: "usage.reported";
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
     };
 
 export interface MockPeerOptions {
@@ -37,6 +43,8 @@ export interface MockPeerOptions {
   approvals?: boolean;
   /** Default true. Set false to assert we do not pass resumeId. */
   sessionResume?: boolean;
+  /** Throw from startSession when resumeId is set. */
+  failResume?: boolean;
 }
 
 interface MockSession extends SessionHandle {
@@ -77,9 +85,11 @@ export class MockPeerAdapter implements ProviderAdapter {
   private readonly sessions = new Map<string, MockSession>();
   private readonly turnDelayMs: number;
   private readonly script: MockScriptStep[];
+  private readonly failResume: boolean;
 
   constructor(options: MockPeerOptions = {}) {
     this.turnDelayMs = options.turnDelayMs ?? 50;
+    this.failResume = options.failResume === true;
     this.capabilities = {
       ...BASE_CAPABILITIES,
       approvals: options.approvals ?? false,
@@ -98,6 +108,9 @@ export class MockPeerAdapter implements ProviderAdapter {
 
   async startSession(input: StartSessionInput, emit: EmitRuntimeEvent): Promise<SessionHandle> {
     this.startInputs.push(input);
+    if (this.failResume && input.resumeId) {
+      throw new Error("vendor refused resume");
+    }
     const session: MockSession = {
       threadId: input.threadId,
       nativeId: input.resumeId ?? "mock-native-1",
@@ -163,6 +176,14 @@ export class MockPeerAdapter implements ProviderAdapter {
           if (session.cancelled || session.activeTurnId !== turnId) return;
           this.recordStatus(session, "running");
         }
+      } else if (step.type === "usage.reported") {
+        session.emit({
+          type: "usage.reported",
+          turnId,
+          ...(step.inputTokens !== undefined ? { inputTokens: step.inputTokens } : {}),
+          ...(step.outputTokens !== undefined ? { outputTokens: step.outputTokens } : {}),
+          ...(step.totalTokens !== undefined ? { totalTokens: step.totalTokens } : {}),
+        });
       }
     }
 

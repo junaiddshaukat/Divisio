@@ -43,7 +43,7 @@ const CAPABILITIES: AdapterCapabilities = {
   approvals: false,
   handoffExport: false,
   worktreeAware: true,
-  usageSignals: true,
+  usageSignals: false,
 };
 
 export class GrokAdapter implements ProviderAdapter {

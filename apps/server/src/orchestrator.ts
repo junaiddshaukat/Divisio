@@ -10,6 +10,7 @@ import {
   type PermissionMode,
   type ProviderRuntimeEvent,
   type SessionHandle,
+  type VendorResumeOutcome,
 } from "@divisio/contracts";
 import type { AdapterRegistry } from "@divisio/adapters";
 import { EMPTY_MODEL_CATALOG } from "@divisio/adapters";
@@ -1196,17 +1197,36 @@ export class Orchestrator {
 
     // Lane-bound threads run inside their worktree; unbound threads run in the
     // primary checkout, which is the pre-lane behaviour.
-    const resumeId =
-      adapter.capabilities.sessionResume ? validateNativeId(thread.vendorSessionId) : null;
-    const handle = await adapter.startSession(
-      {
-        threadId,
-        cwd: this.workdirFor(thread),
-        permissionMode: thread.permissionMode,
-        ...(resumeId ? { resumeId } : {}),
-      },
-      (event) => this.onRuntimeEvent(threadId, event),
-    );
+    const canResume = adapter.capabilities.sessionResume;
+    const resumeId = canResume ? validateNativeId(thread.vendorSessionId) : null;
+    let handle: SessionHandle;
+    try {
+      handle = await adapter.startSession(
+        {
+          threadId,
+          cwd: this.workdirFor(thread),
+          permissionMode: thread.permissionMode,
+          ...(resumeId ? { resumeId } : {}),
+        },
+        (event) => this.onRuntimeEvent(threadId, event),
+      );
+    } catch (err) {
+      if (resumeId) {
+        this.commit([
+          {
+            type: "session.resume_outcome",
+            threadId,
+            payload: {
+              threadId,
+              outcome: "failed",
+              nativeId: resumeId,
+              detail: err instanceof Error ? err.message : String(err),
+            },
+          },
+        ]);
+      }
+      throw err;
+    }
 
     const live: LiveSession = {
       handle,
@@ -1217,6 +1237,19 @@ export class Orchestrator {
     };
     this.sessions.set(threadId, live);
     this.persistVendorSession(threadId);
+
+    const outcome: VendorResumeOutcome = !canResume ? "unsupported" : resumeId ? "resumed" : "cold";
+    this.commit([
+      {
+        type: "session.resume_outcome",
+        threadId,
+        payload: {
+          threadId,
+          outcome,
+          ...(resumeId ? { nativeId: resumeId } : {}),
+        },
+      },
+    ]);
     return live;
   }
 
@@ -1557,6 +1590,29 @@ export class Orchestrator {
         return;
       }
 
+      case "usage.reported": {
+        const inputTokens = finiteToken(event.inputTokens);
+        const outputTokens = finiteToken(event.outputTokens);
+        const totalTokens = finiteToken(event.totalTokens);
+        if (inputTokens === undefined && outputTokens === undefined && totalTokens === undefined) {
+          return;
+        }
+        this.commit([
+          {
+            type: "turn.usage",
+            threadId,
+            payload: {
+              threadId,
+              turnId: event.turnId,
+              ...(inputTokens !== undefined ? { inputTokens } : {}),
+              ...(outputTokens !== undefined ? { outputTokens } : {}),
+              ...(totalTokens !== undefined ? { totalTokens } : {}),
+            },
+          },
+        ]);
+        return;
+      }
+
       case "turn.completed":
         if (session?.activeTurnId === event.turnId) session.activeTurnId = null;
         session?.pendingApprovals.clear();
@@ -1665,4 +1721,8 @@ async function writeTurnImages(
     paths.push(rel.replace(/\\/g, "/"));
   }
   return paths;
+}
+
+function finiteToken(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

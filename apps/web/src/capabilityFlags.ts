@@ -43,7 +43,7 @@ export const CAPABILITY_FLAGS: {
   {
     key: "usageSignals",
     label: "Usage signals",
-    detail: "Exposes quota or rate-limit hints when the CLI sends them",
+    detail: "Maps token counts the CLI actually emits — never invented",
   },
 ];
 

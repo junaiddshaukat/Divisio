@@ -16,6 +16,7 @@ describe("Claude stream normalizer (golden fixtures)", () => {
       { type: "assistant.delta", turnId: "trn_text", text: "from Claude." },
     ]);
     expect(result.events.some((e) => e.type === "error")).toBe(false);
+    expect(result.events.some((e) => e.type === "usage.reported")).toBe(false);
   });
 
   test("tool-turn: tool.started then tool.finished", () => {
@@ -63,6 +64,14 @@ describe("Claude stream normalizer (golden fixtures)", () => {
     expect(result.state.nativeId).toBe("x");
   });
 
+  test("system session_start still records the vendor session id", () => {
+    const result = replayNdjson(
+      JSON.stringify({ type: "system", subtype: "session_start", session_id: "qwen-live-1" }) + "\n",
+      "trn_qwen_sys",
+    );
+    expect(result.state.nativeId).toBe("qwen-live-1");
+  });
+
   test("partial stream_event deltas are preferred over assistant snapshots", () => {
     const result = replayFixtureFile(join(fixtures, "partial-turn.ndjson"), "trn_partial");
     expect(result.assistantText).toBe("Hi there.");
@@ -88,5 +97,13 @@ describe("Claude stream normalizer (golden fixtures)", () => {
     );
     expect(result.assistantText).toBe("Hello there.");
     expect(result.events.filter((e) => e.type === "assistant.delta")).toHaveLength(2);
+  });
+
+  test("result.usage maps to usage.reported without inventing a total", () => {
+    const result = replayFixtureFile(join(fixtures, "usage-turn.ndjson"), "trn_usage");
+    expect(result.unparseable).toEqual([]);
+    expect(result.events.filter((e) => e.type === "usage.reported")).toEqual([
+      { type: "usage.reported", turnId: "trn_usage", inputTokens: 12, outputTokens: 4 },
+    ]);
   });
 });

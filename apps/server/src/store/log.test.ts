@@ -237,5 +237,56 @@ describe("EventStore projections", () => {
       },
     ]);
     expect(store.getThread("thr_a")?.vendorSessionId).toBeNull();
+    expect(store.getThread("thr_a")?.vendorResume).toBeNull();
+  });
+
+  test("resume outcome survives rebuild and clears when the provider changes", () => {
+    setup();
+    store.append([
+      {
+        type: "project.created",
+        threadId: null,
+        payload: { projectId: "prj_a", name: "Alpha", rootPath: "/tmp/a" },
+      },
+      {
+        type: "thread.created",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", projectId: "prj_a", title: "Hello", provider: "mock" },
+      },
+      {
+        type: "session.resume_outcome",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", outcome: "resumed", nativeId: "ses_vendor_1" },
+      },
+      {
+        type: "turn.usage",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", turnId: "trn_a", inputTokens: 12, outputTokens: 4 },
+      },
+    ]);
+    expect(store.getThread("thr_a")?.vendorResume).toBe("resumed");
+    expect(store.readSince(0).some((e) => e.type === "turn.usage")).toBe(true);
+
+    const n = store.rebuildProjections();
+    expect(n).toBe(4);
+    expect(store.getThread("thr_a")?.vendorResume).toBe("resumed");
+
+    store.append([
+      {
+        type: "thread.provider_set",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", provider: "mock", model: "gpt-test" },
+      },
+    ]);
+    expect(store.getThread("thr_a")?.vendorResume).toBe("resumed");
+
+    store.append([
+      {
+        type: "thread.provider_set",
+        threadId: "thr_a",
+        payload: { threadId: "thr_a", provider: "other", model: null },
+      },
+    ]);
+    expect(store.getThread("thr_a")?.vendorResume).toBeNull();
   });
 });
