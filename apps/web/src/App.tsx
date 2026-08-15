@@ -497,6 +497,13 @@ export function App() {
             ),
           );
           break;
+        case "thread.vendor_session_set":
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === p["threadId"] ? { ...t, vendorSessionId: String(p["nativeId"]) } : t,
+            ),
+          );
+          break;
         case "project.created":
         case "project.removed":
         case "thread.created":
@@ -1416,7 +1423,7 @@ export function App() {
             }
           />
         ) : (
-          <header className="topbar">
+          <header className="topbar topbar-landing">
             <IconButton
               label="Menu"
               icon={<MenuIcon />}
@@ -1424,9 +1431,6 @@ export function App() {
               className="nav-toggle"
               onClick={() => setNavOpen((v) => !v)}
             />
-            <div className="crumb">
-              <span className="crumb-project">No thread selected</span>
-            </div>
           </header>
         )}
 
@@ -1524,6 +1528,7 @@ export function App() {
                   catalogs={modelCatalogs}
                   permissionMode={activeThread.permissionMode ?? "supervised"}
                   hasHistory={messages.length > 0}
+                  vendorSessionId={activeThread.vendorSessionId}
                   onSend={(text, model, images) => void send(text, model, images)}
                   onInterrupt={interrupt}
                   onPermissionMode={(m) => void setPermissionMode(m)}
@@ -1575,13 +1580,28 @@ export function App() {
             )}
           </div>
         ) : (
-          <div className="empty quiet">
-            <h1>Pick a chat</h1>
-            <p>Or start a new one — Divisio runs agents under your own CLI logins.</p>
-            {error && <div className="banner">{error}</div>}
-            <Button variant="primary" onClick={() => openNewThread()}>
-              New chat
-            </Button>
+          <div className="empty landing">
+            <div className="draft-stack">
+              <div className="draft-spacer" aria-hidden />
+              <div className="draft-hero">
+                <h1 className="draft-headline">What should we build?</h1>
+                <p className="draft-sub">Start a chat — agents run under your own CLI logins.</p>
+              </div>
+              {error && <div className="banner">{error}</div>}
+              <div className="composer-wrap composer-hero">
+                <button
+                  type="button"
+                  className="landing-composer"
+                  aria-label="Start a new chat"
+                  onClick={() => openNewThread()}
+                >
+                  <span className="landing-composer-placeholder">Do anything.</span>
+                  <span className="landing-composer-bar">
+                    <span className="landing-composer-send" aria-hidden />
+                  </span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </main>

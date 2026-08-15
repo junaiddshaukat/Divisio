@@ -23,6 +23,7 @@
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
   overflow: hidden;
   isolation: isolate;
+  transform-origin: bottom left;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }

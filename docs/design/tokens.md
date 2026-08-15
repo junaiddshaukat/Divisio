@@ -27,6 +27,7 @@ Target: white canvas, zinc sidebar well.
 | `--background` | `#FCFCFC` | App canvas (off-white, softer than pure white) |
 | `--app-chrome-background` | `var(--background)` | Window chrome |
 | `--foreground` | `#27272A` | Primary text (zinc-800) |
+| `--foreground-subtle` | `#A1A1AA` | Tertiary chrome (timestamps, resting icons) |
 | `--card` | `#FFFFFF` | Raised panels, composer fill, popovers |
 | `--card-foreground` | `var(--foreground)` | |
 | `--popover` | `#FFFFFF` | Menus |
@@ -76,7 +77,8 @@ Target: near-black canvas, luminosity-driven state.
 | `--background` | `#0E0E0E` | App canvas |
 | `--app-chrome-background` | `var(--background)` | |
 | `--foreground` | `#F1F3F7` | Primary text (slightly cool white) |
-| `--card` | `#121212` | Lifted panel (~mix white 1–3% into bg) |
+| `--foreground-subtle` | `#737373` | Tertiary chrome |
+| `--card` | `#121212` | Lifted panel |
 | `--card-foreground` | `var(--foreground)` | |
 | `--popover` | `#161616` | Menus |
 | `--popover-foreground` | `var(--foreground)` | |
@@ -85,10 +87,10 @@ Target: near-black canvas, luminosity-driven state.
 | `--secondary` | `rgba(255,255,255,0.04)` | |
 | `--secondary-foreground` | `var(--foreground)` | |
 | `--muted` | `rgba(255,255,255,0.04)` | |
-| `--muted-foreground` | `#A3A3A3` | Meta / timestamps |
+| `--muted-foreground` | `#A3A3A3` | Secondary copy, placeholders |
 | `--accent` | `rgba(255,255,255,0.04)` | Hover wash |
 | `--accent-foreground` | `var(--foreground)` | |
-| `--border` | `rgba(255,255,255,0.06)` | Hairlines |
+| `--border` | `rgba(255,255,255,0.08)` | Hairlines |
 | `--input` | `rgba(255,255,255,0.08)` | |
 | `--ring` | `#6073CC` | Focus |
 | `--destructive` | color-mix red toward white | |
@@ -99,13 +101,13 @@ Target: near-black canvas, luminosity-driven state.
 | `--success-foreground` | `#34D399` | |
 | `--warning` | `#F59E0B` | |
 | `--warning-foreground` | `#FBBF24` | |
-| `--sidebar` | `var(--card)` | Same family as canvas |
+| `--sidebar` | `#111111` | Sunken rail, one step below the canvas |
 | `--sidebar-foreground` | `var(--foreground)` | |
 | `--sidebar-muted-foreground` | `var(--muted-foreground)` | |
 | `--sidebar-control-surface` | `var(--muted)` | |
-| `--sidebar-row-hover` | `color-mix(foreground 8%, transparent)` | Hover pill |
-| `--sidebar-row-active` | `color-mix(foreground 11%, transparent)` | |
-| `--sidebar-row-selected` | `color-mix(foreground 7%, transparent)` | |
+| `--sidebar-row-hover` | foreground @ 6% | Hover pill (ΔL ~0.04) |
+| `--sidebar-row-active` | foreground @ 10% | |
+| `--sidebar-row-selected` | foreground @ 12% | Selected (stronger than hover) |
 | `--sidebar-border` | `var(--border)` | |
 | `--user-bubble` | `rgba(255,255,255,0.06)` | |
 | `--code-block` | `rgba(255,255,255,0.05)` | |
@@ -114,6 +116,10 @@ Target: near-black canvas, luminosity-driven state.
 | `--app-scrollbar-thumb-hover` | `rgb(255 255 255 / 12%)` | |
 
 True-black option: `--background: #000` is allowed as an “OLED” preference later; default ships `#0E0E0E`, which reads softer on most panels.
+
+On desktop the **window** may be vibrant; `--background` on `.main` stays opaque so wallpaper cannot wash the canvas. The sidebar may sit slightly translucent (`~88%`) as a sunken rail — never CSS-blurred on top of native vibrancy.
+
+Text hierarchy is three quiet levels: `--foreground` (primary), `--muted-foreground` (secondary), `--foreground-subtle` (tertiary). Do not use muted for interactive nav.
 
 ## Status colors (shared)
 

@@ -22,6 +22,10 @@ Use [.agents/skills/emil-design-eng](../../.agents/skills/emil-design-eng) when 
 
 Never `ease-in` for UI entry. Prefer transforming `transform`/`opacity`, not `all`.
 
+Pressable chrome: `transform: scale(0.97)` on `:active`, 160ms `--ease-out`, gated to `@media (hover: hover) and (pointer: fine)`. Include `transform` in the transition list. Never scale keyboard-triggered actions.
+
+Popovers (not the command palette): 140–180ms opacity + `scale(0.96→1)`, `transform-origin` at the trigger. Modals stay centered. Enter via `@starting-style` so mounting does not need JS.
+
 ## Streaming
 
 - Do **not** run continuous “working” CSS animations on the whole transcript

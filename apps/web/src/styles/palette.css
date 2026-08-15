@@ -19,13 +19,13 @@
   max-height: 60vh;
   display: flex;
   flex-direction: column;
-  background: var(--popover);
-  border: 1px solid var(--border);
+  background: var(--menu-surface);
+  border: 1px solid var(--menu-border);
   border-radius: var(--radius-xl);
-  box-shadow: var(--composer-shadow);
+  box-shadow: var(--shadow-menu);
   overflow: hidden;
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  /* Keyboard surface — never animate open/close. */
+  transition: none;
 }
 
 .palette-search {

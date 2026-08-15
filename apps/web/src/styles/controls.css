@@ -19,14 +19,14 @@
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  /* Beat legacy `button.btn { background: var(--primary) }` in index.css */
   background: var(--card);
   color: var(--foreground);
   transition:
     background-color var(--duration-instant) linear,
     border-color var(--duration-instant) linear,
     color var(--duration-instant) linear,
-    opacity var(--duration-instant) linear;
+    opacity var(--duration-instant) linear,
+    transform 160ms var(--ease-out);
 }
 
 .btn-sm { height: var(--control-height-sm); padding: 0 var(--space-4); }
@@ -91,8 +91,9 @@ button.btn.btn-danger:hover:not(:disabled),
 }
 
 /* Pointer only: a keyboard-triggered action that shrinks reads as a glitch. */
-@media (hover: hover) {
-  .btn:active:not(:disabled) { transform: scale(0.98); }
+@media (hover: hover) and (pointer: fine) {
+  .btn:active:not(:disabled) { transform: scale(0.97); }
+  .icon-btn:active:not(:disabled) { transform: scale(0.97); }
 }
 
 .btn-spinner {
@@ -114,10 +115,13 @@ button.btn.btn-danger:hover:not(:disabled),
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--muted-foreground);
+  color: var(--foreground-subtle);
   cursor: pointer;
   padding: 0;
-  transition: background-color var(--duration-instant) linear, color var(--duration-instant) linear;
+  transition:
+    background-color var(--duration-instant) linear,
+    color var(--duration-instant) linear,
+    transform 160ms var(--ease-out);
 }
 .icon-btn-sm { width: var(--control-height-sm); height: var(--control-height-sm); }
 .icon-btn-md { width: var(--control-height-md); height: var(--control-height-md); }
@@ -253,12 +257,40 @@ button.btn.btn-danger:hover:not(:disabled),
   list-style: none;
   max-height: 240px;
   overflow-y: auto;
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--composer-shadow);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+  background: var(--menu-surface);
+  border: 1px solid var(--menu-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-menu);
+  transform-origin: top center;
+}
+.menu-select-panel,
+.sidebar-brand-menu,
+.thread-context-menu,
+.open-in-menu,
+.agent-picker-popover,
+.perm-menu-panel,
+.handoff-menu,
+.git-menu-panel,
+.dialog,
+.confirm-card {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+@starting-style {
+  .menu-select-panel,
+  .sidebar-brand-menu,
+  .thread-context-menu,
+  .open-in-menu,
+  .agent-picker-popover,
+  .perm-menu-panel,
+  .handoff-menu,
+  .git-menu-panel,
+  .dialog,
+  .confirm-card {
+    opacity: 0;
+    transform: scale(0.96);
+  }
 }
 .menu-select-panel-portal {
   position: fixed;

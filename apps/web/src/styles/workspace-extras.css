@@ -241,8 +241,6 @@
   place-items: center;
   padding: 24px;
   background: rgba(0, 0, 0, 0.5);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
 }
 
 .confirm-card {
@@ -252,10 +250,11 @@
   gap: 12px;
   padding: 18px 18px 14px;
   border-radius: var(--radius-xl);
-  border: 1px solid var(--border);
-  background: var(--popover);
-  box-shadow: var(--composer-shadow);
+  border: 1px solid var(--menu-border);
+  background: var(--menu-surface);
+  box-shadow: var(--shadow-menu);
   color: var(--foreground);
+  transform-origin: center;
 }
 
 .confirm-title {
@@ -353,6 +352,47 @@
 .provider-accent-swatch.is-active {
   border-color: var(--foreground);
   box-shadow: 0 0 0 1px var(--background);
+}
+
+.capability-matrix {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--muted);
+}
+
+.capability-matrix-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 450;
+  border-top: 1px solid var(--border);
+}
+
+.capability-matrix-row:first-child {
+  border-top: 0;
+}
+
+.capability-matrix-label {
+  color: var(--foreground);
+}
+
+.capability-matrix-value {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.capability-matrix-value.is-on {
+  color: var(--foreground);
 }
 
 .provider-row-main {
@@ -471,10 +511,8 @@
   padding: 4px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--popover, var(--card)) 92%, transparent);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: var(--menu-surface);
+  box-shadow: var(--shadow-menu);
 }
 .sidebar-rail .icon-btn {
   color: var(--muted-foreground);

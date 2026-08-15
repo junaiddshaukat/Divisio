@@ -58,6 +58,7 @@ function ago(iso: string): string {
 
 function StatusDot({ status }: { status: ThreadView["status"] }) {
   const s = statusOf(status);
+  if (s.priority < 2) return null;
   return (
     <span
       className={`status-dot dot-${s.tone}${s.pulse ? " is-pulsing" : ""}`}
@@ -310,10 +311,7 @@ export function Sidebar({
               </div>
 
               {!isCollapsed &&
-                (owned.length === 0 ? (
-                  <p className="project-empty-chats">No chats</p>
-                ) : (
-                  owned.map((thread) => {
+                owned.map((thread) => {
                     const lane = thread.laneId ? laneById.get(thread.laneId) : null;
                     if (renamingId === thread.id) {
                       return (
@@ -369,8 +367,7 @@ export function Sidebar({
                         <time className="thread-time">{ago(thread.updatedAt)}</time>
                       </button>
                     );
-                  })
-                ))}
+                  })}
             </section>
           );
         })}

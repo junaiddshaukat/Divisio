@@ -1,15 +1,16 @@
 # Materials
 
-How surfaces relate to the window. Competitors in this category split **window vibrancy** from **solid chrome**; Divisio does the same.
+How surfaces relate to the window. Desktop workspaces in this category split **window vibrancy** from **solid chrome**; Divisio does the same.
 
 ## Rule
 
 | Layer | Treatment | Why |
 | --- | --- | --- |
-| **Window / shell** | Native under-window vibrancy (desktop) + translucent sidebar/main tint | Wallpaper color bleeds; the app feels like macOS chrome |
+| **Window** | Native under-window vibrancy (desktop) around chrome | Wallpaper may tint the rail; the app still feels like macOS chrome |
+| **Main canvas / `.main`** | **Opaque** `--background` | Wallpaper must not wash the work surface |
+| **Sidebar** | Sunken vs canvas (`#111` dark / zinc-100 light). Slight translucency on desktop only — **no** stacked CSS blur | Elevation from luminosity, not frost |
 | **Composer (prompt box)** | **Solid** fill (`--composer-surface`), hairline border, **no** `backdrop-filter` | Reads as a real input, not a smear over the hero |
-| **Menus / pickers / dialogs** | **Solid** fill (`--menu-surface`), hairline border, soft shadow, **no** glass | Opaque so transcript/hero never bleed through labels |
-| **Floating toasts / palette** | Solid or near-solid popover | Same as menus |
+| **Menus / pickers / dialogs / palette** | **Solid** `--menu-surface`, hairline, `--shadow-menu` (shadow + 1px foreground ring), **no** glass | Opaque so transcript never bleeds through labels |
 
 Glass is **only** for the window. Do not frost the composer or the model picker.
 
@@ -23,6 +24,7 @@ Glass is **only** for the window. Do not frost the composer or the model picker.
 | `--menu-border` | `#333333` | black @ 12% | Menu edge |
 | `--menu-row-hover` | `#2a2a2a` | black @ 5% | Row hover |
 | `--menu-row-active` | `#2d2d2d` | black @ 7% | Selected / active row |
+| `--shadow-menu` | `--shadow-md` + 1px fg ring | same | Floating chrome edge |
 
 ## Geometry (aligned with category norms)
 

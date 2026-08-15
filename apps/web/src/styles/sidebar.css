@@ -1,6 +1,6 @@
 /*
- * Sidebar: brand + minimal top actions, New chat nav, folder projects,
- * single-line chats with relative time. Frosted against the ambient wash.
+ * Sidebar: brand + nav + project tree. Sunken against the opaque canvas.
+ * Window vibrancy may tint the rail; CSS blur is not stacked on top.
  */
 
 .sidebar {
@@ -10,20 +10,10 @@
   flex-direction: column;
   min-width: 0;
   position: relative;
-  -webkit-backdrop-filter: blur(40px) saturate(1.4);
-  backdrop-filter: blur(40px) saturate(1.4);
-}
-
-/* Light mode: solid zinc well — blur only on desktop dark vibrancy. */
-html:not(.dark) .sidebar {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
 }
 
 html.desktop-vibrancy:not(.dark) .sidebar {
-  background: rgba(244, 244, 245, 0.94);
-  -webkit-backdrop-filter: blur(20px) saturate(1.1);
-  backdrop-filter: blur(20px) saturate(1.1);
+  background: var(--sidebar);
 }
 
 /* Overlay titlebar: traffic lights sit over the sidebar — leave room + drag. */
@@ -55,11 +45,11 @@ html.desktop-vibrancy .sidebar-head {
   background: transparent;
   color: var(--foreground);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--text-lead);
   font-weight: 650;
   letter-spacing: -0.02em;
   padding: 4px 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   min-width: 0;
 }
@@ -74,7 +64,7 @@ html.desktop-vibrancy .sidebar-head {
 .sidebar-brand-chevron {
   width: 14px;
   height: 14px;
-  opacity: 0.55;
+  opacity: var(--icon-rest);
   flex-shrink: 0;
 }
 
@@ -86,7 +76,7 @@ html.desktop-vibrancy .sidebar-head {
   flex-shrink: 0;
 }
 .sidebar-brand-actions .icon-btn {
-  color: var(--muted-foreground);
+  color: var(--foreground-subtle);
 }
 .sidebar-brand-actions .icon-btn:hover {
   color: var(--foreground);
@@ -101,10 +91,11 @@ html.desktop-vibrancy .sidebar-head {
   margin: 0;
   padding: 4px;
   list-style: none;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--popover, var(--card));
-  box-shadow: var(--composer-shadow, 0 8px 24px rgba(0, 0, 0, 0.35));
+  border-radius: 12px;
+  border: 1px solid var(--menu-border);
+  background: var(--menu-surface);
+  box-shadow: var(--shadow-menu);
+  transform-origin: top left;
 }
 .sidebar-brand-menu button {
   width: 100%;
@@ -136,10 +127,10 @@ html.desktop-vibrancy .sidebar-head {
   margin: 0;
   padding: 4px;
   list-style: none;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--popover, var(--card));
-  box-shadow: var(--composer-shadow, 0 8px 24px rgba(0, 0, 0, 0.35));
+  border-radius: 12px;
+  border: 1px solid var(--menu-border);
+  background: var(--menu-surface);
+  box-shadow: var(--shadow-menu);
 }
 .thread-context-menu button {
   width: 100%;
@@ -221,7 +212,7 @@ html.desktop-vibrancy .sidebar-head {
   flex: 1;
 }
 .sidebar-section-head .icon-btn {
-  opacity: 0.55;
+  opacity: var(--icon-rest);
 }
 .sidebar-section-head:hover .icon-btn,
 .sidebar-section-head .icon-btn:focus-visible {
@@ -232,7 +223,7 @@ html.desktop-vibrancy .sidebar-head {
   padding: var(--space-2) var(--space-4);
   font-size: var(--text-meta);
   font-weight: var(--weight-medium);
-  color: var(--muted-foreground);
+  color: var(--foreground-subtle);
   letter-spacing: 0.01em;
 }
 
@@ -240,13 +231,6 @@ html.desktop-vibrancy .sidebar-head {
   margin: var(--space-3) var(--space-4);
   font-size: var(--text-meta);
   line-height: var(--leading-normal);
-  color: var(--muted-foreground);
-}
-
-.project-empty-chats {
-  margin: 0;
-  padding: 4px 10px 6px calc(var(--space-4) + 18px);
-  font-size: 12px;
   color: var(--muted-foreground);
 }
 
@@ -294,17 +278,20 @@ html.desktop-vibrancy .sidebar-head {
 }
 
 .nav-row {
-  height: 32px;
-  padding: 0 var(--space-4);
+  height: var(--row-height);
+  padding: 0 var(--inset-row);
   font-size: var(--text-ui);
   font-weight: var(--weight-medium);
-  color: var(--muted-foreground);
-}
-.nav-row:hover { background: var(--sidebar-row-hover); color: var(--foreground); }
-.nav-row[aria-current="true"] {
-  background: var(--sidebar-row-selected);
   color: var(--foreground);
 }
+.nav-row:hover { background: var(--sidebar-row-hover); }
+.nav-row[aria-current="true"] {
+  background: var(--sidebar-row-selected);
+}
+.nav-row svg { color: currentColor; opacity: var(--icon-rest); }
+.nav-row:hover svg,
+.nav-row[aria-current="true"] svg,
+.nav-row-primary svg { opacity: 1; }
 .nav-label { flex: 1; }
 .nav-kbd {
   font-family: var(--font-mono);
@@ -320,7 +307,7 @@ html.desktop-vibrancy .sidebar-head {
 .nav-count {
   font-size: var(--text-micro);
   font-weight: var(--weight-medium);
-  color: var(--muted-foreground);
+  color: var(--foreground-subtle);
   min-width: 14px;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -336,14 +323,15 @@ html.desktop-vibrancy .sidebar-head {
 }
 
 .project-head {
-  height: 30px;
-  padding: 0 var(--space-4);
-  font-size: var(--text-ui);
+  height: var(--row-height);
+  padding: 0 var(--inset-row);
+  font-size: var(--text-meta);
   font-weight: var(--weight-medium);
-  color: var(--foreground);
+  color: var(--muted-foreground);
 }
-.project-head:hover { background: var(--sidebar-row-hover); }
-.project-head svg { color: var(--muted-foreground); flex-shrink: 0; }
+.project-head:hover { background: var(--sidebar-row-hover); color: var(--foreground); }
+.project-head svg { color: var(--foreground-subtle); flex-shrink: 0; }
+.project-head:hover svg { color: var(--muted-foreground); }
 .project-name {
   flex: 1;
   overflow: hidden;
@@ -354,8 +342,8 @@ html.desktop-vibrancy .sidebar-head {
 /* ------------------------------- thread row ------------------------------- */
 
 .thread-row {
-  height: 30px;
-  padding: 0 10px 0 calc(var(--space-4) + 18px);
+  height: var(--row-height);
+  padding: 0 var(--inset-row) 0 calc(var(--space-4) + 18px);
   gap: 8px;
   align-items: center;
 }
@@ -386,10 +374,9 @@ html.desktop-vibrancy .sidebar-head {
 
 .thread-time {
   font-size: var(--text-micro);
-  color: var(--muted-foreground);
+  color: var(--foreground-subtle);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
-  opacity: 0.85;
   line-height: 1;
 }
 
@@ -417,7 +404,7 @@ html.desktop-vibrancy .sidebar-head {
 }
 .sidebar-foot-settings {
   margin-left: auto;
-  color: var(--muted-foreground);
+  color: var(--foreground-subtle);
 }
 .sidebar-foot-settings:hover {
   color: var(--foreground);
@@ -427,34 +414,29 @@ html.desktop-vibrancy .sidebar-head {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 550;
-  color: var(--muted-foreground);
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--muted) 80%, transparent);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
+  color: var(--foreground-subtle);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
 }
 .sidebar-foot-status .status-dot { margin: 0; width: 6px; height: 6px; }
 .sidebar-foot-status.is-online {
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 35%, transparent);
-  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--foreground-subtle);
 }
-/* Connecting and offline were set in the markup but had no rules, so both fell
-   back to the neutral pill and looked identical to a healthy daemon. */
+.sidebar-foot-status.is-online .status-dot {
+  background: var(--success);
+}
 .sidebar-foot-status.is-busy {
-  color: var(--info);
-  border-color: color-mix(in srgb, var(--info) 35%, transparent);
-  background: color-mix(in srgb, var(--info) 12%, transparent);
+  color: var(--muted-foreground);
 }
 .sidebar-foot-status.is-offline {
   color: var(--destructive-foreground);
-  border-color: color-mix(in srgb, var(--destructive) 35%, transparent);
-  background: color-mix(in srgb, var(--destructive) 10%, transparent);
 }
 
-/* Native vibrancy already blurs the wallpaper — skip stacked CSS blur on chrome. */
+/* Native vibrancy already blurs the wallpaper — never stack CSS blur on chrome. */
 html.desktop-vibrancy .sidebar,
 html.desktop-vibrancy .topbar,
 html.desktop-vibrancy .right-panel,

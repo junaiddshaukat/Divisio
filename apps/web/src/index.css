@@ -359,12 +359,11 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
   flex-direction: column;
   gap: 2px;
   padding: 6px;
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--composer-shadow);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+  background: var(--menu-surface);
+  border: 1px solid var(--menu-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-menu);
+  transform-origin: top right;
 }
 .open-in-row {
   display: flex;
@@ -543,6 +542,18 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
   color: var(--muted-foreground);
 }
 
+.empty.landing {
+  justify-content: stretch;
+  padding: 0;
+  gap: 0;
+}
+.empty.landing .draft-stack {
+  width: 100%;
+}
+.topbar-landing {
+  border-bottom-color: transparent;
+}
+
 /* Empty draft: pull composer up into the hero stack. */
 .thread-column:has(.draft-hero) .composer-wrap {
   padding-top: 12px;
@@ -574,9 +585,7 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background: rgba(255, 255, 255, 0.04);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: var(--muted);
 }
 .branch-pill.mono {
   font-family: var(--font-mono);
@@ -587,19 +596,18 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
   background: color-mix(in srgb, var(--warning) 10%, transparent);
 }
 
-/* Hero empty state: keep draft spacing here; glass lives in composer.css. */
+/* Hero empty state: draft spacing; the prompt itself is solid in composer.css. */
 .composer-wrap.composer-hero {
   padding-bottom: 28px;
 }
 .composer-hero .composer textarea {
   min-height: 72px;
-  font-size: 15px;
+  font-size: var(--text-lead);
   line-height: 22px;
 }
 
 /* ------------------------------ composer ---------------------------------
- * Base glass styles live in styles/composer.css. Do not re-assert opaque
- * backgrounds here or the frosted look collapses back to a flat slab.
+ * Composer chrome lives in styles/composer.css (solid surface, no frost).
  */
 
 .pill {
@@ -720,14 +728,6 @@ button.icon:hover {
   color: var(--foreground);
 }
 
-/* Press feedback only on pointer input — never on keyboard-critical paths. */
-@media (hover: hover) {
-  button.btn:active {
-    transform: scale(0.97);
-    transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
-}
-
 .banner {
   max-width: 720px;
   margin: 0 auto 12px;
@@ -747,17 +747,16 @@ button.icon:hover {
   padding: 24px;
 }
 .dialog {
-  background: var(--popover);
-  border: 1px solid var(--border);
+  background: var(--menu-surface);
+  border: 1px solid var(--menu-border);
   border-radius: var(--radius-xl);
   padding: 16px;
   width: min(420px, 100%);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: var(--composer-shadow);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  box-shadow: var(--shadow-menu);
+  transform-origin: center;
 }
 .dialog h2 {
   margin: 0;
@@ -1218,10 +1217,11 @@ button.btn.secondary {
   flex-direction: column;
   gap: 4px;
   padding: 10px;
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  background: var(--menu-surface);
+  border: 1px solid var(--menu-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-menu);
+  transform-origin: top right;
 }
 .handoff-menu-copy {
   display: flex;
@@ -1308,16 +1308,8 @@ button.btn.secondary {
   height: 100%;
   overflow: hidden;
   border-left: 1px solid var(--border);
-  background: color-mix(in srgb, var(--background) 42%, transparent);
-  -webkit-backdrop-filter: blur(28px) saturate(1.3);
-  backdrop-filter: blur(28px) saturate(1.3);
+  background: var(--background);
   max-width: 100%;
-}
-html.desktop-vibrancy .right-panel {
-  background: rgba(0, 0, 0, 0.18);
-}
-html.desktop-vibrancy:not(.dark) .right-panel {
-  background: rgba(255, 255, 255, 0.94);
 }
 .right-panel > .panel-resize {
   position: absolute;
@@ -1820,14 +1812,11 @@ html.dark .diff-line.del {
   font: inherit;
   min-height: 108px;
   box-shadow: var(--shadow-sm);
-  -webkit-backdrop-filter: blur(18px) saturate(1.25);
-  backdrop-filter: blur(18px) saturate(1.25);
-  transition: border-color var(--duration-instant) linear, background var(--duration-instant) linear, transform var(--duration-instant) var(--ease-out);
+  transition: border-color var(--duration-instant) linear, background-color var(--duration-instant) linear;
 }
 .surface-tile:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--ring) 45%, var(--border));
   background: color-mix(in srgb, white 8%, var(--composer-surface));
-  transform: translateY(-1px);
 }
 .surface-tile:disabled {
   opacity: 0.45;
@@ -1882,10 +1871,11 @@ html.dark .diff-line.del {
   display: flex;
   flex-direction: column;
   padding: 4px;
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  background: var(--menu-surface);
+  border: 1px solid var(--menu-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-menu);
+  transform-origin: top right;
 }
 .git-menu-panel button {
   text-align: left;
@@ -2338,18 +2328,10 @@ html.dark .diff-line.del {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--border);
-  background: color-mix(in srgb, var(--background) 48%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(1.2);
-  backdrop-filter: blur(24px) saturate(1.2);
+  background: var(--background);
   min-height: 0;
   max-height: 40vh;
   overflow: hidden;
-}
-html.desktop-vibrancy .terminal-dock {
-  background: rgba(0, 0, 0, 0.22);
-}
-html.desktop-vibrancy:not(.dark) .terminal-dock {
-  background: rgba(255, 255, 255, 0.94);
 }
 .terminal-resize {
   position: absolute;

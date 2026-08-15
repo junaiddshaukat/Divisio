@@ -13,7 +13,15 @@ Optimize for **native desktop readability**: system UI for chrome and chat, a de
 
 **MVP decision:** ship **system UI + JetBrains Mono**. Bundle the mono locally; keep sans on the system stack to save bundle size and feel native on each OS. No Inter/Roboto as a brand face.
 
-**Tracking:** `letter-spacing: normal` on UI. Do not squeeze system faces; they are already tuned.
+**Tracking:** `letter-spacing: normal` on UI. Display headlines may use `--tracking-display: -0.02em` — only at 28px and up. Do not squeeze 13px chrome.
+
+Three colour levels, not one gray:
+
+| Token | Role |
+| --- | --- |
+| `--foreground` | Primary copy, nav, thread titles |
+| `--muted-foreground` | Placeholders, section labels, project names |
+| `--foreground-subtle` | Timestamps, resting icons, connection meta |
 
 ## Type scale
 

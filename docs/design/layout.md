@@ -52,7 +52,7 @@ Apply scale to sidebar row padding, composer padding, chat gutters — not font 
 
 ## Empty states
 
-**Center (no messages):** large `display` question centered above a **large composer**. Not a marketing card stack.
+**No thread selected** and **empty draft thread** share one composition: large `display` question (“What should we build?”) above a large composer (or a composer-shaped control that starts a chat). Not a muted title and a distant button. No ghost “No thread selected” header.
 
 **Right (no surface):** titled “Open a surface” + 2×2 tiles — Browser, Terminal, Files, Diff (Diff disabled until changes exist).
 

@@ -7,10 +7,10 @@ Specs for the UI pieces that carry the workspace. Implement against [tokens](tok
 | Element | Spec |
 | --- | --- |
 | Search | Full-width control on `--sidebar-control-surface`; shortcut hint `⌘K` in `--muted-foreground` |
-| Nav rows | New chat, optional Automations/PRs — icon + label, `ui` size |
-| Project folder | Folder icon + name; chevron; threads nested with indent |
-| Thread row | Title ellipsis + relative time (`4m`, `1d`); selected = `--sidebar-row-selected` rounded pill (~8–10px) |
-| Footer | Settings gear; optional account row — keep quiet for OSS MVP |
+| Nav rows | New chat, Board, Providers — icon + label, `ui` size, `--foreground`. Resting icons at `--icon-rest` (0.72) |
+| Project folder | Folder icon + name at `meta` / muted; threads nested with indent |
+| Thread row | 32px, 8px radius. Title at `ui` / regular; relative time at `micro` / `--foreground-subtle`. Selected = `--sidebar-row-selected` (stronger ΔL than hover). Status dots only when the thread needs attention or is in motion |
+| Footer | Quiet connection meta + settings gear. Online is a 6px dot, not a green pill |
 
 ## Center header
 

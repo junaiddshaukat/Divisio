@@ -4,6 +4,7 @@ import { PermissionModeSelect } from "./ApprovalBar.tsx";
 import { AgentPicker } from "./AgentPicker.tsx";
 import { Button, IconButton } from "./ui/Button.tsx";
 import { AttachIcon, CloseIcon, SendIcon, StopIcon } from "./ui/icons.ts";
+import { capabilityOn, vendorResumeNote } from "../capabilityFlags.ts";
 
 export interface ComposerImage {
   id: string;
@@ -21,6 +22,8 @@ interface Props {
   catalogs?: Record<string, ModelCatalog>;
   permissionMode: PermissionMode;
   hasHistory: boolean;
+  /** Vendor-native session id last persisted for this thread, if any. */
+  vendorSessionId?: string | null;
   /** Larger textarea + draft placeholder for an empty draft thread. */
   hero?: boolean;
   onSend(
@@ -70,6 +73,7 @@ export function Composer({
   catalogs,
   permissionMode,
   hasHistory,
+  vendorSessionId = null,
   hero,
   onSend,
   onInterrupt,
@@ -97,6 +101,11 @@ export function Composer({
   }, []);
 
   const canSend = (!!text.trim() || images.length > 0) && !busy;
+  const resumeNote = vendorResumeNote({
+    hasHistory,
+    sessionResume: capabilityOn(providers.find((p) => p.kind === provider)?.capabilities, "sessionResume"),
+    hasVendorSession: !!vendorSessionId,
+  });
 
   const addFiles = async (files: FileList | File[]) => {
     const list = Array.from(files);
@@ -233,6 +242,7 @@ export function Composer({
           )}
         </div>
       </div>
+      {resumeNote && <p className="composer-resume-note">{resumeNote}</p>}
     </div>
   );
 }
