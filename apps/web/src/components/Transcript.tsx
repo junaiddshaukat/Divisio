@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import type { DiffFileEntry } from "@divisio/contracts";
 import { useSmoothReveal } from "../hooks/useSmoothReveal.ts";
 import { Markdown } from "./Markdown.tsx";
+import { ThinkingStatus } from "./ThinkingStatus.tsx";
+import { IconButton } from "./ui/Button.tsx";
+import { CheckIcon, CopyIcon } from "./ui/icons.ts";
 import { WorkEntries, type WorkEntry } from "./WorkEntries.tsx";
 
 export interface Bubble {
@@ -53,9 +56,8 @@ export function Transcript({
           if (b.kind === "work") return <WorkEntries key={b.key} entries={b.work ?? []} />;
           if (b.kind === "thinking") {
             return (
-              <div key={b.key} className="msg-thinking" role="status" aria-live="polite">
-                <span className="msg-thinking-dot" aria-hidden />
-                {b.text || "Thinking…"}
+              <div key={b.key} className="msg-thinking">
+                <ThinkingStatus locked={b.text.startsWith("Handing") ? "Handing off" : null} />
               </div>
             );
           }
@@ -91,25 +93,25 @@ function AssistantMessage({
   const [copied, setCopied] = useState(false);
   return (
     <div className="msg-assistant-block">
-      <div className="msg-assistant-toolbar">
-        <button
-          type="button"
-          className="msg-copy"
+      <div className="msg-assistant">
+        <Markdown source={text} />
+        {changedFiles && changedFiles.length > 0 && turnId && onOpenChanges && (
+          <ChangedFilesChip turnId={turnId} files={changedFiles} onOpen={onOpenChanges} />
+        )}
+      </div>
+      <div className="msg-assistant-meta">
+        <IconButton
+          label={copied ? "Copied" : "Copy response"}
+          icon={copied ? <CheckIcon /> : <CopyIcon />}
+          size="sm"
+          className="msg-copy-icon"
           onClick={() => {
             void navigator.clipboard.writeText(text).then(() => {
               setCopied(true);
               window.setTimeout(() => setCopied(false), 1200);
             });
           }}
-        >
-          {copied ? "Copied" : "Copy"}
-        </button>
-      </div>
-      <div className="msg-assistant">
-        <Markdown source={text} />
-        {changedFiles && changedFiles.length > 0 && turnId && onOpenChanges && (
-          <ChangedFilesChip turnId={turnId} files={changedFiles} onOpen={onOpenChanges} />
-        )}
+        />
       </div>
     </div>
   );

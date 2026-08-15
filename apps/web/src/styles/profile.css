@@ -12,26 +12,68 @@
   align-items: center;
   gap: 14px;
   min-width: 0;
+  padding-bottom: 4px;
 }
-.profile-identity > .btn {
+
+.profile-identity-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 
-.profile-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+.profile-avatar,
+.profile-edit-avatar {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  overflow: hidden;
+  font: inherit;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: 0.02em;
   color: var(--foreground);
-  background: color-mix(in srgb, var(--ring) 18%, var(--card, #1a1a1a));
-  border: 1px solid color-mix(in srgb, var(--ring) 28%, var(--border));
+  background: color-mix(in srgb, var(--foreground) 8%, var(--card));
+  border: 1px solid var(--border);
   flex-shrink: 0;
+  cursor: pointer;
+}
+.profile-edit-avatar {
+  width: 72px;
+  height: 72px;
+  font-size: 20px;
+}
+.profile-avatar img,
+.profile-edit-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-avatar-edit {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--background) 58%, transparent);
+  color: var(--foreground);
+  opacity: 0;
+  transition: opacity var(--duration-instant) linear;
+}
+.profile-avatar:hover .profile-avatar-edit,
+.profile-avatar:focus-visible .profile-avatar-edit,
+.profile-edit-avatar:hover .profile-avatar-edit,
+.profile-edit-avatar:focus-visible .profile-avatar-edit {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-avatar-edit { transition: none; }
 }
 
 .profile-identity-copy {
@@ -43,36 +85,33 @@
 }
 
 .profile-name {
-  border: 0;
-  background: transparent;
+  margin: 0;
   color: var(--foreground);
-  font: inherit;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 650;
   letter-spacing: -0.02em;
-  text-align: left;
-  padding: 0;
-  cursor: text;
+  line-height: 1.2;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.profile-name:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.profile-name-input {
-  max-width: 280px;
-  font-size: 16px;
-  font-weight: 600;
-}
-
 .profile-identity-meta {
   font-size: 12.5px;
   color: var(--muted-foreground);
+}
+
+.profile-edit-photo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.profile-edit-photo-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 .profile-block {
@@ -376,11 +415,17 @@ html:not(.dark) .profile-summary > div {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 650;
   color: #1d4ed8;
   background: #dbeafe;
   flex-shrink: 0;
+}
+.share-card-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .share-card-name {

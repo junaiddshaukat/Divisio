@@ -396,19 +396,17 @@ export function Sidebar({
           }
           onClick={() => (onConnection ?? onSettings)()}
         >
-          <span
-            className={`status-dot dot-${state === "open" ? "ready" : state === "connecting" ? "busy" : "error"}${state === "connecting" ? " is-pulsing" : ""}`}
-            aria-hidden
-          />
+          <span className="sidebar-foot-lead" aria-hidden>
+            <span
+              className={`status-dot dot-${state === "open" ? "ready" : state === "connecting" ? "busy" : "error"}${state === "connecting" ? " is-pulsing" : ""}`}
+            />
+          </span>
           {state === "open" ? "Connected" : state === "connecting" ? "Connecting" : "Disconnected"}
         </button>
-        <IconButton
-          label="Settings"
-          icon={<SettingsIcon />}
-          size="sm"
-          className="sidebar-foot-settings"
-          onClick={onSettings}
-        />
+        <button type="button" className="sidebar-foot-settings" onClick={onSettings}>
+          <SettingsIcon />
+          <span className="nav-label">Settings</span>
+        </button>
       </footer>
 
       {onResizeWidth && (

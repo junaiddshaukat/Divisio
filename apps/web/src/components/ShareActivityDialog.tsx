@@ -12,6 +12,7 @@ import { CloseIcon, SaveIcon } from "./ui/icons.ts";
 
 interface Props {
   name: string;
+  avatar?: string | null;
   stats: ActivityStats;
   onClose(): void;
 }
@@ -97,7 +98,7 @@ function RedditMark() {
 /**
  * Share your activity — light card preview + export / social intents.
  */
-export function ShareActivityDialog({ name, stats, onClose }: Props) {
+export function ShareActivityDialog({ name, avatar, stats, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,8 +109,9 @@ export function ShareActivityDialog({ name, stats, onClose }: Props) {
       days: stats.days,
       totals: stats.totals,
       peakDayTurns: peakDayTurns(stats.days),
+      avatar,
     }),
-    [name, stats],
+    [name, avatar, stats],
   );
 
   const caption = shareCaption(data);
@@ -172,7 +174,7 @@ export function ShareActivityDialog({ name, stats, onClose }: Props) {
           <div className="share-card-top">
             <div className="share-card-identity">
               <div className="share-card-avatar" aria-hidden>
-                {initials(name)}
+                {avatar ? <img src={avatar} alt="" /> : initials(name)}
               </div>
               <div>
                 <div className="share-card-name">{name}</div>

@@ -6,6 +6,8 @@ export interface ShareCardData {
   days: ActivityDay[];
   totals: ActivityTotals;
   peakDayTurns: number;
+  /** Local data URL, when the person set a photo. */
+  avatar?: string | null;
 }
 
 function levelFor(turns: number): number {
@@ -23,6 +25,34 @@ function initials(name: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
   return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase();
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("could not load avatar"));
+    img.src = src;
+  });
+}
+
+function drawCoverCircle(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  size: number,
+) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  const scale = Math.max(size / img.width, size / img.height);
+  const w = img.width * scale;
+  const h = img.height * scale;
+  ctx.drawImage(img, x + (size - w) / 2, y + (size - h) / 2, w, h);
+  ctx.restore();
 }
 
 function roundRect(
@@ -47,7 +77,7 @@ function roundRect(
  * Paint a light share card (avatar, heatmap, streak stats) to a canvas PNG.
  * No token counts — Divisio does not persist spend yet.
  */
-export function renderShareCardPng(data: ShareCardData): Promise<Blob> {
+export async function renderShareCardPng(data: ShareCardData): Promise<Blob> {
   const W = 720;
   const H = 420;
   const canvas = document.createElement("canvas");
@@ -71,14 +101,30 @@ export function renderShareCardPng(data: ShareCardData): Promise<Blob> {
 
   // Avatar
   const av = 44;
-  ctx.fillStyle = "#dbeafe";
-  roundRect(ctx, padX, y, av, av, 22);
-  ctx.fill();
-  ctx.fillStyle = "#1d4ed8";
-  ctx.font = "650 15px ui-sans-serif, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(initials(data.name), padX + av / 2, y + av / 2 + 1);
+  if (data.avatar) {
+    try {
+      const photo = await loadImage(data.avatar);
+      drawCoverCircle(ctx, photo, padX, y, av);
+    } catch {
+      ctx.fillStyle = "#dbeafe";
+      roundRect(ctx, padX, y, av, av, 22);
+      ctx.fill();
+      ctx.fillStyle = "#1d4ed8";
+      ctx.font = "650 15px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(initials(data.name), padX + av / 2, y + av / 2 + 1);
+    }
+  } else {
+    ctx.fillStyle = "#dbeafe";
+    roundRect(ctx, padX, y, av, av, 22);
+    ctx.fill();
+    ctx.fillStyle = "#1d4ed8";
+    ctx.font = "650 15px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(initials(data.name), padX + av / 2, y + av / 2 + 1);
+  }
 
   // Name + handle
   ctx.textAlign = "left";

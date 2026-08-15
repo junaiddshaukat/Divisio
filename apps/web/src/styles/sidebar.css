@@ -403,40 +403,48 @@ html.desktop-vibrancy .sidebar-head {
 
 .sidebar-foot {
   border-top: 1px solid var(--border);
-  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  padding: var(--space-3);
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
   flex-shrink: 0;
-}
-.sidebar-foot-settings {
-  margin-left: auto;
-  color: var(--foreground-subtle);
-}
-.sidebar-foot-settings:hover {
-  color: var(--foreground);
 }
 .sidebar-foot-status {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 24px;
+  padding: var(--space-2) var(--inset-row);
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-md);
   font: inherit;
   font-size: var(--text-meta);
   font-weight: var(--weight-medium);
   color: var(--foreground-subtle);
-  padding: 4px 6px;
-  margin: -4px -6px;
-  border: 0;
-  background: transparent;
-  border-radius: 6px;
+  text-align: left;
   cursor: pointer;
 }
 .sidebar-foot-status:hover {
   color: var(--foreground);
   background: var(--sidebar-row-hover);
 }
-.sidebar-foot-status .status-dot { margin: 0; width: 6px; height: 6px; }
+.sidebar-foot-lead {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sidebar-foot-status .status-dot {
+  width: 6px;
+  height: 6px;
+  margin: 0;
+  flex-shrink: 0;
+}
 .sidebar-foot-status.is-online {
   color: var(--foreground-subtle);
 }
@@ -448,6 +456,46 @@ html.desktop-vibrancy .sidebar-head {
 }
 .sidebar-foot-status.is-offline {
   color: var(--destructive-foreground);
+}
+.sidebar-foot-settings {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: var(--row-height);
+  margin: 0;
+  padding: 0 var(--inset-row);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--text-ui);
+  font-weight: var(--weight-medium);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-instant) linear,
+    color var(--duration-instant) linear,
+    transform 160ms var(--ease-out);
+}
+.sidebar-foot-settings:hover,
+.sidebar-foot-settings:focus-visible {
+  background: var(--sidebar-row-hover);
+  color: var(--foreground);
+}
+.sidebar-foot-settings svg {
+  opacity: var(--icon-rest);
+  color: currentColor;
+}
+.sidebar-foot-settings:hover svg,
+.sidebar-foot-settings:focus-visible svg {
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-foot-settings:active {
+    transform: scale(0.97);
+  }
 }
 
 /* Native vibrancy already blurs the wallpaper — never stack CSS blur on chrome. */

@@ -1,24 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityStats, ProviderView } from "@divisio/contracts";
+import {
+  clearAvatar,
+  encodeAvatarFile,
+  initials,
+  loadAvatar,
+  loadDisplayName,
+  saveAvatar,
+  saveDisplayName,
+} from "../../profileIdentity.ts";
 import { ProviderMark } from "../ProviderMark.tsx";
 import { ActivityHeatmap } from "./ActivityHeatmap.tsx";
 import { ShareActivityDialog } from "../ShareActivityDialog.tsx";
 import { Button } from "../ui/Button.tsx";
-
-const NAME_KEY = "divisio:profile-name";
-
-function loadDisplayName(): string {
-  const saved = localStorage.getItem(NAME_KEY)?.trim();
-  if (saved) return saved;
-  return "Local";
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase();
-}
+import { CameraIcon, CloseIcon, EditIcon } from "../ui/icons.ts";
 
 interface Props {
   load(): Promise<ActivityStats>;
@@ -28,6 +23,7 @@ interface Props {
 /** Settings → Profile: local activity heatmap, streaks, share card. */
 export function ProfileSettings({ load, providers }: Props) {
   const [name, setName] = useState(loadDisplayName);
+  const [avatar, setAvatar] = useState<string | null>(loadAvatar);
   const [editing, setEditing] = useState(false);
   const [stats, setStats] = useState<ActivityStats | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,13 +51,6 @@ export function ProfileSettings({ load, providers }: Props) {
     };
   }, [load]);
 
-  const commitName = (next: string) => {
-    const trimmed = next.trim() || "Local";
-    localStorage.setItem(NAME_KEY, trimmed);
-    setName(trimmed);
-    setEditing(false);
-  };
-
   const labelFor = (kind: string) =>
     providers.find((p) => p.kind === kind)?.label ?? kind;
 
@@ -70,37 +59,43 @@ export function ProfileSettings({ load, providers }: Props) {
     [stats],
   );
 
+  const weekTurns = useMemo(
+    () => (stats ? stats.days.slice(-7).reduce((sum, day) => sum + day.turns, 0) : 0),
+    [stats],
+  );
+
   return (
     <div className="settings-section profile-section">
       <div className="profile-identity">
-        <div className="profile-avatar" aria-hidden>
-          {initials(name)}
-        </div>
+        <button
+          type="button"
+          className="profile-avatar"
+          aria-label="Edit profile photo"
+          onClick={() => setEditing(true)}
+        >
+          {avatar ? <img src={avatar} alt="" /> : initials(name)}
+          <span className="profile-avatar-edit" aria-hidden>
+            <CameraIcon />
+          </span>
+        </button>
         <div className="profile-identity-copy">
-          {editing ? (
-            <input
-              className="field profile-name-input"
-              autoFocus
-              defaultValue={name}
-              aria-label="Display name"
-              onBlur={(e) => commitName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitName((e.target as HTMLInputElement).value);
-                if (e.key === "Escape") setEditing(false);
-              }}
-            />
-          ) : (
-            <button type="button" className="profile-name" onClick={() => setEditing(true)}>
-              {name}
-            </button>
-          )}
-          <span className="profile-identity-meta">On this machine · activity stays local</span>
+          <p className="profile-name">{name}</p>
+          <span className="profile-identity-meta">
+            {stats && !loading
+              ? `On this machine · ${weekTurns} turn${weekTurns === 1 ? "" : "s"} this week`
+              : "On this machine · activity stays local"}
+          </span>
         </div>
-        {stats && !loading && (
-          <Button variant="secondary" size="sm" onClick={() => setSharing(true)}>
-            Share activity
+        <div className="profile-identity-actions">
+          <Button variant="secondary" size="sm" icon={<EditIcon />} onClick={() => setEditing(true)}>
+            Edit
           </Button>
-        )}
+          {stats && !loading && (
+            <Button variant="secondary" size="sm" onClick={() => setSharing(true)}>
+              Share activity
+            </Button>
+          )}
+        </div>
       </div>
 
       {loading && <p className="settings-section-desc">Loading activity…</p>}
@@ -175,9 +170,163 @@ export function ProfileSettings({ load, providers }: Props) {
         </>
       )}
 
-      {sharing && stats && (
-        <ShareActivityDialog name={name} stats={stats} onClose={() => setSharing(false)} />
+      {editing && (
+        <EditProfileDialog
+          name={name}
+          avatar={avatar}
+          onSaved={(nextName, nextAvatar) => {
+            setName(nextName);
+            setAvatar(nextAvatar);
+            setEditing(false);
+          }}
+          onClose={() => setEditing(false)}
+        />
       )}
+
+      {sharing && stats && (
+        <ShareActivityDialog
+          name={name}
+          avatar={avatar}
+          stats={stats}
+          onClose={() => setSharing(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditProfileDialog({
+  name,
+  avatar,
+  onSaved,
+  onClose,
+}: {
+  name: string;
+  avatar: string | null;
+  onSaved(name: string, avatar: string | null): void;
+  onClose(): void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [draftName, setDraftName] = useState(name);
+  const [draftAvatar, setDraftAvatar] = useState<string | null>(avatar);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  const commit = () => {
+    try {
+      const saved = saveDisplayName(draftName);
+      if (draftAvatar) saveAvatar(draftAvatar);
+      else clearAvatar();
+      onSaved(saved, draftAvatar);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save profile.");
+    }
+  };
+
+  const pickFile = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setDraftAvatar(await encodeAvatarFile(file));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read that image.");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <div className="dialog-backdrop share-backdrop" onClick={onClose}>
+      <div
+        className="dialog form-dialog profile-edit-dialog"
+        role="dialog"
+        aria-label="Edit profile"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="form-dialog-head">
+          <h2>Edit profile</h2>
+          <button type="button" className="form-dialog-close" aria-label="Close" onClick={onClose}>
+            <CloseIcon />
+          </button>
+        </header>
+        <p className="form-dialog-lead">Name and photo stay on this machine.</p>
+
+        <div className="form-fields">
+          <div className="profile-edit-photo">
+            <button
+              type="button"
+              className="profile-edit-avatar"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+              aria-label="Choose a photo"
+            >
+              {draftAvatar ? <img src={draftAvatar} alt="" /> : initials(draftName)}
+              <span className="profile-avatar-edit" aria-hidden>
+                <CameraIcon />
+              </span>
+            </button>
+            <div className="profile-edit-photo-actions">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+              >
+                Change photo
+              </Button>
+              {draftAvatar && (
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDraftAvatar(null)}>
+                  Remove
+                </Button>
+              )}
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => void pickFile(e.target.files?.[0])}
+            />
+          </div>
+
+          <label className="form-field">
+            <span className="form-label">Display name</span>
+            <input
+              className="field"
+              value={draftName}
+              autoFocus
+              aria-label="Display name"
+              onChange={(e) => setDraftName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commit();
+              }}
+            />
+          </label>
+          {error && <p className="hint danger">{error}</p>}
+        </div>
+
+        <div className="actions">
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" size="sm" disabled={busy} onClick={commit}>
+            Save
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
