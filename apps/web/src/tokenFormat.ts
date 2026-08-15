@@ -41,3 +41,12 @@ export function formatDayShort(day: string): string {
   if (!year || !month || !dayOfMonth) return day;
   return `${MONTHS[month - 1] ?? ""} ${dayOfMonth}`;
 }
+
+/** Share of a total. Em dash when there is nothing to compare. */
+export function formatShare(part: number, total: number): string {
+  if (!Number.isFinite(part) || !Number.isFinite(total) || total <= 0 || part <= 0) return "—";
+  const pct = (part / total) * 100;
+  if (pct >= 99.95) return "100%";
+  if (pct < 0.1) return "<0.1%";
+  return `${pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)}%`;
+}

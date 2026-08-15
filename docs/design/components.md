@@ -10,7 +10,7 @@ Specs for the UI pieces that carry the workspace. Implement against [tokens](tok
 | Nav rows | New chat, Board, Providers — icon + label, `ui` size, `--foreground`. Resting icons at `--icon-rest` (0.72) |
 | Project folder | Folder icon + name at `meta` / muted; threads nested with indent |
 | Thread row | 32px, 8px radius. Title at `ui` / regular; relative time at `micro` / `--foreground-subtle`. Selected = `--sidebar-row-selected` (stronger ΔL than hover). Status dots only when the thread needs attention or is in motion |
-| Footer | Quiet daemon chip (`Connected` / `Connecting` / `Disconnected`) + settings gear. 6px dot, not a green pill. Chip opens General. |
+| Footer | Stacked: quiet daemon row (`Connected` / `Connecting` / `Disconnected`, 6px dot, not a green pill) then a Settings row (gear + label). Rest is muted like other nav; hover wash only. Status opens General. Settings opens Settings. |
 
 ## Center header
 
@@ -26,7 +26,8 @@ Specs for the UI pieces that carry the workspace. Implement against [tokens](tok
 | --- | --- |
 | User | Right-aligned or inset bubble `--user-bubble`, `--radius-user-message` |
 | Assistant | Flush left, no bubble |
-| Meta row | Hover-only copy / feedback; timestamp `meta` |
+| Wait | Cycling gerund + stepped ellipsis until the first token. Handoff stays on “Handing off”. Honor reduced motion. |
+| Meta row | Ghost copy icon under the reply, left-aligned. Resting `--foreground-subtle` |
 | Code fence | `--code-block` bg, mono, header with language + copy + expand |
 | Banner | Full-access / warning strip with `--warning` icon; dismiss + “Don’t show again” |
 
@@ -109,6 +110,18 @@ transport-only frame like assistant deltas — replaying a shell session from an
 append-only log is neither useful nor affordable — and is delivered only to the
 socket that opened it, since a shell is a live attachment rather than shared
 state.
+
+## Usage
+
+Settings → Usage is recorded tokens from `turn.usage`, never a bill or quota.
+
+| Element | Spec |
+| --- | --- |
+| Hero | Display-size reported total, metered / unmetered turns, peak day |
+| Range | Segmented 7d / 30d / 90d |
+| Chart | Full-width daily line + area, luminosity stroke, hover hairline + day tooltip. Linear between days — no smoothing that invents usage |
+| Metrics | Four tiles: input, output, cache read, cache write. Em dash when zero |
+| Agents | Table: name, share, tokens, turns. Unmetered-only rows have no share |
 
 ## Out of MVP chrome
 

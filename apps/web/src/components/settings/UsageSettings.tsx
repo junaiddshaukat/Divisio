@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ProviderView, UsageRangeDays, UsageStats } from "@divisio/contracts";
-import { capabilityOn } from "../../capabilityFlags.ts";
+import { compactModelLabel } from "../../providerModels.ts";
 import { formatDayShort, formatTokenCount, formatTokens } from "../../tokenFormat.ts";
 import { ProviderMark } from "../ProviderMark.tsx";
 
@@ -19,7 +19,11 @@ function looksLikeMissingCommand(message: string): boolean {
   return /unknown command/i.test(message);
 }
 
-/** Settings → Usage: log-derived token counts, never a guessed bill. */
+function sessionsLabel(n: number): string {
+  return n === 1 ? "1 session" : `${formatTokenCount(n)} sessions`;
+}
+
+/** Settings → Usage: CLI session files when present, otherwise the event log. */
 export function UsageSettings({ load, providers }: Props) {
   const [days, setDays] = useState<UsageRangeDays>(30);
   const [stats, setStats] = useState<UsageStats | null>(null);
@@ -54,20 +58,16 @@ export function UsageSettings({ load, providers }: Props) {
 
   const labelFor = (kind: string) => providers.find((p) => p.kind === kind)?.label ?? kind;
 
-  const reporting = providers.filter((p) => p.available && capabilityOn(p.capabilities, "usageSignals"));
-  const reportingLabel =
-    reporting.length === 0
-      ? "No installed agent reports tokens yet."
-      : reporting.length === 1
-        ? `${reporting[0]!.label} reports tokens.`
-        : `${reporting.map((p) => p.label).join(", ")} report tokens.`;
-
   const maxDay = useMemo(
     () => Math.max(1, ...(stats?.days.map((d) => d.tokens) ?? [1])),
     [stats],
   );
   const maxProvider = useMemo(
     () => Math.max(1, ...(stats?.providers.map((p) => p.tokens) ?? [1])),
+    [stats],
+  );
+  const maxModel = useMemo(
+    () => Math.max(1, ...(stats?.models.map((m) => m.tokens) ?? [1])),
     [stats],
   );
 
@@ -86,12 +86,17 @@ export function UsageSettings({ load, providers }: Props) {
   }, [stats]);
 
   const compositionTotal = composition.reduce((n, p) => n + p.value, 0);
+  const machine = stats?.coverage.source === "machine";
 
   return (
     <div className="settings-section usage-section">
       <p className="usage-note">
-        Counts come from turns Divisio recorded. {reportingLabel} Other agents show as unmetered.
-        This is not a bill and not a vendor quota.
+        {machine
+          ? "Processed tokens from Claude Code and Codex session files on this machine. Cache reads are included. This is not a bill and not a vendor quota."
+          : "No Claude or Codex session files found. Showing turns Divisio recorded. This is not a bill."}
+        {machine && stats.coverage.appMeteredTurns > 0
+          ? ` Divisio recorded ${formatTokens(stats.coverage.appTokens)} in this window.`
+          : ""}
       </p>
 
       <div className="usage-toolbar">
@@ -110,22 +115,24 @@ export function UsageSettings({ load, providers }: Props) {
         </div>
       </div>
 
-      {loading && !stats && <p className="settings-section-desc">Loading usage…</p>}
+      {loading && !stats && <p className="settings-section-desc">Reading CLI session files…</p>}
       {error && <p className="settings-inline-error">{error}</p>}
 
       {stats && (
         <>
-          <section className="usage-card" aria-label="Reported tokens">
+          <section className="usage-card" aria-label="Processed tokens">
             <div className="usage-hero">
               <div>
-                <div className="usage-kicker">Reported tokens</div>
+                <div className="usage-kicker">{machine ? "Processed tokens" : "Reported tokens"}</div>
                 <div className="usage-hero-value">{formatTokens(stats.totals.tokens)}</div>
               </div>
               <p className="usage-hero-meta">
-                {stats.totals.meteredTurns === 1
-                  ? "1 metered turn"
-                  : `${formatTokenCount(stats.totals.meteredTurns)} metered turns`}
-                {stats.totals.unmeteredTurns > 0
+                {machine
+                  ? `${sessionsLabel(stats.coverage.sessions)} · ${formatTokenCount(stats.totals.meteredTurns)} requests`
+                  : stats.totals.meteredTurns === 1
+                    ? "1 metered turn"
+                    : `${formatTokenCount(stats.totals.meteredTurns)} metered turns`}
+                {!machine && stats.totals.unmeteredTurns > 0
                   ? ` · ${formatTokenCount(stats.totals.unmeteredTurns)} unmetered`
                   : ""}
               </p>
@@ -138,7 +145,7 @@ export function UsageSettings({ load, providers }: Props) {
                   <div
                     key={d.date}
                     className="usage-day"
-                    title={`${formatDayShort(d.date)} · ${formatTokenCount(d.tokens)} tokens · ${d.meteredTurns} turns`}
+                    title={`${formatDayShort(d.date)} · ${formatTokenCount(d.tokens)} tokens`}
                   >
                     <span
                       className={d.tokens > 0 ? "usage-day-fill" : "usage-day-empty"}
@@ -158,7 +165,9 @@ export function UsageSettings({ load, providers }: Props) {
             <h4 className="settings-group-title">Composition</h4>
             {composition.length === 0 ? (
               <p className="settings-section-desc">
-                No token reports in this window. Finish a Claude turn to record counts.
+                {machine
+                  ? "No Claude or Codex usage in this window."
+                  : "No token reports in this window."}
               </p>
             ) : (
               <>
@@ -196,9 +205,7 @@ export function UsageSettings({ load, providers }: Props) {
                   const share = p.tokens > 0 ? (p.tokens / maxProvider) * 100 : 0;
                   const meta = [
                     p.tokens > 0 ? formatTokens(p.tokens) : "—",
-                    p.meteredTurns > 0
-                      ? `${p.meteredTurns} metered`
-                      : null,
+                    p.meteredTurns > 0 ? `${formatTokenCount(p.meteredTurns)} requests` : null,
                     p.unmeteredTurns > 0 ? `${p.unmeteredTurns} unmetered` : null,
                   ]
                     .filter(Boolean)
@@ -219,6 +226,26 @@ export function UsageSettings({ load, providers }: Props) {
               </ul>
             )}
           </section>
+
+          {stats.models.length > 0 && (
+            <section className="usage-block">
+              <h4 className="settings-group-title">By model</h4>
+              <ul className="usage-providers">
+                {stats.models.map((m) => (
+                  <li key={`${m.provider}:${m.model}`}>
+                    <ProviderMark kind={m.provider} />
+                    <span className="usage-provider-label">{compactModelLabel(m.model)}</span>
+                    <span className="usage-provider-meta">{formatTokens(m.tokens)}</span>
+                    <span
+                      className="usage-provider-bar"
+                      aria-hidden
+                      style={{ ["--share" as string]: `${(m.tokens / maxModel) * 100}%` }}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
     </div>
