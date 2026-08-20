@@ -22,6 +22,7 @@ import {
   type StartSessionInput,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
+import { terminateSubprocess } from "@divisio/shared/spawn";
 import { detectCli, interruptProcess, pumpClaudeLikeStream, type TurnProcess } from "./shared/streamPump.ts";
 import { pushModelArg } from "./shared/modelArg.ts";
 import { readQwenModelCatalog } from "./qwen/settings.ts";
@@ -138,8 +139,7 @@ export class QwenAdapter implements ProviderAdapter {
     const session = this.sessions.get(handle.threadId);
     if (!session) return;
     if (session.proc) {
-      session.proc.kill("SIGKILL");
-      await session.proc.exited;
+      await terminateSubprocess(session.proc, 500);
     }
     this.sessions.delete(handle.threadId);
     session.emit({ type: "session.exited", code: null, signal: null });

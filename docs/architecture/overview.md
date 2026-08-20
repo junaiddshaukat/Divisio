@@ -8,7 +8,7 @@ Divisio is a **local daemon** that owns provider processes and workspace state, 
 flowchart TB
   subgraph clients [Clients]
     Web[Web_UI]
-    Desktop[Desktop_later]
+    Desktop[Desktop_Tauri]
   end
   subgraph daemon [Local_Daemon]
     WS[WebSocket_API]
@@ -41,19 +41,18 @@ flowchart TB
 | Adapter registry | Resolve provider → adapter; normalize runtime events |
 | Providers | Real agent work (tools, FS, shell) under user auth |
 
-## Planned package layout
-
-Greenfield monorepo (not created until Phase 0):
+## Package layout
 
 ```
 apps/
-  server/          # Node daemon: WS, orchestration, adapters host
+  server/          # Bun daemon: WS, orchestration, adapter host
   web/             # React + Vite UI (three-pane design system)
-  desktop/         # Tauri shell (Phase 3) — artifact < 150 MB
+  desktop/         # Tauri 2 shell — packaged macOS app ~66 MB
 packages/
   contracts/       # Schemas only: commands, events, provider kinds
-  adapters/        # First-party adapters + shared adapter helpers
-  shared/          # Runtime utils (git, paths, validation) — subpath exports
+  adapters/        # First-party adapters + SDK
+  community-adapters/
+  shared/          # Brand, paths, ids, log, spawn — subpath exports
 ```
 
 Rules:
@@ -66,7 +65,7 @@ Rules:
 
 Default home (name may change with branding):
 
-- `~/.orchestrator/userdata/` — SQLite event store + projections, settings
+- `~/.divisio/userdata/` — SQLite event log + projections, auth token, pairing, settings
 - Project paths remain user-owned directories; Divisio stores references, not copies of repos
 
 Dev/isolation: worktree-local `--home-dir` so agents and humans never share live state by accident.

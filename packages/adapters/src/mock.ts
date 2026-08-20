@@ -52,6 +52,8 @@ export interface MockPeerOptions {
    * Used to simulate a usage-limit on the handoff summary turn.
    */
   failAfterTurns?: number;
+  /** Emit this delta as soon as the turn starts, before the delayed script. */
+  immediateDelta?: string;
 }
 
 interface MockSession extends SessionHandle {
@@ -96,12 +98,14 @@ export class MockPeerAdapter implements ProviderAdapter {
   private readonly script: MockScriptStep[];
   private readonly failResume: boolean;
   private readonly failAfterTurns: number | null;
+  private readonly immediateDelta: string | null;
   private turnsSent = 0;
 
   constructor(options: MockPeerOptions = {}) {
     this.turnDelayMs = options.turnDelayMs ?? 50;
     this.failResume = options.failResume === true;
     this.failAfterTurns = options.failAfterTurns ?? null;
+    this.immediateDelta = options.immediateDelta ?? null;
     this.capabilities = {
       ...BASE_CAPABILITIES,
       approvals: options.approvals ?? false,
@@ -155,6 +159,9 @@ export class MockPeerAdapter implements ProviderAdapter {
     session.activeTurnId = turn.turnId;
     session.cancelled = false;
     this.recordStatus(session, "running");
+    if (this.immediateDelta) {
+      session.emit({ type: "assistant.delta", turnId: turn.turnId, text: this.immediateDelta });
+    }
 
     session.timer = setTimeout(() => {
       session.timer = null;
@@ -233,6 +240,12 @@ export class MockPeerAdapter implements ProviderAdapter {
     if (!session || session.activeTurnId !== turnId) return;
 
     this.recordStatus(session, "stopping");
+    // Stream CLIs often emit is_error after SIGTERM. Stop is not a failure.
+    session.emit({
+      type: "error",
+      code: "provider_error",
+      message: "provider reported an error",
+    });
     session.cancelled = true;
     session.activeTurnId = null;
     if (session.timer) {

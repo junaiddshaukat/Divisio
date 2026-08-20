@@ -18,6 +18,7 @@ import { syncCustomAdapters } from "./syncCustomAdapters.ts";
 import { dirname, join, normalize } from "node:path";
 import { existsSync } from "node:fs";
 import { userDataDir } from "@divisio/shared/paths";
+import { warmUsageCache } from "./usage/collectUsage.ts";
 
 const log = logger("daemon");
 
@@ -123,6 +124,8 @@ const terminals = new TerminalManager({
   onExit: (sessionId, exitCode) => hub.terminalExit(sessionId, exitCode),
 });
 
+// Shells belong to the socket, not the thread. Reloading the window (⌘R)
+// drops the socket, so those PTYs go with it. The daemon stays.
 hub.onSocketGone = (sessionId) => terminals.get(sessionId)?.kill();
 
 hub.terminals = async (ws, cmd, payload) => {
@@ -167,7 +170,16 @@ hub.terminals = async (ws, cmd, payload) => {
   }
 };
 
-const server = Bun.serve<SocketData>({
+function isAddrInUse(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const rec = err as { code?: unknown; message?: unknown };
+  if (rec.code === "EADDRINUSE") return true;
+  return typeof rec.message === "string" && rec.message.includes("EADDRINUSE");
+}
+
+let server: ReturnType<typeof Bun.serve<SocketData>>;
+try {
+  server = Bun.serve<SocketData>({
   port,
   // Explicit, and never a fallback: resolveNetwork throws rather than quietly
   // downgrading an unsafe request.
@@ -256,6 +268,17 @@ const server = Bun.serve<SocketData>({
     },
   },
 });
+} catch (err) {
+  if (isAddrInUse(err)) {
+    log.error(
+      `port ${port} is already in use. If Divisio is already running, reopen the desktop app — it will attach. Otherwise stop the process listening on ${port}.`,
+    );
+    process.exit(1);
+  }
+  throw err;
+}
+
+orchestrator.reconcileAfterCrash();
 
 /**
  * Static hosting for the built web UI.
@@ -335,6 +358,7 @@ log.info(`${PRODUCT_NAME} daemon listening`, {
   remote,
   tls: !!network.tls,
 });
+warmUsageCache(store);
 
 if (remote) {
   const { token, expiresAt } = pairing.createPairingToken();
@@ -353,15 +377,27 @@ if (remote) {
   }
 }
 
+let shuttingDown = false;
+
 async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   log.info("shutting down", { signal });
   terminals.closeAll();
   await orchestrator.shutdown();
   store.close();
   pairing.close();
   await server.stop(true);
-  process.exit(0);
+  process.exit(signal === "fatal" ? 1 : 0);
 }
 
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("uncaughtException", (err) => {
+  log.error("uncaught exception", { err: String(err) });
+  void shutdown("fatal");
+});
+process.on("unhandledRejection", (reason) => {
+  log.error("unhandled rejection", { err: String(reason) });
+  void shutdown("fatal");
+});

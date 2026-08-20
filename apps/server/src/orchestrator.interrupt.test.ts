@@ -90,6 +90,34 @@ describe("interrupt → stopping (mock peer)", () => {
     expect(store.getThread(thread.id)?.status).toBe("ready");
   });
 
+  test("interrupt keeps streamed text and does not report a provider error", async () => {
+    const bus = await setup();
+    mock = new MockPeerAdapter({ turnDelayMs: 500, immediateDelta: "partial answer" });
+    const registry = new AdapterRegistry([mock]);
+    orchestrator = new Orchestrator(store, registry, bus);
+
+    const { project } = await orchestrator.dispatch("project.create", {
+      name: "demo",
+      rootPath: dir,
+    });
+    const { thread } = await orchestrator.dispatch("thread.create", {
+      projectId: project.id,
+      title: "t",
+      provider: "mock",
+    });
+    const { turnId } = await orchestrator.dispatch("turn.send", {
+      threadId: thread.id,
+      text: "slow please",
+    });
+    await Bun.sleep(20);
+    await orchestrator.dispatch("turn.interrupt", { threadId: thread.id, turnId });
+
+    const assistant = store.listMessages(thread.id).filter((m) => m.role === "assistant");
+    expect(assistant.some((m) => m.text.includes("partial answer"))).toBe(true);
+    expect(bus.eventsLog.flat().some((e) => e.type === "turn.failed")).toBe(false);
+    expect(store.getThread(thread.id)?.status).toBe("ready");
+  });
+
   test("mock peer completes a turn without a live CLI", async () => {
     const bus = await setup();
     mock = new MockPeerAdapter({ turnDelayMs: 10 });

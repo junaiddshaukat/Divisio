@@ -229,7 +229,9 @@ async function readClaudeFile(path: string): Promise<TranscriptUsage[]> {
   const records: TranscriptUsage[] = [];
   const seen = new Set<string>();
   const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity });
+  let n = 0;
   for await (const line of rl) {
+    if (++n % 250 === 0) await Bun.sleep(0);
     if (!claudeLineMightCarryUsage(line)) continue;
     const rec = parseClaudeTranscriptLine(line);
     if (!rec) continue;
@@ -246,7 +248,9 @@ async function readCodexFile(path: string): Promise<TranscriptUsage[]> {
   const records: TranscriptUsage[] = [];
   const state = initialCodexTranscriptState();
   const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity });
+  let n = 0;
   for await (const line of rl) {
+    if (++n % 250 === 0) await Bun.sleep(0);
     if (!codexLineMightCarryUsage(line)) continue;
     const rec = parseCodexTranscriptLine(line, state);
     if (rec) records.push(rec);
@@ -259,7 +263,9 @@ async function readGrokFile(path: string): Promise<TranscriptUsage[]> {
   const state = initialGrokTranscriptState();
   const model = await grokModel(dirname(path));
   const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity });
+  let n = 0;
   for await (const line of rl) {
+    if (++n % 250 === 0) await Bun.sleep(0);
     if (!grokLineMightCarryUsage(line)) continue;
     const rec = parseGrokUpdateLine(line, state, model);
     if (rec) records.push(rec);
@@ -273,7 +279,9 @@ async function readQwenFile(path: string): Promise<TranscriptUsage[]> {
   const records: TranscriptUsage[] = [];
   const seen = new Set<string>();
   const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity });
+  let n = 0;
   for await (const line of rl) {
+    if (++n % 250 === 0) await Bun.sleep(0);
     if (!qwenLineMightCarryUsage(line)) continue;
     const rec = parseQwenUsageLine(line);
     if (!rec) continue;

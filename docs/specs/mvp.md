@@ -6,7 +6,7 @@ Covers **Phase 0 (Spike)** and **Phase 1 (Core)**. Later phases have exit criter
 
 ### Phase 0
 
-- Local Node daemon with WebSocket API
+- Local Bun daemon with WebSocket API
 - Minimal React web client
 - One working provider adapter (Codex **or** Claude — implement fully, not both half-done)
 - Create project (directory path), create thread, send turn, stream transcript

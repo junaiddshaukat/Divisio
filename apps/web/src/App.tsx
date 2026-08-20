@@ -155,6 +155,17 @@ async function readTokenAsync(): Promise<string> {
   return "";
 }
 
+function upsertAssistantMessage(prev: MessageView[], incoming: MessageView): MessageView[] {
+  const idx = prev.findIndex((m) => m.turnId === incoming.turnId && m.role === incoming.role);
+  if (idx === -1) return [...prev, incoming];
+  if (incoming.role === "assistant" && incoming.text.length > prev[idx]!.text.length) {
+    const next = prev.slice();
+    next[idx] = incoming;
+    return next;
+  }
+  return prev;
+}
+
 export function App() {
   const [token, setToken] = useState(readTokenSync);
   // Non-null only while a pairing link is being exchanged on first load.
@@ -254,6 +265,8 @@ export function App() {
   const clientRef = useRef<Client | null>(null);
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
+  const streamingRef = useRef(streaming);
+  streamingRef.current = streaming;
 
   const activeThread = useMemo(() => threads.find((t) => t.id === activeId) ?? null, [threads, activeId]);
   const threadRunning =
@@ -390,9 +403,7 @@ export function App() {
             text: String(p["text"]),
             at: event.at,
           };
-          setMessages((prev) =>
-            prev.some((m) => m.turnId === msg.turnId && m.role === msg.role) ? prev : [...prev, msg],
-          );
+          setMessages((prev) => upsertAssistantMessage(prev, msg));
           if (msg.role === "assistant") setStreaming(null);
           break;
         }
@@ -406,6 +417,17 @@ export function App() {
         case "turn.completed":
         case "turn.interrupted":
           if (p["threadId"] === activeIdRef.current) {
+            const streamed = streamingRef.current;
+            if (streamed?.text) {
+              setMessages((prev) =>
+                upsertAssistantMessage(prev, {
+                  turnId: streamed.turnId,
+                  role: "assistant",
+                  text: streamed.text,
+                  at: event.at,
+                }),
+              );
+            }
             setActiveTurn(null);
             setStreaming(null);
             setPendingApproval(null);
@@ -413,6 +435,17 @@ export function App() {
           break;
         case "turn.failed":
           if (p["threadId"] === activeIdRef.current) {
+            const streamed = streamingRef.current;
+            if (streamed?.text) {
+              setMessages((prev) =>
+                upsertAssistantMessage(prev, {
+                  turnId: streamed.turnId,
+                  role: "assistant",
+                  text: streamed.text,
+                  at: event.at,
+                }),
+              );
+            }
             setActiveTurn(null);
             setStreaming(null);
             setPendingApproval(null);
@@ -486,18 +519,28 @@ export function App() {
           );
           if (p["threadId"] === activeIdRef.current) {
             const status = String(p["status"]);
-            if (status === "error") {
-              setError(String(p["detail"] ?? "session error"));
-            }
-            // Idle statuses without a matching turn.completed still clear the Stop button.
             if (
               status === "ready" ||
               status === "closed" ||
               status === "connecting" ||
               status === "error"
             ) {
+              const streamed = streamingRef.current;
+              if (streamed?.text && status !== "connecting") {
+                setMessages((prev) =>
+                  upsertAssistantMessage(prev, {
+                    turnId: streamed.turnId,
+                    role: "assistant",
+                    text: streamed.text,
+                    at: event.at,
+                  }),
+                );
+              }
               setActiveTurn(null);
               setStreaming(null);
+            }
+            if (status === "error") {
+              setError(String(p["detail"] ?? "session error"));
             }
           }
           break;
@@ -585,10 +628,17 @@ export function App() {
     };
   }, [token]);
 
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const openThreadRef = useRef(openThread);
+  openThreadRef.current = openThread;
+
   useEffect(() => {
     if (!token) return;
     const client = new Client(WS_URL, token, {
-      onEvent,
+      onEvent: (event) => onEventRef.current(event),
       onDelta: (threadId, turnId, text) => {
         if (threadId !== activeIdRef.current) return;
         setStreaming((prev) =>
@@ -599,17 +649,17 @@ export function App() {
       onState: setState,
       onResync: () => {
         const id = activeIdRef.current;
-        void refresh(client);
-        if (id) void openThread(id);
+        void refreshRef.current(client);
+        if (id) void openThreadRef.current(id);
       },
     });
     clientRef.current = client;
     client.connect();
     return () => {
       client.close();
-      clientRef.current = null;
+      if (clientRef.current === client) clientRef.current = null;
     };
-  }, [token, onEvent, refresh, openThread]);
+  }, [token]);
 
   // Redeem a pairing link before anything tries to connect.
   useEffect(() => {
@@ -1300,7 +1350,8 @@ export function App() {
         setPaletteOpen((v) => !v);
         return;
       }
-      // ⌘R / Ctrl+R — reload the window (devtools often disable this by default).
+      // ⌘R / Ctrl+R reloads the window UI only. The daemon stays up; this
+      // client reconnects. Shells owned by the old socket close with it.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         reloadApp();

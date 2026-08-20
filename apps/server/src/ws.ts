@@ -16,6 +16,8 @@ const log = logger("ws");
 export const DEFAULT_REPLAY_WINDOW = 5_000;
 /** Delta flush cadence — one frame per render frame, not one per token. */
 const FLUSH_MS = 16;
+/** When the socket is behind, still flush — just slower, coalesced. */
+const CATCH_UP_FLUSH_MS = 50;
 /** Above this many bytes queued, the client is too slow and deltas collapse. */
 const BACKPRESSURE_BYTES = 1_000_000;
 
@@ -119,18 +121,15 @@ export class WsHub {
       if (existing) existing.text += text;
       else ws.data.pending.set(turnId, { threadId, text });
 
-      // Catch-up mode: keep accumulating, stop scheduling. The user sees text
-      // jump forward rather than stream — correct, just less pretty.
-      if (ws.getBufferedAmount() > BACKPRESSURE_BYTES) {
-        ws.data.catchUp = true;
-        continue;
-      }
-      ws.data.catchUp = false;
+      // Catch-up only slows the tick and coalesces. Never skip the timer —
+      // otherwise text sits until the next domain event (usually turn.completed).
+      const catchUp = ws.getBufferedAmount() > BACKPRESSURE_BYTES;
+      ws.data.catchUp = catchUp;
       if (!ws.data.timer) {
         ws.data.timer = setTimeout(() => {
           ws.data.timer = null;
           this.flush(ws);
-        }, FLUSH_MS);
+        }, catchUp ? CATCH_UP_FLUSH_MS : FLUSH_MS);
       }
     }
   }

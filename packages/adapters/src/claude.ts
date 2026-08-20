@@ -10,7 +10,7 @@ import {
   type StartSessionInput,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
-import { spawnWithEnv } from "@divisio/shared/spawn";
+import { spawnWithEnv, terminateSubprocess } from "@divisio/shared/spawn";
 import { normalizeClaudeStreamLine } from "./claude/normalize.ts";
 import { pushModelArg } from "./shared/modelArg.ts";
 
@@ -205,15 +205,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     // claiming ready here would be a lie the UI acts on.
     session.emit({ type: "status", status: "stopping" });
     session.proc = null;
-
-    proc.kill("SIGTERM");
-    const deadline = Bun.sleep(2000).then(() => "timeout" as const);
-    const exited = proc.exited.then(() => "exited" as const);
-    if ((await Promise.race([exited, deadline])) === "timeout") {
-      log.warn("provider ignored SIGTERM, escalating", { threadId: session.threadId });
-      proc.kill("SIGKILL");
-      await proc.exited;
-    }
+    await terminateSubprocess(proc);
 
     session.emit({ type: "turn.completed", turnId });
     session.emit({ type: "status", status: "ready" });
@@ -223,8 +215,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     const session = this.sessions.get(handle.threadId);
     if (!session) return;
     if (session.proc) {
-      session.proc.kill("SIGKILL");
-      await session.proc.exited;
+      await terminateSubprocess(session.proc, 500);
     }
     this.sessions.delete(handle.threadId);
     session.emit({ type: "session.exited", code: null, signal: null });

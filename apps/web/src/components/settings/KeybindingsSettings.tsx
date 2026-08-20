@@ -1,5 +1,6 @@
 const BINDINGS: { action: string; keys: string[] }[] = [
   { action: "Command palette", keys: ["⌘K", "Ctrl+K"] },
+  { action: "Reload window (UI only)", keys: ["⌘R", "Ctrl+R"] },
   { action: "Close settings / dialogs", keys: ["Escape"] },
 ];
 
@@ -26,6 +27,8 @@ export function KeybindingsSettings() {
       </div>
       <p className="settings-section-desc">
         A keybinding remapper is not in this build. Shortcuts above are fixed.
+        Reload window refreshes the UI and reconnects; it does not restart the
+        daemon.
       </p>
     </div>
   );

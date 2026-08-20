@@ -11,6 +11,7 @@ import {
   type ProviderRuntimeEvent,
   type SessionHandle,
   type VendorResumeOutcome,
+  type SessionStatus,
 } from "@divisio/contracts";
 import type { AdapterRegistry } from "@divisio/adapters";
 import { EMPTY_MODEL_CATALOG } from "@divisio/adapters";
@@ -105,6 +106,12 @@ interface LiveSession {
   pendingApprovals: Map<string, { turnId: string }>;
   /** Last native id written to the log for this live session. */
   persistedNativeId: string | null;
+  /** Streamed assistant text not yet committed as `turn.message`. */
+  partialByTurn: Map<string, string>;
+  /** Turns that already have an assistant `turn.message`. */
+  committedAssistant: Set<string>;
+  /** Stop was requested for this turn; CLI `is_error` after SIGTERM is not a failure. */
+  stoppingTurnId: string | null;
 }
 
 /**
@@ -1242,6 +1249,7 @@ export class Orchestrator {
           },
         ]);
       }
+      this.commit([{ type: "session.status", threadId, payload: { threadId, status: "error" } }]);
       throw err;
     }
 
@@ -1251,6 +1259,9 @@ export class Orchestrator {
       activeTurnId: null,
       pendingApprovals: new Map(),
       persistedNativeId: resumeId,
+      partialByTurn: new Map(),
+      committedAssistant: new Set(),
+      stoppingTurnId: null,
     };
     this.sessions.set(threadId, live);
     this.persistVendorSession(threadId);
@@ -1303,6 +1314,7 @@ export class Orchestrator {
 
     const turnId = newId("trn");
     session.activeTurnId = turnId;
+    session.stoppingTurnId = null;
     session.pendingApprovals.clear();
 
     this.commit([
@@ -1375,6 +1387,10 @@ export class Orchestrator {
       throw new CommandError("not_found", `turn ${p.turnId} is not running`);
     }
 
+    // Mark stopping before the kill so a CLI `is_error` result is not a failure.
+    session.stoppingTurnId = p.turnId;
+    this.flushPartialAssistant(session, p.threadId, p.turnId);
+
     const adapter = this.registry.get(session.provider);
     await adapter!.interruptTurn(session.handle, p.turnId);
     session.activeTurnId = null;
@@ -1383,6 +1399,21 @@ export class Orchestrator {
       { type: "turn.interrupted", threadId: p.threadId, payload: { threadId: p.threadId, turnId: p.turnId } },
     ]);
     return {};
+  }
+
+  /** Persist streamed text so Stop does not throw away what the user already saw. */
+  private flushPartialAssistant(session: LiveSession, threadId: string, turnId: string) {
+    if (session.committedAssistant.has(turnId)) return;
+    const text = session.partialByTurn.get(turnId);
+    if (!text) return;
+    session.committedAssistant.add(turnId);
+    this.commit([
+      {
+        type: "turn.message",
+        threadId,
+        payload: { threadId, turnId, role: "assistant", text },
+      },
+    ]);
   }
 
   private async respondApproval(
@@ -1505,10 +1536,19 @@ export class Orchestrator {
 
     switch (event.type) {
       case "assistant.delta":
+        if (session) {
+          session.partialByTurn.set(
+            event.turnId,
+            (session.partialByTurn.get(event.turnId) ?? "") + event.text,
+          );
+        }
         this.bus.delta(threadId, event.turnId, event.text);
         return;
 
       case "assistant.message":
+        if (session?.committedAssistant.has(event.turnId)) return;
+        session?.committedAssistant.add(event.turnId);
+        session?.partialByTurn.delete(event.turnId);
         this.commit([
           {
             type: "turn.message",
@@ -1644,6 +1684,7 @@ export class Orchestrator {
       }
 
       case "turn.completed":
+        if (session) this.flushPartialAssistant(session, threadId, event.turnId);
         if (session?.activeTurnId === event.turnId) session.activeTurnId = null;
         session?.pendingApprovals.clear();
         this.commit([{ type: "turn.completed", threadId, payload: { threadId, turnId: event.turnId } }]);
@@ -1675,7 +1716,12 @@ export class Orchestrator {
         return;
 
       case "error": {
-        const turnId = session?.activeTurnId;
+        const turnId = session?.activeTurnId ?? session?.stoppingTurnId;
+        if (turnId && session?.stoppingTurnId === turnId) {
+          // SIGTERM after Stop often surfaces as a provider `is_error` result.
+          this.flushPartialAssistant(session, threadId, turnId);
+          return;
+        }
         if (session) {
           session.activeTurnId = null;
           session.pendingApprovals.clear();
@@ -1718,8 +1764,39 @@ export class Orchestrator {
       } catch (err) {
         log.warn("failed to stop session", { threadId, err: String(err) });
       }
+      const status = session.activeTurnId ? "error" : "ready";
+      this.commit([{ type: "session.status", threadId, payload: { threadId, status } }]);
     }
     this.sessions.clear();
+  }
+
+  /**
+   * After a crash the projection can still say `running` / `connecting` while
+   * no LiveSession exists. Reset those before we accept commands so Stop/Send
+   * are not lying.
+   */
+  reconcileAfterCrash(): void {
+    const live: SessionStatus[] = ["connecting", "running", "stopping", "awaiting_approval"];
+    for (const thread of this.store.listThreads()) {
+      if (!live.includes(thread.status)) continue;
+      this.commit([
+        { type: "session.status", threadId: thread.id, payload: { threadId: thread.id, status: "error" } },
+      ]);
+    }
+    for (const lane of this.store.listLanes()) {
+      if (lane.status !== "preparing") continue;
+      this.commit([
+        {
+          type: "lane.status",
+          threadId: null,
+          payload: {
+            laneId: lane.id,
+            status: "error",
+            detail: "Daemon restarted during setup. Archive this lane or create it again.",
+          },
+        },
+      ]);
+    }
   }
 }
 

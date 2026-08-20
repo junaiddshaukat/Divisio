@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile, chmod, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repairPath } from "./path-env.ts";
-import { spawnWithEnv } from "./spawn.ts";
+import { spawnWithEnv, terminateSubprocess } from "./spawn.ts";
 
 /**
  * A GUI-launched app inherits launchd's PATH, which contains none of the
@@ -58,5 +58,16 @@ describe("spawnWithEnv", () => {
     const out = await new Response(proc.stdout).text();
     expect(await proc.exited).toBe(0);
     expect(out.trim()).toBe("FAKE_OK");
+  });
+});
+
+describe("terminateSubprocess", () => {
+  test("stops a sleeping child before its natural exit", async () => {
+    const proc = spawnWithEnv(["sleep", "30"], { stdout: "ignore", stderr: "ignore" });
+    expect(proc.pid).toBeGreaterThan(1);
+    const started = Date.now();
+    await terminateSubprocess(proc, 400);
+    expect(await proc.exited).not.toBeNull();
+    expect(Date.now() - started).toBeLessThan(8_000);
   });
 });

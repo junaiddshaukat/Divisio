@@ -2,23 +2,27 @@
 
 **Working name — brand TBD.** Local-first command center for the coding agents you already pay for.
 
-Divisio is not an AI model and does not sell tokens. It is a control surface: one polished workspace that drives Claude Code, Codex, Cursor, Grok Build, OpenCode, Antigravity, and eventually 20+ CLI agents — with parallel worktrees, diffs, PRs, and provider handoff.
+Divisio is not an AI model and does not sell tokens. It is a control surface: one workspace that drives the CLIs you already run — Claude Code, Codex, Cursor, Grok, Qwen, OpenCode, Gemini, Copilot, Antigravity, plus OpenAI-compatible endpoints you add — with parallel git worktrees, diffs, PRs, terminals, and cross-provider handoff. Each provider keeps its own login.
 
 ## Pitch
 
 Serious agentic work is scattered across terminals, vendor apps, and tabs. Divisio keeps chat, terminals, previews, git, and delivery in one place while each provider keeps its own auth and subscription.
 
+## What is in the repo
+
+Roadmap phases 0–4 are implemented: daemon, P0–P2 adapters, lanes/board, handoff, desktop shell, pairing, adapter SDK. Launch is still a **human smoke gate + a signed desktop build**, not more architecture. See [roadmap](docs/roadmap.md).
+
 ## Product bars
 
 - **Feel:** thread switch under 100ms, first streamed token under 100ms, interrupt acknowledged under 150ms
-- **Size:** desktop install **&lt; 150 MB**
+- **Size:** packaged macOS app measured at **66 MB** (budget 150 MB; daemon is bundled)
 - **Look:** dense three-pane command center — projects and threads, transcript and composer, working surfaces
 
 ## Non-goals
 
-- Not an LLM provider or API proxy for your keys
-- Not shipping mobile or twenty adapters in the first release
-- Not Electron-by-default (Tauri thin shell — see ADR 0006)
+- Not an LLM provider or API proxy for vendor keys
+- Not mobile, not a Divisio cloud, not selling model access
+- Not Electron (Tauri thin shell — [ADR 0006](docs/adr/0006-size-budget-tauri.md))
 
 ## Docs (source of truth)
 
@@ -32,34 +36,28 @@ Serious agentic work is scattered across terminals, vendor apps, and tabs. Divis
 | [WS protocol](docs/architecture/ws-protocol.md) | Handshake, framing, resume |
 | [Performance](docs/architecture/performance.md) | Latency and size budgets |
 | [Design system](docs/design/README.md) | Tokens, type, layout |
-| [Design tokens](docs/design/tokens.md) | Light + dark color tokens |
-| [MVP spec](docs/specs/mvp.md) | Phase 0–1 acceptance criteria |
-| [Worktrees](docs/specs/worktrees.md) | Phase 2 parallel lanes |
+| [MVP spec](docs/specs/mvp.md) | Phase 0–1 acceptance (historical) |
+| [Worktrees](docs/specs/worktrees.md) | Parallel lanes |
 | [Benchmarks](docs/operations/benchmarks.md) | Measured size and latency |
-| [v1 ship notes](docs/operations/v1-ship.md) | AgentPicker gaps / smoke gate |
 | [Glossary](docs/specs/glossary.md) | Shared vocabulary |
 | [ADRs](docs/adr/) | Locked decisions |
 
-## Status
-
-**Phase 4 ecosystem complete:** adapter SDK + community loader; P1 first-party (Grok, Qwen, OpenCode); P2 community pack (Gemini, Copilot, Antigravity). Composer **AgentPicker** for v1. See [providers](docs/specs/providers.md), [adapter SDK](docs/sdk/adapter-sdk.md), and [v1 ship notes](docs/operations/v1-ship.md).
-
 ## Run it
 
-Requires [Bun](https://bun.com) 1.3.5+, [Rust](https://rustup.rs) (desktop only), and at least one authenticated agent CLI.
+Requires [Bun](https://bun.com) 1.3.5+ to develop from source, [Rust](https://rustup.rs) for the desktop shell, and at least one authenticated agent CLI.
 
 ### Desktop app (recommended)
 
-Opens a native window, starts the daemon for you, and connects automatically — no token paste.
+Opens a native window, starts the bundled daemon, and connects automatically — no token paste.
 
 ```bash
 bun install
 bun run dev:desktop
 ```
 
-First launch compiles the Tauri shell (a few minutes). Later launches are fast. **Bun must be on your PATH** so the shell can spawn the daemon.
+First launch compiles the Tauri shell (a few minutes). Later launches are fast.
 
-Release build (`.app` / installer):
+**Packaged app:** the daemon is compiled into the `.app`. End users do **not** need Bun on PATH. Bun is only required to *build* from this repo.
 
 ```bash
 bun run build:desktop
@@ -82,7 +80,8 @@ Paste the token from `~/.divisio/userdata/auth-token` once (browsers cannot read
 | `apps/server` | Bun daemon: event log, WS API, adapter host |
 | `apps/web` | React UI (used by web and desktop) |
 | `packages/contracts` | Events, commands, wire format, adapter interface |
-| `packages/adapters` | Provider adapters |
+| `packages/adapters` | First-party adapters + SDK |
+| `packages/community-adapters` | Gemini, Copilot, Antigravity |
 | `packages/shared` | Branding, paths, ids, logging |
 
 All naming lives in [`packages/shared/src/brand.ts`](packages/shared/src/brand.ts) — renaming the product edits one file.

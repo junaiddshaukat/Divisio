@@ -27,16 +27,47 @@ function rowsFromTranscripts(records: TranscriptUsage[]): UsageEventRow[] {
 
 const MACHINE_KINDS = new Set(["claude", "codex", "cursor", "grok", "qwen", "opencode"]);
 
+const CACHE_TTL_MS = 45_000;
+const usageCache = new Map<UsageRangeDays, { at: number; stats: UsageStats }>();
 const usageInflight = new Map<UsageRangeDays, Promise<UsageStats>>();
+
+export function resetUsageStatsCache(): void {
+  usageCache.clear();
+  usageInflight.clear();
+}
+
+/** Fill the 30-day cache after listen so Settings → Usage is not the first scan. */
+export function warmUsageCache(store: EventStore): void {
+  // Defer so /health and the first WebSocket are not competing with a 30-day
+  // home scan on the single-threaded daemon.
+  setTimeout(() => {
+    void collectUsageStats(store, 30).catch(() => {
+      /* first open will scan again */
+    });
+  }, 2500);
+}
 
 export async function collectUsageStats(store: EventStore, days: unknown): Promise<UsageStats> {
   const rangeDays = normalizeUsageRange(days) as UsageRangeDays;
+  const hit = usageCache.get(rangeDays);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.stats;
+
   const existing = usageInflight.get(rangeDays);
-  if (existing) return existing;
-  const promise = collectUsageStatsOnce(store, rangeDays).finally(() => {
-    if (usageInflight.get(rangeDays) === promise) usageInflight.delete(rangeDays);
-  });
+  if (existing) {
+    if (hit) return hit.stats;
+    return existing;
+  }
+
+  const promise = collectUsageStatsOnce(store, rangeDays)
+    .then((stats) => {
+      usageCache.set(rangeDays, { at: Date.now(), stats });
+      return stats;
+    })
+    .finally(() => {
+      if (usageInflight.get(rangeDays) === promise) usageInflight.delete(rangeDays);
+    });
   usageInflight.set(rangeDays, promise);
+  if (hit) return hit.stats;
   return promise;
 }
 

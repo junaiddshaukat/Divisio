@@ -8,7 +8,9 @@ import { parseCursorBubble, parseOpenCodeModel, parseOpenCodePart, type Transcri
 
 function openReadonly(path: string): Database | null {
   try {
-    return new Database(path, { readonly: true });
+    const db = new Database(path, { readonly: true });
+    db.exec("pragma busy_timeout = 5000");
+    return db;
   } catch {
     return null;
   }

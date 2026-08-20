@@ -6,6 +6,8 @@
  * `includeJsonrpc` is set.
  */
 
+import { terminateSubprocess } from "@divisio/shared/spawn";
+
 export type JsonRpcId = string | number;
 
 export interface JsonRpcRequest {
@@ -125,13 +127,7 @@ export class JsonRpcStdioClient {
     } catch {
       /* ignore */
     }
-    this.proc.kill("SIGTERM");
-    const deadline = Bun.sleep(2000).then(() => "timeout" as const);
-    const exited = this.proc.exited.then(() => "exited" as const);
-    if ((await Promise.race([exited, deadline])) === "timeout") {
-      this.proc.kill("SIGKILL");
-      await this.proc.exited;
-    }
+    await terminateSubprocess(this.proc);
     this.rejectAll(new Error("json-rpc client closed"));
   }
 

@@ -21,4 +21,8 @@ apps/desktop/src-tauri/target/
 # Not published. Keeps the reasoning without shipping it.
 docs/internal/
 
+# Local notes — not published
 AGENT_CONTEXT.md
+docs/operations/v1-ship.md
+mcp.md
+**/.mcp.json

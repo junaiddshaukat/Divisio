@@ -5,7 +5,7 @@
 
 import type { EmitRuntimeEvent, ProviderRuntimeEvent } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
-import { spawnWithEnv } from "@divisio/shared/spawn";
+import { spawnWithEnv, terminateSubprocess } from "@divisio/shared/spawn";
 import type { DetectResult } from "@divisio/contracts";
 import {
   normalizeClaudeStreamLine,
@@ -120,13 +120,7 @@ export async function interruptProcess(
   turnId: string,
 ): Promise<void> {
   emit({ type: "status", status: "stopping" });
-  proc.kill("SIGTERM");
-  const deadline = Bun.sleep(2000).then(() => "timeout" as const);
-  const exited = proc.exited.then(() => "exited" as const);
-  if ((await Promise.race([exited, deadline])) === "timeout") {
-    proc.kill("SIGKILL");
-    await proc.exited;
-  }
+  await terminateSubprocess(proc);
   emit({ type: "turn.completed", turnId });
   emit({ type: "status", status: "ready" });
 }

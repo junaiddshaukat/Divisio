@@ -18,7 +18,7 @@ Guidance for coding agents and humans working in this repository.
 
 ## Current phase
 
-**Phase 0 is complete.** Phase 1 next: Codex and Cursor adapters, permission modes, turn checkpoints, capability matrix UI. Follow [docs/roadmap.md](docs/roadmap.md) and [docs/specs/mvp.md](docs/specs/mvp.md).
+**Roadmap phases 0–4 are complete in-repo.** Launch work is product proof (live smoke on real CLIs), a signed desktop build, and docs that match the app. Follow [docs/roadmap.md](docs/roadmap.md). Do not treat AGENTS.md as a phase tracker if it disagrees with the roadmap.
 
 ## Runtime rules
 

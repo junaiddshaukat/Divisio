@@ -38,7 +38,7 @@ export async function pickDirectory(): Promise<string | null> {
   }
 }
 
-/** Reloads the window UI (reconnects to the daemon). */
+/** Reloads the window UI only. The daemon is not restarted. */
 export function reloadApp(): void {
   window.location.reload();
 }

@@ -45,6 +45,7 @@ export class Client {
   private seq = 0;
   private threads: string[] = [];
   private retry = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /** Terminal output is routed per session rather than broadcast. */
   private readonly terminalSinks = new Map<string, TerminalSink>();
   private closedByUser = false;
@@ -57,6 +58,8 @@ export class Client {
 
   connect() {
     this.closedByUser = false;
+    this.clearReconnectTimer();
+    this.detachSocket();
     this.handlers.onState("connecting");
 
     // Browsers cannot set headers on a WebSocket handshake, so the token rides
@@ -66,11 +69,13 @@ export class Client {
     this.ws = ws;
 
     ws.onopen = () => {
+      if (this.ws !== ws) return;
       this.retry = 0;
       this.handlers.onState("open");
     };
 
     ws.onmessage = (ev) => {
+      if (this.ws !== ws) return;
       let frame: ServerFrame;
       try {
         frame = JSON.parse(String(ev.data));
@@ -81,19 +86,48 @@ export class Client {
     };
 
     ws.onclose = () => {
+      if (this.ws !== ws) return;
       this.ws = null;
-      this.handlers.onState("closed");
       for (const p of this.pending.values()) p.reject(new Error("connection closed"));
       this.pending.clear();
-      if (!this.closedByUser) this.scheduleReconnect();
+      if (this.closedByUser) return;
+      this.handlers.onState(this.retry >= 8 ? "closed" : "connecting");
+      this.scheduleReconnect();
     };
 
-    ws.onerror = () => ws.close();
+    ws.onerror = () => {
+      if (this.ws === ws) ws.close();
+    };
+  }
+
+  private detachSocket() {
+    const prev = this.ws;
+    this.ws = null;
+    if (!prev) return;
+    prev.onopen = null;
+    prev.onmessage = null;
+    prev.onerror = null;
+    prev.onclose = null;
+    if (prev.readyState === WebSocket.CONNECTING || prev.readyState === WebSocket.OPEN) {
+      prev.close();
+    }
+  }
+
+  private clearReconnectTimer() {
+    if (!this.reconnectTimer) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
   }
 
   private scheduleReconnect() {
-    const delay = Math.min(500 * 2 ** this.retry++, 8000);
-    setTimeout(() => this.connect(), delay);
+    if (this.closedByUser || this.reconnectTimer) return;
+    const delay = Math.min(50 * 2 ** this.retry, 8000);
+    this.retry += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.closedByUser) return;
+      this.connect();
+    }, delay);
   }
 
   private handleFrame(frame: ServerFrame) {
@@ -219,6 +253,7 @@ export class Client {
 
   close() {
     this.closedByUser = true;
-    this.ws?.close();
+    this.clearReconnectTimer();
+    this.detachSocket();
   }
 }

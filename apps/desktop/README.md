@@ -14,8 +14,10 @@ bun run dev:desktop
 The shell:
 
 1. Starts Vite for `apps/web`
-2. Spawns `bun apps/server/src/index.ts`
+2. Compiles the Bun daemon into `src-tauri/binaries/` and supervises that sidecar
 3. Injects `~/.divisio/userdata/auth-token` into the UI (no paste gate)
+
+If a compatible daemon is already listening on port 4577, the shell **attaches** and does not kill it on window close. ⌘R reloads the webview only.
 
 ## Build
 
@@ -25,4 +27,4 @@ bun run build:desktop
 
 Installers / `.app` bundles appear under `src-tauri/target/release/bundle/`.
 
-**Note:** The packaged app still expects `bun` on PATH to run the daemon. Shipping a Bun sidecar inside the 150 MB budget is a follow-up.
+The packaged app **includes** the compiled daemon. Users do not need Bun on PATH. Measured macOS `.app` is 66 MB — see [benchmarks](../../docs/operations/benchmarks.md).

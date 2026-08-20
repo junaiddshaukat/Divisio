@@ -20,6 +20,7 @@ import {
   type StartSessionInput,
 } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
+import { terminateSubprocess } from "@divisio/shared/spawn";
 import { detectCli, interruptProcess, type TurnProcess } from "./shared/streamPump.ts";
 import { normalizeOpenCodeStreamLine, type OpenCodeNormalizeState } from "./opencode/normalize.ts";
 
@@ -175,8 +176,7 @@ export class OpenCodeAdapter implements ProviderAdapter {
     const session = this.sessions.get(handle.threadId);
     if (!session) return;
     if (session.proc) {
-      session.proc.kill("SIGKILL");
-      await session.proc.exited;
+      await terminateSubprocess(session.proc, 500);
     }
     this.sessions.delete(handle.threadId);
     session.emit({ type: "session.exited", code: null, signal: null });

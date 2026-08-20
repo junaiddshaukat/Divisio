@@ -135,7 +135,7 @@ Assistant token deltas are the highest-frequency traffic and get special handlin
 | **Watch the send buffer** | Track `bufferedAmount`. Above a high-water mark, the connection enters catch-up mode |
 | **Catch-up mode** | Collapse pending deltas for a thread into a single consolidated update and skip intermediate frames. The user sees text jump forward rather than stream smoothly — correct, just less pretty |
 | **Never drop domain events** | Only deltas may be collapsed. `turn.completed`, `approval.requested`, `session.error` and friends are always delivered in order |
-| **Slow client cannot stall an agent** | Provider I/O never blocks on socket writes. A client too slow to keep up is disconnected and resumes via the cursor above |
+| **Slow client cannot stall an agent** | Provider I/O never blocks on socket writes. A client too slow to keep up enters catch-up: deltas coalesce on a slower tick. Domain events still flush. The client is not disconnected. |
 
 ## Subscriptions
 
