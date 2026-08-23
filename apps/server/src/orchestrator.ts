@@ -163,10 +163,16 @@ const IDLE_SWEEP_MS = 60 * 1000;
  * Upper bound on warm provider processes.
  *
  * Opening a thread starts its CLI in the background so the first turn does not
- * pay a cold boot. That is only worth doing if it cannot grow without limit —
- * past this many, the least recently used idle session is stopped.
+ * pay a cold boot. Warm processes are not cheap: a single idle vendor CLI has
+ * been measured at ~460MB RSS, so this trades memory for latency and the trade
+ * only pays on threads the user is actually moving between. Two keeps the
+ * current thread and the one before it warm — the common alt-tab pattern —
+ * without letting a browse through the sidebar pin a gigabyte.
+ *
+ * Past this many, the least recently used idle session is stopped. Raise it
+ * with DIVISIO_MAX_WARM_SESSIONS on a machine with memory to spare.
  */
-const MAX_WARM_SESSIONS = Number(process.env["DIVISIO_MAX_WARM_SESSIONS"] ?? 4);
+const MAX_WARM_SESSIONS = Number(process.env["DIVISIO_MAX_WARM_SESSIONS"] ?? 2);
 
 export class Orchestrator {
   private readonly sessions = new Map<string, LiveSession>();

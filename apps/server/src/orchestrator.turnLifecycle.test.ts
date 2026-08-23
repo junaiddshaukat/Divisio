@@ -146,8 +146,9 @@ describe("warm session management", () => {
       await orchestrator.dispatch("thread.snapshot", { threadId: thread.id });
       await Bun.sleep(30);
     }
-    // Default cap is 4; opening seven threads must not hold seven processes.
-    expect(liveCount(orchestrator)).toBeLessThanOrEqual(4);
+    // Warm processes cost hundreds of MB each, so opening seven threads must
+    // not hold seven of them.
+    expect(liveCount(orchestrator)).toBeLessThanOrEqual(2);
     expect(liveCount(orchestrator)).toBeGreaterThan(0);
   });
 
