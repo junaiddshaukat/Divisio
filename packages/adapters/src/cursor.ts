@@ -1,14 +1,24 @@
 /**
- * Cursor Agent adapter — Stream tier.
+ * Cursor Agent adapter — Structured tier when the CLI supports it, Stream tier
+ * otherwise.
  *
- * Drives `cursor-agent` in `--print --output-format stream-json` mode with
- * `--stream-partial-output` for character-level deltas. One process per turn.
+ * Two transports, chosen by probe rather than by assumption:
+ *
+ * - **Agent Client Protocol** (`cursor-agent acp`). A long-lived agent process
+ *   per thread, so a turn costs a protocol call instead of a CLI cold boot, and
+ *   the agent asks permission before dangerous tool calls. This is the only
+ *   transport that can honestly declare `approvals`.
+ * - **Print mode** (`--print --output-format stream-json`). One process per
+ *   turn, permissions owned by the CLI. Kept as the fallback so an older CLI
+ *   keeps working rather than breaking on upgrade.
+ *
+ * Capabilities follow the resolved transport: `detect()` probes first, and the
+ * orchestrator reads `capabilities` afterwards. A capability that is true only
+ * on one transport must never be declared while the other is in use — that is
+ * how a button that decides nothing ends up in the UI.
+ *
  * Auth stays in the CLI (`cursor-agent login`); we never see a key.
- *
  * Prefer `cursor-agent` over bare `agent` — on many machines `agent` is Grok.
- *
- * `approvals` is false: print mode owns the permission engine. Mediated
- * approvals need the ACP transport (`cursor-agent acp`) — a later Structured upgrade.
  *
  * Spec: https://cursor.com/docs/cli/reference/output-format
  */
@@ -28,6 +38,8 @@ import { logger } from "@divisio/shared/log";
 import { spawnWithEnv, terminateSubprocess } from "@divisio/shared/spawn";
 import { type CursorNormalizeState, normalizeCursorStreamLine } from "./cursor/normalize.ts";
 import { pushModelArg } from "./shared/modelArg.ts";
+import { AcpSession } from "./acp/session.ts";
+import { cachedAcpSupport, refreshAcpSupport } from "./acp/probe.ts";
 
 const log = logger("adapter:cursor");
 
@@ -42,9 +54,14 @@ interface Session extends SessionHandle {
   nativeId: string | null;
   /** Divisio's mode for this thread, mapped onto the CLI's own gate. */
   permissionMode: PermissionMode;
+  /** Set only on the ACP transport; null means this session is print-mode. */
+  acp: AcpSession | null;
 }
 
-const CAPABILITIES: AdapterCapabilities = {
+/** argv that starts the CLI as an ACP agent. */
+const ACP_COMMAND = [BINARY, "acp"];
+
+const BASE_CAPABILITIES: AdapterCapabilities = {
   sessionResume: true,
   interruptTurn: true,
   modelSwitch: true,
@@ -57,11 +74,23 @@ const CAPABILITIES: AdapterCapabilities = {
 export class CursorAdapter implements ProviderAdapter {
   readonly kind = "cursor";
   readonly label = "Cursor Agent";
-  readonly tier = "stream" as const;
-  readonly capabilities = CAPABILITIES;
   readonly contractVersion = ADAPTER_CONTRACT_VERSION;
 
   private readonly sessions = new Map<string, Session>();
+  /** Null until `detect()` has probed. Null is treated as "not supported". */
+  private acpSupported: boolean | null = null;
+
+  /**
+   * Structured only once ACP is confirmed. Reported honestly so the UI does not
+   * promise mediation the active transport cannot deliver.
+   */
+  get tier(): "structured" | "stream" {
+    return this.acpSupported === true ? "structured" : "stream";
+  }
+
+  get capabilities(): AdapterCapabilities {
+    return { ...BASE_CAPABILITIES, approvals: this.acpSupported === true };
+  }
 
   async detect(): Promise<DetectResult> {
     try {
@@ -77,6 +106,17 @@ export class CursorAdapter implements ProviderAdapter {
         };
       }
       const version = (out.trim() || err.trim()).split(/\s+/).pop() ?? null;
+      // Never block detection on the handshake. A signed-in agent can take
+      // seconds to answer, and this runs across every adapter each time the UI
+      // loads. Report what is known and let the probe settle in the background;
+      // until it does, capabilities stay conservative.
+      // Only ever upgrade from "unknown". A live session already proved what
+      // this transport can do; letting a cache expiry reset that to null would
+      // silently drop `approvals` out of the UI mid-use.
+      if (this.acpSupported === null) {
+        this.acpSupported = cachedAcpSupport(ACP_COMMAND);
+      }
+      refreshAcpSupport(ACP_COMMAND);
       return { available: true, version, detail: null };
     } catch {
       return {
@@ -93,6 +133,7 @@ export class CursorAdapter implements ProviderAdapter {
       permissionMode: input.permissionMode ?? "supervised",
       nativeId: input.resumeId ?? null,
       proc: null,
+      acp: null,
       cwd: input.cwd,
       emit,
       close: async () => {
@@ -100,14 +141,72 @@ export class CursorAdapter implements ProviderAdapter {
       },
     };
     this.sessions.set(input.threadId, session);
+
+    // Attempt the protocol transport directly rather than probing first. A
+    // successful handshake IS the probe, and the standalone probe costs a whole
+    // second agent startup — the handshake alone is several seconds, so paying
+    // it twice was the dominant cost of opening a thread.
+    if (this.acpSupported !== false) {
+      try {
+        session.acp = await this.startAcp(session, input.resumeId ?? null);
+        this.acpSupported = true;
+      } catch (err) {
+        // Fall back rather than fail the thread: print mode still works, it
+        // just cannot mediate approvals.
+        log.warn("acp start failed, falling back to print mode", {
+          threadId: input.threadId,
+          detail: String(err),
+        });
+        session.acp = null;
+        this.acpSupported = false;
+      }
+    }
+
     emit({ type: "status", status: "ready" });
     return session;
+  }
+
+  /**
+   * Bring up an ACP agent for this thread.
+   *
+   * Resuming is attempted only when the agent advertises it, and a failed
+   * resume falls back to a fresh conversation — a stale id must not cost the
+   * user their ability to send.
+   */
+  private async startAcp(session: Session, resumeId: string | null): Promise<AcpSession> {
+    const acp = new AcpSession({
+      cmd: ACP_COMMAND,
+      cwd: session.cwd,
+      emit: (event) => session.emit(event),
+      onExit: () => {
+        if (session.acp === acp) session.acp = null;
+      },
+    });
+    const init = await acp.start();
+
+    if (resumeId && init.agentCapabilities?.loadSession) {
+      try {
+        await acp.loadConversation(resumeId);
+        session.nativeId = resumeId;
+        return acp;
+      } catch (err) {
+        log.info("resume failed, starting a fresh conversation", { detail: String(err) });
+      }
+    }
+
+    session.nativeId = await acp.openConversation();
+    return acp;
   }
 
   async sendTurn(handle: SessionHandle, turn: SendTurnInput): Promise<void> {
     const session = this.sessions.get(handle.threadId);
     if (!session) throw new Error(`no session for thread ${handle.threadId}`);
     if (session.proc) throw new Error("turn already running");
+
+    if (session.acp) {
+      session.acp.sendTurn(turn.turnId, turn.text);
+      return;
+    }
 
     const args = [
       "--print",
@@ -193,11 +292,16 @@ export class CursorAdapter implements ProviderAdapter {
               stderr.trim().split("\n").slice(-3).join(" ") || `cursor-agent exited ${code}`,
           });
         }
-      } else if (assistantText.length > 0) {
+      } else if (assistantText.length > 0 && session.proc === proc) {
         session.emit({ type: "assistant.message", turnId, text: assistantText });
       }
     } catch (err) {
-      session.emit({ type: "error", code: "stream_failed", message: String(err) });
+      // Gated like the exit path above. `interruptTurn` nulls `session.proc`
+      // before killing, so a stopped pump is never current — an ungated emit
+      // here was attributed to whatever turn started next and failed it.
+      if (session.proc === proc) {
+        session.emit({ type: "error", code: "stream_failed", message: String(err) });
+      }
     } finally {
       if (session.proc === proc) {
         session.proc = null;
@@ -209,8 +313,17 @@ export class CursorAdapter implements ProviderAdapter {
 
   async interruptTurn(handle: SessionHandle, turnId: string): Promise<void> {
     const session = this.sessions.get(handle.threadId);
-    const proc = session?.proc;
-    if (!session || !proc) return;
+    if (!session) return;
+
+    if (session.acp) {
+      // Cancelling over the protocol keeps the agent warm, so Stop does not
+      // cost the next turn a cold boot.
+      await session.acp.cancel(turnId);
+      return;
+    }
+
+    const proc = session.proc;
+    if (!proc) return;
 
     session.emit({ type: "status", status: "stopping" });
     session.proc = null;
@@ -220,9 +333,29 @@ export class CursorAdapter implements ProviderAdapter {
     session.emit({ type: "status", status: "ready" });
   }
 
+  /** Only reachable on the ACP transport; print mode declares no approvals. */
+  async respondToApproval(
+    handle: SessionHandle,
+    approvalId: string,
+    decision: "approve" | "deny",
+  ): Promise<void> {
+    const session = this.sessions.get(handle.threadId);
+    await session?.acp?.respondToApproval(approvalId, decision);
+  }
+
+  /** Divisio's permission mode changed; apply it without losing the session. */
+  setPermissionMode(handle: SessionHandle, mode: PermissionMode): void {
+    const session = this.sessions.get(handle.threadId);
+    if (session) session.permissionMode = mode;
+  }
+
   async stopSession(handle: SessionHandle): Promise<void> {
     const session = this.sessions.get(handle.threadId);
     if (!session) return;
+    if (session.acp) {
+      await session.acp.close();
+      session.acp = null;
+    }
     if (session.proc) {
       await terminateSubprocess(session.proc, 500);
     }
