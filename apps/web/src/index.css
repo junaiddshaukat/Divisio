@@ -136,8 +136,9 @@ body {
   background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 20px;
+  /* Follows the base font size setting; 14px is the shipped default. */
+  font-size: var(--text-base, 14px);
+  line-height: calc(var(--text-base, 14px) + 6px);
   letter-spacing: normal;
   -webkit-font-smoothing: antialiased;
 }

@@ -1,12 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
-import { applyThemePreference, loadTheme } from "./themePrefs.ts";
+import { applyStoredAppearance, applyThemePreference, loadTheme } from "./themePrefs.ts";
 import { installExternalLinkOpener } from "./platform.ts";
 import "./index.css";
 
 // Color mode: System / Light / Dark (see themePrefs.ts). Apply before React paints.
 applyThemePreference();
+// Density and type size, before first paint so nothing reflows on boot.
+applyStoredAppearance();
 
 const media = window.matchMedia("(prefers-color-scheme: dark)");
 media.addEventListener("change", () => {
