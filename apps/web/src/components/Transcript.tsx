@@ -26,9 +26,11 @@ export interface Bubble {
 export function Transcript({
   bubbles,
   onOpenChanges,
+  onOpenDiff,
 }: {
   bubbles: Bubble[];
   onOpenChanges?(turnId: string, path?: string): void;
+  onOpenDiff?(turnId: string): void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -72,6 +74,7 @@ export function Transcript({
               turnId={b.turnId}
               changedFiles={b.changedFiles}
               onOpenChanges={onOpenChanges}
+              onOpenDiff={onOpenDiff}
             />
           );
         })}
@@ -93,11 +96,13 @@ const AssistantMessage = memo(function AssistantMessage({
   turnId,
   changedFiles,
   onOpenChanges,
+  onOpenDiff,
 }: {
   text: string;
   turnId?: string;
   changedFiles?: DiffFileEntry[];
   onOpenChanges?(turnId: string, path?: string): void;
+  onOpenDiff?(turnId: string): void;
 }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -105,7 +110,12 @@ const AssistantMessage = memo(function AssistantMessage({
       <div className="msg-assistant">
         <Markdown source={text} />
         {changedFiles && changedFiles.length > 0 && turnId && onOpenChanges && (
-          <FileChangeList turnId={turnId} files={changedFiles} onOpen={onOpenChanges} />
+          <FileChangeList
+            turnId={turnId}
+            files={changedFiles}
+            onOpen={onOpenChanges}
+            {...(onOpenDiff ? { onOpenDiff } : {})}
+          />
         )}
       </div>
       <div className="msg-assistant-meta">

@@ -2677,3 +2677,162 @@ textarea.field.git-commit-field:focus {
   flex: 1;
   min-width: 0;
 }
+
+/* --------------------------- agent change marks ---------------------------
+ * Lines an agent wrote, painted in the editor when a file is opened from a
+ * turn. Tinted background rather than a border: a border shifts text by a
+ * pixel and makes the whole file look subtly misaligned.
+ */
+.agent-change-line {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.agent-change-line.agent-change-modified {
+  background: color-mix(in srgb, #d29922 14%, transparent);
+}
+.agent-change-gutter {
+  width: 3px !important;
+  margin-left: 3px;
+}
+.agent-change-gutter-added {
+  background: #3fb950;
+}
+.agent-change-gutter-modified {
+  background: #d29922;
+}
+.agent-change-gutter-removed {
+  background: #f85149;
+  height: 2px !important;
+  margin-top: 9px;
+}
+
+/* -------------------------- changed file summary --------------------------
+ * The list an assistant message shows after it edits files. This is the main
+ * place a user decides whether to trust a turn, so it leads with what changed
+ * and how much, and every row is a way into the file.
+ */
+.file-changes {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--surface-2, var(--surface));
+}
+.file-changes-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: calc(7px * var(--density-scale)) 10px;
+  background: none;
+  border: 0;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-meta);
+  cursor: pointer;
+  text-align: left;
+}
+.file-changes-header:hover {
+  background: var(--surface-hover, rgba(127, 127, 127, 0.08));
+}
+.file-changes-chevron {
+  transition: transform 120ms ease;
+  flex: none;
+  opacity: 0.7;
+}
+.file-changes.is-collapsed .file-changes-chevron {
+  transform: rotate(-90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-changes-chevron {
+    transition: none;
+  }
+}
+.file-changes-title {
+  font-weight: 600;
+}
+.file-changes-spacer {
+  flex: 1;
+}
+.file-changes-body {
+  border-top: 1px solid var(--border);
+}
+.file-change-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: calc(6px * var(--density-scale)) 10px;
+  background: none;
+  border: 0;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-meta);
+  cursor: pointer;
+  text-align: left;
+}
+.file-change-row:hover {
+  background: var(--surface-hover, rgba(127, 127, 127, 0.08));
+}
+.file-change-row + .file-change-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+/* The extension badge carries the file-type colour; no icon font needed. */
+.file-change-ext {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--ext-color, #6b7280);
+}
+.file-change-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Truncate from the left: the filename matters more than the repo root. */
+  direction: rtl;
+  text-align: left;
+}
+.file-change-status {
+  flex: none;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  opacity: 0.75;
+}
+.file-change-status.is-added { color: #3fb950; }
+.file-change-status.is-deleted { color: #f85149; }
+.file-change-status.is-renamed { color: var(--accent); }
+.file-changes-total .adds,
+.diff-line-counts .adds { color: #3fb950; }
+.file-changes-total .dels,
+.diff-line-counts .dels { color: #f85149; }
+.file-changes-total {
+  display: inline-flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.file-change-more {
+  display: block;
+  width: 100%;
+  padding: calc(6px * var(--density-scale)) 10px;
+  background: none;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  color: var(--muted-foreground, var(--foreground));
+  font: inherit;
+  font-size: var(--text-meta);
+  cursor: pointer;
+  text-align: left;
+}
+.file-change-more:hover {
+  background: var(--surface-hover, rgba(127, 127, 127, 0.08));
+}

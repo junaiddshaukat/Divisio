@@ -3,6 +3,7 @@ import type { FileTreeEntry } from "@divisio/contracts";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { Button, IconButton, Pill } from "./ui/Button.tsx";
 import { ChevronDownIcon, ChevronRightIcon, CloseIcon, FileIcon, SaveIcon } from "./ui/icons.ts";
+import type { FileChangeMarks } from "../lib/changedRanges.ts";
 
 interface Props {
   threadId: string;
@@ -11,6 +12,14 @@ interface Props {
   readFile(path: string): Promise<{ content: string; binary: boolean; size: number }>;
   writeFile(path: string, content: string): Promise<void>;
   onClose(): void;
+  /**
+   * File to open, and which lines to highlight in it.
+   *
+   * Set when the user clicks a changed file in the transcript. Carries a
+   * `token` so clicking the same file twice re-opens and re-reveals it — the
+   * path alone would look unchanged and do nothing the second time.
+   */
+  focus?: { path: string; marks: FileChangeMarks; token: number } | null;
 }
 
 interface OpenFile {
@@ -20,7 +29,15 @@ interface OpenFile {
   binary: boolean;
 }
 
-export function FilePane({ threadId, dark, listDir, readFile, writeFile, onClose }: Props) {
+export function FilePane({
+  threadId,
+  dark,
+  listDir,
+  readFile,
+  writeFile,
+  onClose,
+  focus,
+}: Props) {
   const [expanded, setExpanded] = useState<Record<string, FileTreeEntry[]>>({});
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [file, setFile] = useState<OpenFile | null>(null);
@@ -57,15 +74,25 @@ export function FilePane({ threadId, dark, listDir, readFile, writeFile, onClose
     setOpen(next);
   };
 
-  const openFile = async (path: string) => {
-    setError(null);
-    try {
-      const result = await readFile(path);
-      setFile({ path, content: result.content, saved: result.content, binary: result.binary });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
+  const openFile = useCallback(
+    async (path: string) => {
+      setError(null);
+      try {
+        const result = await readFile(path);
+        setFile({ path, content: result.content, saved: result.content, binary: result.binary });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [readFile],
+  );
+
+  // Open whatever the transcript asked for. Keyed on `token` so re-clicking the
+  // same file re-reveals its changes.
+  useEffect(() => {
+    if (!focus) return;
+    void openFile(focus.path);
+  }, [focus?.token, focus?.path, openFile]);
 
   const save = async () => {
     if (!file || file.binary) return;
@@ -146,6 +173,7 @@ export function FilePane({ threadId, dark, listDir, readFile, writeFile, onClose
                 dark={dark}
                 onChange={(content) => setFile((f) => (f ? { ...f, content } : f))}
                 onSave={() => void save()}
+                {...(focus && focus.path === file.path ? { changes: focus.marks } : {})}
               />
             )}
           </>

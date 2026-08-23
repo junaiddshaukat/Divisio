@@ -18,6 +18,7 @@ import type {
   VendorResumeOutcome,
 } from "@divisio/contracts";
 import { looksLikeUsageLimit } from "@divisio/shared/usageLimit";
+import { changedRangesForFile, type FileChangeMarks } from "./lib/changedRanges.ts";
 import { Client, type ConnectionState } from "./client.ts";
 import { useFiles } from "./hooks/useFiles.ts";
 import { useAttention } from "./hooks/useAttention.ts";
@@ -970,6 +971,38 @@ export function App() {
 
   /** Latest `showDiff`, so the stable callback below never goes stale. */
   const showDiffRef = useRef<(turnId: string, path?: string) => void>(() => {});
+  const openFileRef = useRef<(turnId: string, path: string) => void>(() => {});
+  /** File the transcript asked the editor to open, with the lines to highlight. */
+  const [fileFocus, setFileFocus] = useState<{
+    path: string;
+    marks: FileChangeMarks;
+    token: number;
+  } | null>(null);
+  /**
+   * Open a file the agent changed, with that turn's edits highlighted.
+   *
+   * The patch is fetched per click rather than cached: a turn's diff is only
+   * wanted when someone asks for it, and it can be large. If the patch cannot
+   * be read the file still opens — losing the highlight is a much smaller
+   * failure than refusing to show the file.
+   */
+  const openChangedFile = async (turnId: string, path: string) => {
+    const client = clientRef.current;
+    if (!client || !activeId) return;
+    setRightSurface("files");
+    setFileFocus({ path, marks: { ranges: [], deletedAt: [] }, token: Date.now() });
+    try {
+      const res = await client.send("turn.diff", { threadId: activeId, turnId });
+      setFileFocus({
+        path,
+        marks: changedRangesForFile(res.patch, path),
+        token: Date.now(),
+      });
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    }
+  };
+
   const showDiff = async (turnId: string, path?: string) => {
     const client = clientRef.current;
     if (!client || !activeId) return;
@@ -1585,10 +1618,19 @@ export function App() {
   // Stable identity: an inline arrow here would defeat the transcript's row
   // memoization on every render.
   const openChanges = useCallback((turnId: string, path?: string) => {
-    void showDiffRef.current(turnId, path);
+    // A named file opens in the editor with that turn's edits highlighted;
+    // reviewing a change in its surrounding code is what people do next. With
+    // no path there is nothing to point at, so show the turn's diff instead.
+    if (path) openFileRef.current(turnId, path);
+    else void showDiffRef.current(turnId);
+  }, []);
+
+  const openTurnDiff = useCallback((turnId: string) => {
+    void showDiffRef.current(turnId);
   }, []);
 
   showDiffRef.current = showDiff;
+  openFileRef.current = openChangedFile;
 
   if (pairingState === "pairing") {
     return (
@@ -1871,6 +1913,7 @@ export function App() {
                   <Transcript
                     bubbles={bubbles}
                     onOpenChanges={openChanges}
+                    onOpenDiff={openTurnDiff}
                   />
                   {error && looksLikeUsageLimit({ message: error }) && activeThread ? (
                     <UsageLimitBanner
@@ -2066,6 +2109,7 @@ export function App() {
                 readFile={files.readFile}
                 writeFile={files.writeFile}
                 onClose={closeRight}
+                focus={fileFocus}
               />
             </Suspense>
           )}
