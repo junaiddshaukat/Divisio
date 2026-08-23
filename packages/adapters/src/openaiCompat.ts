@@ -38,6 +38,8 @@ interface Session extends SessionHandle {
   emit: EmitRuntimeEvent;
   messages: ChatMessage[];
   abort: AbortController | null;
+  /** Turn the current `abort` belongs to. Interrupt takes an explicit id. */
+  abortTurnId: string | null;
   model: string;
 }
 
@@ -105,6 +107,7 @@ export class OpenAICompatAdapter implements ProviderAdapter {
         },
       ],
       abort: null,
+      abortTurnId: null,
       model: this.config.modelId,
       close: async () => {
         await this.stopSession(session);
@@ -126,6 +129,7 @@ export class OpenAICompatAdapter implements ProviderAdapter {
 
     const abort = new AbortController();
     session.abort = abort;
+    session.abortTurnId = turn.turnId;
 
     void this.stream(session, turn.turnId, abort.signal);
   }
@@ -222,12 +226,17 @@ export class OpenAICompatAdapter implements ProviderAdapter {
       session.emit({ type: "status", status: "ready" });
     } finally {
       session.abort = null;
+      session.abortTurnId = null;
     }
   }
 
-  async interruptTurn(handle: SessionHandle, _turnId: string): Promise<void> {
+  async interruptTurn(handle: SessionHandle, turnId: string): Promise<void> {
     const session = this.sessions.get(handle.threadId);
     if (!session?.abort) return;
+    // The contract is an explicit turnId, never "the current turn"
+    // (docs/architecture/ws-protocol.md). Aborting whatever happens to be
+    // running would kill the wrong turn under a start/stop race.
+    if (session.abortTurnId !== turnId) return;
     session.emit({ type: "status", status: "stopping" });
     session.abort.abort();
   }

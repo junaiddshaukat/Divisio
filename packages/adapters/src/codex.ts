@@ -54,6 +54,11 @@ interface Session extends SessionHandle {
   turnMap: Map<string, string>;
   /** Pending approval RPC ids awaiting respondToApproval. */
   pendingApprovals: Map<string, JsonRpcId>;
+  /**
+   * Turns stopped before `turn/start` returned a Codex turn id.
+   * The sendTurn continuation drains this so the interrupt is not lost.
+   */
+  interruptedTurns: Set<string>;
 }
 
 function extractThreadId(result: unknown): string | null {
@@ -120,6 +125,7 @@ export class CodexAdapter implements ProviderAdapter {
       norm: { turnId: null, codexTurnId: null, assistantText: "" },
       turnMap: new Map(),
       pendingApprovals: new Map(),
+      interruptedTurns: new Set(),
       close: async () => {
         await this.stopSession(session);
       },
@@ -198,10 +204,18 @@ export class CodexAdapter implements ProviderAdapter {
 
   private onInbound(session: Session, msg: JsonRpcInbound): void {
     if (msg.kind === "notification") {
+      const priorTurnId = session.norm.turnId;
       const result = normalizeCodexNotification(msg.method, msg.params, session.norm);
       session.norm = result.state;
       if (result.state.codexTurnId && result.state.turnId) {
         session.turnMap.set(result.state.turnId, result.state.codexTurnId);
+      }
+      // `turn/completed` clears norm.turnId. Drop the mapping with it — it was
+      // never pruned, so the map grew for the life of the session and a stale
+      // entry let a later Stop interrupt an already-finished Codex turn.
+      if (priorTurnId && !result.state.turnId) {
+        session.turnMap.delete(priorTurnId);
+        session.interruptedTurns.delete(priorTurnId);
       }
       for (const event of result.events) session.emit(event);
       return;
@@ -260,6 +274,13 @@ export class CodexAdapter implements ProviderAdapter {
       if (codexTurnId) {
         session.norm = { ...session.norm, codexTurnId };
         session.turnMap.set(turn.turnId, codexTurnId);
+        // Stop can land while `turn/start` is in flight, when there is no
+        // codex turn id to interrupt yet. `interruptTurn` records the intent;
+        // honour it now that the id exists, or the CLI keeps running.
+        if (session.interruptedTurns.has(turn.turnId)) {
+          session.interruptedTurns.delete(turn.turnId);
+          await this.stopCodexTurn(session, turn.turnId, codexTurnId);
+        }
       }
     } catch (err) {
       session.norm = { turnId: null, codexTurnId: null, assistantText: "" };
@@ -278,24 +299,68 @@ export class CodexAdapter implements ProviderAdapter {
     const session = this.sessions.get(handle.threadId);
     if (!session?.client || !session.codexThreadId) return;
 
+    // Codex blocks on the JSON-RPC response to an approval request. Stop
+    // clears the approval bar in the UI, so nothing can ever answer these —
+    // cancel them here or the CLI waits forever on a turn the user stopped.
+    await this.cancelPendingApprovals(session);
+
     const codexTurnId =
       session.turnMap.get(turnId) ??
       (session.norm.turnId === turnId ? session.norm.codexTurnId : null);
-    if (!codexTurnId) return;
+
+    if (!codexTurnId) {
+      // `turn/start` has not returned an id yet. Record the intent so the
+      // sendTurn continuation stops the turn the moment the id exists, and
+      // settle the turn locally so the thread is not left running.
+      if (session.norm.turnId === turnId) {
+        session.interruptedTurns.add(turnId);
+      }
+      session.emit({ type: "status", status: "stopping" });
+      this.settleTurn(session, turnId);
+      return;
+    }
 
     session.emit({ type: "status", status: "stopping" });
+    await this.stopCodexTurn(session, turnId, codexTurnId);
+  }
 
+  /** Issue `turn/interrupt` and settle locally whatever the CLI does. */
+  private async stopCodexTurn(session: Session, turnId: string, codexTurnId: string): Promise<void> {
     try {
-      await session.client.request("turn/interrupt", {
+      await session.client?.request("turn/interrupt", {
         threadId: session.codexThreadId,
         turnId: codexTurnId,
       });
     } catch (err) {
       log.warn("turn/interrupt failed", { detail: String(err) });
-      // Fall through — turn/completed may still arrive, or we force-complete.
-      session.emit({ type: "turn.completed", turnId });
+    }
+    // Settle unconditionally. Relying on a `turn/completed` notification that
+    // may never arrive left `norm.turnId` set, and every later send on this
+    // session then failed with "turn already running".
+    this.settleTurn(session, turnId);
+  }
+
+  /** Clear per-turn state and report the turn finished exactly once. */
+  private settleTurn(session: Session, turnId: string): void {
+    if (session.norm.turnId === turnId) {
       session.norm = { turnId: null, codexTurnId: null, assistantText: "" };
-      session.emit({ type: "status", status: "ready" });
+    }
+    session.turnMap.delete(turnId);
+    session.emit({ type: "turn.completed", turnId });
+    session.emit({ type: "status", status: "ready" });
+  }
+
+  /** Answer every outstanding approval RPC so Codex stops waiting on us. */
+  private async cancelPendingApprovals(session: Session): Promise<void> {
+    if (session.pendingApprovals.size === 0) return;
+    const outstanding = [...session.pendingApprovals.entries()];
+    session.pendingApprovals.clear();
+    for (const [approvalId, rpcId] of outstanding) {
+      try {
+        await session.client?.respond(rpcId, "cancel");
+      } catch (err) {
+        log.warn("failed to cancel approval", { approvalId, detail: String(err) });
+      }
     }
   }
 

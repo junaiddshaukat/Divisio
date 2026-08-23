@@ -100,11 +100,16 @@ export async function pumpClaudeLikeStream(opts: {
           message: stderr.trim().split("\n").slice(-3).join(" ") || `${opts.failLabel} exited ${code}`,
         });
       }
-    } else if (assistantText.length > 0) {
+    } else if (assistantText.length > 0 && opts.isCurrent()) {
       opts.emit({ type: "assistant.message", turnId: opts.turnId, text: assistantText });
     }
   } catch (err) {
-    opts.emit({ type: "error", code: "stream_failed", message: String(err) });
+    // Gated like the exit path above. `interruptTurn` nulls the process before
+    // killing it, so a stopped pump is never current — an ungated emit here was
+    // attributed to whatever turn started next and failed it.
+    if (opts.isCurrent()) {
+      opts.emit({ type: "error", code: "stream_failed", message: String(err) });
+    }
   } finally {
     if (opts.isCurrent()) {
       opts.clearProc();

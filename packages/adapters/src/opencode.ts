@@ -150,11 +150,16 @@ export class OpenCodeAdapter implements ProviderAdapter {
             message: stderr.trim().split("\n").slice(-3).join(" ") || `opencode exited ${code}`,
           });
         }
-      } else if (assistantText.length > 0) {
+      } else if (assistantText.length > 0 && session.proc === proc) {
         session.emit({ type: "assistant.message", turnId, text: assistantText });
       }
     } catch (err) {
-      session.emit({ type: "error", code: "stream_failed", message: String(err) });
+      // Gated like the exit path above. `interruptTurn` nulls `session.proc`
+      // before killing, so a stopped pump is never current — an ungated emit
+      // here was attributed to whatever turn started next and failed it.
+      if (session.proc === proc) {
+        session.emit({ type: "error", code: "stream_failed", message: String(err) });
+      }
     } finally {
       if (session.proc === proc) {
         session.proc = null;
