@@ -5,7 +5,7 @@
  * moving HEAD. Non-git directories return `skipped` so chat still works.
  */
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { spawnWithEnv } from "@divisio/shared/spawn";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,31 +58,100 @@ export async function isGitRepo(cwd: string): Promise<boolean> {
 }
 
 /**
+ * Seed the throwaway index so `git add -A` does not re-hash the whole worktree.
+ *
+ * Starting from `read-tree HEAD` produces a correct index with *no stat cache*,
+ * so git must re-stat and re-hash every tracked file before every user turn —
+ * the single largest cost on the pre-turn path. Copying the live `.git/index`
+ * carries the stat cache over, so `add -A` only hashes what actually changed.
+ * The original index is never written to; only the copy is.
+ */
+async function seedCheckpointIndex(
+  cwd: string,
+  indexFile: string,
+  headExists: boolean,
+): Promise<void> {
+  const gitDir = await git(cwd, ["rev-parse", "--absolute-git-dir"]);
+  if (gitDir.code === 0 && gitDir.stdout) {
+    const live = join(gitDir.stdout, "index");
+    try {
+      const before = await stat(live);
+      await copyFile(live, indexFile);
+      // `--really-refresh` re-stats entries whose cached metadata is stale.
+      // It writes only to the copy (GIT_INDEX_FILE), never to `live`.
+      await git(cwd, ["update-index", "--really-refresh"], { GIT_INDEX_FILE: indexFile });
+      // Reading the live index can bump its atime; restore both stamps so the
+      // user's own git commands keep their stat cache too.
+      await utimes(live, before.atime, before.mtime).catch(() => undefined);
+      return;
+    } catch {
+      // No live index yet (fresh clone, or a bare/odd layout) — fall through.
+    }
+  }
+  if (headExists) {
+    await git(cwd, ["read-tree", "HEAD"], { GIT_INDEX_FILE: indexFile });
+  } else {
+    await writeFile(indexFile, "");
+  }
+}
+
+/**
+ * Dedupe concurrent captures of the same ref. Two callers racing the same
+ * (cwd, ref) previously ran two full `add -A` scans to produce the same commit.
+ */
+const inFlightCaptures = new Map<string, Promise<CaptureResult>>();
+
+/**
  * Snapshot the current working tree into a hidden ref (does not update HEAD).
+ *
+ * `skipIfExists` short-circuits to a single `rev-parse` when the ref is already
+ * present, which is what makes a re-entrant pre-turn capture nearly free.
  */
 export async function captureCheckpoint(
   cwd: string,
   threadId: string,
   turnId: string,
   phase: "pre" | "post",
+  opts: { skipIfExists?: boolean } = {},
 ): Promise<CaptureResult> {
   const ref = checkpointRef(threadId, turnId, phase);
+  const key = `${cwd}\u0000${ref}`;
+  const running = inFlightCaptures.get(key);
+  if (running) return await running;
 
+  const task = captureCheckpointUncoalesced(cwd, ref, phase, turnId, opts);
+  inFlightCaptures.set(key, task);
+  try {
+    return await task;
+  } finally {
+    inFlightCaptures.delete(key);
+  }
+}
+
+async function captureCheckpointUncoalesced(
+  cwd: string,
+  ref: string,
+  phase: "pre" | "post",
+  turnId: string,
+  opts: { skipIfExists?: boolean },
+): Promise<CaptureResult> {
   if (!(await isGitRepo(cwd))) {
     return { ref, sha: null, status: "skipped", detail: "not a git repository" };
+  }
+
+  if (opts.skipIfExists) {
+    const existing = await git(cwd, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+    if (existing.code === 0 && existing.stdout) {
+      return { ref, sha: existing.stdout, status: "ready" };
+    }
   }
 
   const indexDir = await mkdtemp(join(tmpdir(), "divisio-idx-"));
   const indexFile = join(indexDir, "index");
 
   try {
-    // Seed from HEAD if it exists; empty tree for brand-new repos is fine.
     const head = await git(cwd, ["rev-parse", "--verify", "HEAD"]);
-    if (head.code === 0) {
-      await git(cwd, ["read-tree", "HEAD"], { GIT_INDEX_FILE: indexFile });
-    } else {
-      await writeFile(indexFile, "");
-    }
+    await seedCheckpointIndex(cwd, indexFile, head.code === 0);
 
     const add = await git(cwd, ["add", "-A"], { GIT_INDEX_FILE: indexFile });
     if (add.code !== 0) {
