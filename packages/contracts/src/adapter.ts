@@ -107,6 +107,16 @@ export type ProviderRuntimeEvent =
   | { type: "assistant.message"; turnId: string; text: string }
   | { type: "tool.started"; turnId: string; toolCallId: string; name: string; input?: string }
   | { type: "tool.finished"; turnId: string; toolCallId: string; ok: boolean; output?: string }
+  /**
+   * A file the agent wrote, as reported by the provider itself.
+   *
+   * Turn diffs normally come from git checkpoints, which say nothing in a
+   * directory that is not a repository — and that is exactly where a user is
+   * most likely to be trying something out. Adapters whose protocol names the
+   * files a tool touched emit this so the transcript can still show what
+   * changed. Optional: an adapter that cannot know must not guess.
+   */
+  | { type: "file.edited"; turnId: string; path: string }
   | { type: "approval.requested"; turnId: string; approvalId: string; category: string; summary: string }
   | { type: "turn.completed"; turnId: string }
   | {

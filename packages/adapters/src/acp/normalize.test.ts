@@ -140,3 +140,187 @@ describe("selectAcpOptionId", () => {
     expect(selectAcpOptionId(noReject, "deny")).toBeNull();
   });
 });
+
+/**
+ * Outside a git repository there is no checkpoint to diff, so the provider's
+ * own report of what it wrote is the only record the transcript can show.
+ */
+describe("files reported edited", () => {
+  test("a completed edit reports the file it touched", () => {
+    const state = newAcpState();
+    normalizeAcpUpdate({ sessionUpdate: "tool_call", toolCallId: "e1", title: "edit" }, "t", state);
+    const done = normalizeAcpUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "e1",
+        kind: "edit",
+        status: "completed",
+        locations: [{ path: "/work/page.html" }],
+      },
+      "t",
+      state,
+    );
+    expect(done.events).toContainEqual({ type: "file.edited", turnId: "t", path: "/work/page.html" });
+  });
+
+  test("read-only tools never report a file as changed", () => {
+    // Reporting a file because the agent read it would make the whole list
+    // untrustworthy, which is worse than showing nothing.
+    const state = newAcpState();
+    for (const kind of ["read", "search", "list", "fetch", "other"]) {
+      const r = normalizeAcpUpdate(
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: `x-${kind}`,
+          kind,
+          status: "completed",
+          locations: [{ path: "/work/secret.ts" }],
+        },
+        "t",
+        state,
+      );
+      expect(r.events.filter((e) => e.type === "file.edited")).toEqual([]);
+    }
+  });
+
+  test("an unfinished edit is not reported until it completes", () => {
+    const state = newAcpState();
+    const r = normalizeAcpUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "e2",
+        kind: "edit",
+        status: "in_progress",
+        locations: [{ path: "/work/a.ts" }],
+      },
+      "t",
+      state,
+    );
+    expect(r.events.filter((e) => e.type === "file.edited")).toEqual([]);
+  });
+
+  test("a failed edit is not reported as a change", () => {
+    const state = newAcpState();
+    const r = normalizeAcpUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "e3",
+        kind: "edit",
+        status: "failed",
+        locations: [{ path: "/work/a.ts" }],
+      },
+      "t",
+      state,
+    );
+    expect(r.events.filter((e) => e.type === "file.edited")).toEqual([]);
+  });
+
+  test("the same file edited twice is reported once", () => {
+    const state = newAcpState();
+    const emit = (id: string) =>
+      normalizeAcpUpdate(
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: id,
+          kind: "edit",
+          status: "completed",
+          locations: [{ path: "/work/a.ts" }],
+        },
+        "t",
+        state,
+      ).events.filter((e) => e.type === "file.edited");
+
+    expect(emit("e4")).toHaveLength(1);
+    expect(emit("e5")).toHaveLength(0);
+  });
+
+  test("directory and malformed locations are ignored", () => {
+    const state = newAcpState();
+    const r = normalizeAcpUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "e6",
+        kind: "edit",
+        status: "completed",
+        locations: [{ path: "." }, { path: "src/" }, { path: "" }, { nope: 1 }, "junk"],
+      },
+      "t",
+      state,
+    );
+    expect(r.events.filter((e) => e.type === "file.edited")).toEqual([]);
+  });
+});
+
+/**
+ * A tool call is described across several updates: kind and locations arrive on
+ * one, the completion status on a later one carrying neither. Deciding only
+ * from the completion update reported nothing at all.
+ */
+describe("tool call fields split across updates", () => {
+  test("an edit announced early is still reported when a later update completes it", () => {
+    const state = newAcpState();
+    normalizeAcpUpdate(
+      { sessionUpdate: "tool_call", toolCallId: "s1", title: "search_replace" },
+      "t",
+      state,
+    );
+    // Kind and locations, no status.
+    normalizeAcpUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "s1",
+        kind: "edit",
+        locations: [{ path: "/work/page.html" }],
+      },
+      "t",
+      state,
+    );
+    // Completion, carrying neither kind nor locations.
+    const done = normalizeAcpUpdate(
+      { sessionUpdate: "tool_call_update", toolCallId: "s1", status: "completed" },
+      "t",
+      state,
+    );
+    expect(done.events).toContainEqual({
+      type: "file.edited",
+      turnId: "t",
+      path: "/work/page.html",
+    });
+  });
+
+  test("a read announced early is still not reported on completion", () => {
+    const state = newAcpState();
+    normalizeAcpUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "r1",
+        kind: "read",
+        locations: [{ path: "/work/secret.ts" }],
+      },
+      "t",
+      state,
+    );
+    const done = normalizeAcpUpdate(
+      { sessionUpdate: "tool_call_update", toolCallId: "r1", status: "completed" },
+      "t",
+      state,
+    );
+    expect(done.events.filter((e) => e.type === "file.edited")).toEqual([]);
+  });
+
+  test("state for a finished call is released", () => {
+    const state = newAcpState();
+    normalizeAcpUpdate(
+      { sessionUpdate: "tool_call_update", toolCallId: "z1", kind: "edit", locations: [{ path: "/a" }] },
+      "t",
+      state,
+    );
+    expect(state.toolCalls.size).toBe(1);
+    normalizeAcpUpdate(
+      { sessionUpdate: "tool_call_update", toolCallId: "z1", status: "completed" },
+      "t",
+      state,
+    );
+    expect(state.toolCalls.size).toBe(0);
+  });
+});

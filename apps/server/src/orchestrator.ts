@@ -116,6 +116,14 @@ interface LiveSession {
   /** Epoch ms of the last turn activity. Drives idle reaping. */
   lastUsedAt: number;
   /**
+   * Files the provider said it wrote, per turn.
+   *
+   * Only a fallback: a git checkpoint is the better record because it carries
+   * line counts and supports restore. This is what the transcript can still
+   * show when the working directory is not a repository.
+   */
+  editedByTurn: Map<string, Set<string>>;
+  /**
    * Turns stopped before the adapter was ever handed them.
    *
    * `turn.started` is committed (and Stop is armed in the UI) before the
@@ -1352,6 +1360,7 @@ export class Orchestrator {
       stoppingTurnId: null,
       cancelledTurns: new Set(),
       lastUsedAt: Date.now(),
+      editedByTurn: new Map(),
     };
     this.sessions.set(threadId, live);
     this.persistVendorSession(threadId);
@@ -1598,6 +1607,46 @@ export class Orchestrator {
     return this.store.getThread(threadId)?.permissionMode ?? "supervised";
   }
 
+  /**
+   * Emit a changed-file list built from the provider's own reports.
+   *
+   * Used only when checkpointing produced nothing to diff. The entries carry no
+   * line counts, and the UI renders them without — a fabricated count would be
+   * worse than an absent one.
+   */
+  private commitProviderReportedEdits(threadId: string, turnId: string, detail: string | null) {
+    const session = this.sessions.get(threadId);
+    const paths = session?.editedByTurn.get(turnId);
+    session?.editedByTurn.delete(turnId);
+    if (!paths || paths.size === 0) return;
+
+    const root = this.store.getThread(threadId);
+    const workdir = root ? this.workdirFor(root) : null;
+    const files = [...paths]
+      .map((path) => ({
+        // Providers report absolute paths; the transcript reads better relative
+        // to the working directory, and the editor resolves them that way too.
+        path: workdir && path.startsWith(`${workdir}/`) ? path.slice(workdir.length + 1) : path,
+        status: "M" as const,
+      }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+
+    log.info("reporting provider-declared edits", { threadId, turnId, count: files.length, detail });
+    this.commit([
+      {
+        type: "turn.diff_ready",
+        threadId,
+        payload: {
+          threadId,
+          turnId,
+          fromRef: "",
+          toRef: "",
+          files,
+        },
+      },
+    ]);
+  }
+
   private async finalizeCheckpoints(threadId: string, turnId: string) {
     const thread = this.store.getThread(threadId);
     const project = thread ? this.store.getProject(thread.projectId) : null;
@@ -1620,9 +1669,17 @@ export class Orchestrator {
       },
     ]);
 
-    if (post.status !== "ready") return;
+    if (post.status !== "ready") {
+      // No usable checkpoint — most often because this directory is not a git
+      // repository. Report what the provider itself said it wrote, so the
+      // transcript still shows the work. Line counts are absent rather than
+      // invented; there is no baseline to compare against.
+      this.commitProviderReportedEdits(threadId, turnId, post.detail ?? null);
+      return;
+    }
 
     const fromRef = checkpointRef(threadId, turnId, "pre");
+    this.sessions.get(threadId)?.editedByTurn.delete(turnId);
     const diff = await diffCheckpoints(this.workdirFor(thread), fromRef, post.ref);
     if (diff.status === "ready") {
       this.commit([
@@ -1811,6 +1868,17 @@ export class Orchestrator {
             },
           },
         ]);
+        return;
+      }
+
+      case "file.edited": {
+        if (!session) return;
+        let paths = session.editedByTurn.get(event.turnId);
+        if (!paths) {
+          paths = new Set();
+          session.editedByTurn.set(event.turnId, paths);
+        }
+        paths.add(event.path);
         return;
       }
 

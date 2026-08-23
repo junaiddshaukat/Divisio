@@ -25,6 +25,17 @@ export interface AcpPermissionOption {
 export interface AcpNormalizeState {
   /** Tool call ids seen this turn, so an update is not reported as a new call. */
   startedToolCalls: Set<string>;
+  /** Files already reported edited this turn, so a retry is not counted twice. */
+  editedPaths: Set<string>;
+  /**
+   * What each in-flight tool call has told us so far.
+   *
+   * A tool call is described across several updates: the kind and the files it
+   * touches arrive on one, the completion status on a later one carrying
+   * neither. Deciding at completion time therefore needs what the earlier
+   * updates said, so it is accumulated here rather than re-read.
+   */
+  toolCalls: Map<string, { kind?: string; paths: string[] }>;
 }
 
 export interface AcpNormalizeResult {
@@ -34,14 +45,38 @@ export interface AcpNormalizeResult {
 }
 
 export function newAcpState(): AcpNormalizeState {
-  return { startedToolCalls: new Set() };
+  return { startedToolCalls: new Set(), editedPaths: new Set(), toolCalls: new Map() };
 }
+
+/**
+ * Tool kinds that write to disk.
+ *
+ * Read-only kinds are excluded deliberately: reporting a file as changed
+ * because the agent *read* it would put noise in the transcript and make the
+ * changed-file list untrustworthy, which is worse than showing nothing.
+ */
+const WRITING_KINDS = new Set(["edit", "delete", "move"]);
 
 function textFromContent(content: unknown): string {
   if (!content || typeof content !== "object") return "";
   const block = content as Record<string, unknown>;
   if (block["type"] === "text" && typeof block["text"] === "string") return block["text"];
   return "";
+}
+
+/** Paths from a tool call's `locations`, ignoring malformed entries. */
+function locationPaths(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const paths: string[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const path = (entry as { path?: unknown }).path;
+    if (typeof path !== "string" || !path.trim()) continue;
+    // A directory listing reports "."; that is not a file that changed.
+    if (path === "." || path.endsWith("/")) continue;
+    paths.push(path);
+  }
+  return paths;
 }
 
 /** ACP tool-call status vocabulary; anything else is treated as still running. */
@@ -108,7 +143,25 @@ export function normalizeAcpUpdate(
       });
     }
 
+    // Merge what this update adds to what the call already told us.
+    const known = state.toolCalls.get(id) ?? { paths: [] };
+    if (typeof update["kind"] === "string") known.kind = update["kind"];
+    const paths = locationPaths(update["locations"]);
+    if (paths.length > 0) known.paths = [...new Set([...known.paths, ...paths])];
+    state.toolCalls.set(id, known);
+
+    // Report files a completed write touched. This is the only signal outside a
+    // git repository, where checkpoints have nothing to diff.
+    if (status === "completed" && known.kind && WRITING_KINDS.has(known.kind)) {
+      for (const path of known.paths) {
+        if (state.editedPaths.has(path)) continue;
+        state.editedPaths.add(path);
+        events.push({ type: "file.edited", turnId, path });
+      }
+    }
+
     if (isTerminal(status)) {
+      state.toolCalls.delete(id);
       events.push({
         type: "tool.finished",
         turnId,
