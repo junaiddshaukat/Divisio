@@ -15,6 +15,9 @@ export function nextRevealLength(shown: number, target: number): number {
   return Math.min(target, shown + step);
 }
 
+/** Minimum gap between reveal commits. ~25 commits/sec, not 60-120. */
+const MIN_EMIT_INTERVAL_MS = 40;
+
 export function useSmoothReveal(target: string, active: boolean): string {
   const [shown, setShown] = useState("");
   const shownRef = useRef(shown);
@@ -36,6 +39,7 @@ export function useSmoothReveal(target: string, active: boolean): string {
     if (target === shownRef.current) return;
 
     let frame = 0;
+    let lastEmit = 0;
     const tick = () => {
       const current = shownRef.current;
       if (current.length >= target.length) {
@@ -43,8 +47,15 @@ export function useSmoothReveal(target: string, active: boolean): string {
         return;
       }
       const next = target.slice(0, nextRevealLength(current.length, target.length));
-      setShown(next);
       shownRef.current = next;
+      // rAF runs at 60-120Hz. Committing on every frame turned each token into
+      // a full markdown re-parse; gate commits to MIN_EMIT_INTERVAL_MS so the
+      // reveal stays smooth without re-rendering at display refresh rate.
+      const now = performance.now();
+      if (now - lastEmit >= MIN_EMIT_INTERVAL_MS) {
+        lastEmit = now;
+        setShown(next);
+      }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);

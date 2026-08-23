@@ -38,6 +38,8 @@ interface Props {
     images: Array<{ name: string; mimeType: string; dataBase64: string }>,
   ): void;
   onInterrupt(): void;
+  /** Stop was pressed and the daemon has not settled the turn yet. */
+  stopping?: boolean;
   onPermissionMode(mode: PermissionMode): void;
   onAgentSelect(next: { provider: string; model: string | null; viaHandoff: boolean }): void;
 }
@@ -93,6 +95,7 @@ export function Composer({
   onProjectChange,
   onSend,
   onInterrupt,
+  stopping = false,
   onPermissionMode,
   onAgentSelect,
 }: Props) {
@@ -268,8 +271,14 @@ export function Composer({
           />
           <span className="composer-spacer" />
           {busy ? (
-            <Button variant="danger" size="sm" icon={<StopIcon />} onClick={onInterrupt}>
-              Stop
+            <Button
+              variant="danger"
+              size="sm"
+              icon={<StopIcon />}
+              onClick={onInterrupt}
+              disabled={stopping}
+            >
+              {stopping ? "Stopping…" : "Stop"}
             </Button>
           ) : (
             <button

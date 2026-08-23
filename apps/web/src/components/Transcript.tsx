@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useDeferredValue, useEffect, useRef, useState } from "react";
 import type { DiffFileEntry } from "@divisio/contracts";
 import { useSmoothReveal } from "../hooks/useSmoothReveal.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -80,7 +80,15 @@ export function Transcript({
   );
 }
 
-function AssistantMessage({
+/**
+ * Memoized per message.
+ *
+ * The transcript re-renders on every streaming commit — ten times a second
+ * while a reply streams. Without this, every completed message in the thread
+ * reconciled its whole subtree on each of those commits, so a long thread got
+ * measurably slower to stream into than a short one.
+ */
+const AssistantMessage = memo(function AssistantMessage({
   text,
   turnId,
   changedFiles,
@@ -116,14 +124,18 @@ function AssistantMessage({
       </div>
     </div>
   );
-}
+});
 
-function StreamingAssistant({ text }: { text: string }) {
+const StreamingAssistant = memo(function StreamingAssistant({ text }: { text: string }) {
   const revealed = useSmoothReveal(text, true);
+  // Markdown parsing is marked, highlighted and DOM-sanitized on every change.
+  // Deferring it lets React drop intermediate parses under load, so a fast
+  // stream costs one parse per painted frame instead of one per commit.
+  const deferred = useDeferredValue(revealed);
   return (
     <div className="msg-assistant streaming">
-      <Markdown source={revealed} />
+      <Markdown source={deferred} />
     </div>
   );
-}
+});
 

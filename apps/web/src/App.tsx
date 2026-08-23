@@ -89,6 +89,13 @@ import { isProviderEnabled, loadProviderPrefs } from "./providerPrefs.ts";
 const PORT = 4577;
 const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
 
+/**
+ * Streaming commit budget. Tokens arrive far faster than a useful repaint;
+ * batching them into ~10 commits/sec keeps the transcript readable without
+ * making first token wait (the first chunk of a turn bypasses this).
+ */
+const STREAM_FLUSH_MS = 100;
+
 const LIVE_THREAD_STATUS = new Set(["running", "stopping", "awaiting_approval"]);
 
 /** Active chat plus every thread still mid-turn — so background streams keep arriving. */
@@ -212,6 +219,18 @@ export function App() {
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [streaming, setStreaming] = useState<{ turnId: string; text: string } | null>(null);
   const [activeTurn, setActiveTurn] = useState<string | null>(null);
+  /**
+   * User bubble shown before the daemon echoes `turn.message` back.
+   *
+   * The composer clears on submit, so without this the typed text vanished
+   * and nothing rendered until a full round trip (spawn + checkpoint) landed.
+   * Reconciled by turnId once the server copy arrives.
+   */
+  const [pendingUserText, setPendingUserText] = useState<string | null>(null);
+  /** Stop was pressed; flip the UI now rather than after the daemon replies. */
+  const [stopping, setStopping] = useState(false);
+  /** Pending coalesced streaming commit. See `onDelta`. */
+  const streamingFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [work, setWork] = useState<WorkEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState(false);
@@ -298,10 +317,48 @@ export function App() {
   streamingRef.current = streaming;
   const streamingByThreadRef = useRef(new Map<string, { turnId: string; text: string }>());
 
+  /**
+   * Streaming coalescer.
+   *
+   * One React commit per `STREAM_FLUSH_MS` instead of one per token. The
+   * accumulated text already lives in `streamingByThreadRef`, so a flush just
+   * republishes the latest value for the active thread.
+   */
+  const flushStreaming = useCallback(() => {
+    if (streamingFlushRef.current !== null) {
+      clearTimeout(streamingFlushRef.current);
+      streamingFlushRef.current = null;
+    }
+    const active = activeIdRef.current;
+    if (!active) return;
+    const next = streamingByThreadRef.current.get(active);
+    if (next) setStreaming(next);
+  }, []);
+
+  const scheduleStreamingFlush = useCallback(() => {
+    if (streamingFlushRef.current !== null) return;
+    streamingFlushRef.current = setTimeout(() => {
+      streamingFlushRef.current = null;
+      const active = activeIdRef.current;
+      if (!active) return;
+      const next = streamingByThreadRef.current.get(active);
+      if (next) setStreaming(next);
+    }, STREAM_FLUSH_MS);
+  }, []);
+
+  // A pending flush must not outlive the component or fire after a thread swap.
+  useEffect(() => {
+    return () => {
+      if (streamingFlushRef.current !== null) clearTimeout(streamingFlushRef.current);
+    };
+  }, []);
+
   const activeThread = useMemo(() => threads.find((t) => t.id === activeId) ?? null, [threads, activeId]);
   const threadRunning = !!activeThread && LIVE_THREAD_STATUS.has(activeThread.status);
   /** Stop / disable send — status can lag behind events, so OR both signals. */
-  const turnBusy = !!activeTurn || threadRunning || handoffBusy;
+  // `pendingUserText` keeps the composer busy across the send round trip, so
+  // the Stop button is armed from the moment the user submits.
+  const turnBusy = !!activeTurn || threadRunning || handoffBusy || pendingUserText !== null;
 
   const refresh = useCallback(async (client: Client) => {
     const list = await client.send("project.list", {});
@@ -446,6 +503,10 @@ export function App() {
           };
           setMessages((prev) => upsertAssistantMessage(prev, msg));
           if (msg.role === "assistant") setStreaming(null);
+          // The server's copy of the user message supersedes the optimistic one.
+          if (msg.role === "user" && p["threadId"] === activeIdRef.current) {
+            setPendingUserText(null);
+          }
           break;
         }
         case "turn.started":
@@ -475,6 +536,8 @@ export function App() {
           setActiveTurn(null);
           setStreaming(null);
           setPendingApproval(null);
+          setStopping(false);
+          setPendingUserText(null);
           if (event.type === "turn.failed") setError(String(p["message"]));
           break;
         }
@@ -676,10 +739,20 @@ export function App() {
       onEvent: (event) => onEventRef.current(event),
       onDelta: (threadId, turnId, text) => {
         const prev = streamingByThreadRef.current.get(threadId);
-        const next =
-          prev?.turnId === turnId ? { turnId, text: prev.text + text } : { turnId, text };
+        const isFirstChunk = prev?.turnId !== turnId;
+        const next = isFirstChunk ? { turnId, text } : { turnId, text: prev.text + text };
         streamingByThreadRef.current.set(threadId, next);
-        if (threadId === activeIdRef.current) setStreaming(next);
+        if (threadId !== activeIdRef.current) return;
+        // Deltas arrive per token. Committing each one re-rendered the whole
+        // app, so coalesce into one commit per frame budget — except the first
+        // chunk of a turn, which paints immediately so first token is not
+        // delayed by the coalescing window.
+        if (isFirstChunk) {
+          flushStreaming();
+          setStreaming(next);
+          return;
+        }
+        scheduleStreamingFlush();
       },
       onIncompatible: setIncompatible,
       onState: setState,
@@ -791,6 +864,11 @@ export function App() {
     const client = clientRef.current;
     if (!client || !activeId) return;
     setError(null);
+    // Paint the user's message immediately. The daemon still has to spawn or
+    // reconfigure the CLI and take a pre-turn checkpoint before it echoes this
+    // back, and waiting for that read as a dropped message.
+    setPendingUserText(text);
+    setStopping(false);
     try {
       const res = await client.send("turn.send", {
         threadId: activeId,
@@ -800,6 +878,7 @@ export function App() {
       });
       setActiveTurn(res.turnId);
     } catch (err) {
+      setPendingUserText(null);
       setError(String(err instanceof Error ? err.message : err));
     }
   };
@@ -851,9 +930,14 @@ export function App() {
       setError("Nothing to stop — no active turn id yet.");
       return;
     }
+    // Flip the UI before the round trip. The daemon's ack is bounded by the
+    // adapter's own stop path, which is well past the 150ms budget in
+    // docs/architecture/performance.md.
+    setStopping(true);
     try {
       await client.send("turn.interrupt", { threadId: activeId, turnId });
     } catch (err) {
+      setStopping(false);
       setError(String(err instanceof Error ? err.message : err));
     }
   };
@@ -884,6 +968,8 @@ export function App() {
     }
   };
 
+  /** Latest `showDiff`, so the stable callback below never goes stale. */
+  const showDiffRef = useRef<(turnId: string, path?: string) => void>(() => {});
   const showDiff = async (turnId: string, path?: string) => {
     const client = clientRef.current;
     if (!client || !activeId) return;
@@ -1445,6 +1531,65 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // These hooks must stay above the early returns below. React matches hooks
+  // by call order, so anything declared after a conditional `return` runs on
+  // some renders and not others, and the counts stop lining up.
+  const showThinking =
+    turnBusy && !(streaming && streaming.text.length > 0) && work.length === 0;
+
+  // Drop the optimistic bubble as soon as the server's own copy of that turn
+  // arrives, matching on turnId rather than text so a re-send is not eaten.
+  const messagesWithPending = useMemo<MessageView[]>(() => {
+    if (pendingUserText === null) return messages;
+    const echoed = activeTurn !== null && messages.some((m) => m.turnId === activeTurn && m.role === "user");
+    if (echoed) return messages;
+    return [
+      ...messages,
+      {
+        turnId: activeTurn ?? "pending",
+        role: "user" as const,
+        text: pendingUserText,
+        at: new Date().toISOString(),
+      },
+    ];
+  }, [messages, pendingUserText, activeTurn]);
+
+  // Rebuilt only when its inputs change. As a bare literal this produced fresh
+  // object identities on every render, so the memoized transcript rows below
+  // re-rendered on each streaming commit anyway.
+  const bubbles = useMemo<Bubble[]>(() => [
+    ...messagesWithPending.map((m) => ({
+      kind: m.role as "user" | "assistant",
+      text: m.text,
+      key: `${m.turnId}:${m.role}`,
+      turnId: m.turnId,
+      ...(m.role === "assistant" && diffByTurn.has(m.turnId)
+        ? { changedFiles: diffByTurn.get(m.turnId) }
+        : {}),
+    })),
+    ...(work.length > 0 ? [{ kind: "work" as const, text: "", key: "work", work }] : []),
+    ...(streaming && streaming.text.length > 0
+      ? [{ kind: "streaming" as const, text: streaming.text, key: "streaming" }]
+      : []),
+    ...(showThinking
+      ? [
+          {
+            kind: "thinking" as const,
+            text: handoffBusy ? "Handing off…" : "Thinking…",
+            key: "thinking",
+          },
+        ]
+      : []),
+  ], [messagesWithPending, diffByTurn, work, streaming, showThinking, handoffBusy]);
+
+  // Stable identity: an inline arrow here would defeat the transcript's row
+  // memoization on every render.
+  const openChanges = useCallback((turnId: string, path?: string) => {
+    void showDiffRef.current(turnId, path);
+  }, []);
+
+  showDiffRef.current = showDiff;
+
   if (pairingState === "pairing") {
     return (
       <div className="empty">
@@ -1485,33 +1630,6 @@ export function App() {
     );
   }
 
-  const showThinking =
-    turnBusy && !(streaming && streaming.text.length > 0) && work.length === 0;
-
-  const bubbles: Bubble[] = [
-    ...messages.map((m) => ({
-      kind: m.role as "user" | "assistant",
-      text: m.text,
-      key: `${m.turnId}:${m.role}`,
-      turnId: m.turnId,
-      ...(m.role === "assistant" && diffByTurn.has(m.turnId)
-        ? { changedFiles: diffByTurn.get(m.turnId) }
-        : {}),
-    })),
-    ...(work.length > 0 ? [{ kind: "work" as const, text: "", key: "work", work }] : []),
-    ...(streaming && streaming.text.length > 0
-      ? [{ kind: "streaming" as const, text: streaming.text, key: "streaming" }]
-      : []),
-    ...(showThinking
-      ? [
-          {
-            kind: "thinking" as const,
-            text: handoffBusy ? "Handing off…" : "Thinking…",
-            key: "thinking",
-          },
-        ]
-      : []),
-  ];
 
   const showRight = view === "thread" && !!activeThread && rightSurface !== null;
   const inSettings = settingsOpen !== null;
@@ -1742,6 +1860,7 @@ export function App() {
                   hero
                   onSend={(text, model, images) => void send(text, model, images)}
                   onInterrupt={interrupt}
+                stopping={stopping}
                   onPermissionMode={(m) => void setPermissionMode(m)}
                   onAgentSelect={(next) => void setThreadAgent(next)}
                 />
@@ -1751,7 +1870,7 @@ export function App() {
                 <div className="thread-body">
                   <Transcript
                     bubbles={bubbles}
-                    onOpenChanges={(turnId, path) => void showDiff(turnId, path)}
+                    onOpenChanges={openChanges}
                   />
                   {error && looksLikeUsageLimit({ message: error }) && activeThread ? (
                     <UsageLimitBanner
@@ -1794,6 +1913,7 @@ export function App() {
                   vendorSessionId={activeThread.vendorSessionId}
                   onSend={(text, model, images) => void send(text, model, images)}
                   onInterrupt={interrupt}
+                stopping={stopping}
                   onPermissionMode={(m) => void setPermissionMode(m)}
                   onAgentSelect={(next) => void setThreadAgent(next)}
                 />
