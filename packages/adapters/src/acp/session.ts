@@ -27,6 +27,19 @@ const log = logger("adapter:acp");
 /** ACP revision this client implements. */
 export const ACP_PROTOCOL_VERSION = 1;
 
+/**
+ * What this client can actually do for the agent.
+ *
+ * Declared from what is implemented, not from what would be convenient. We do
+ * not serve `fs/read_text_file` or `fs/write_text_file`, so claiming them made
+ * the agent route file edits through us, get an error back, and fall back to
+ * shell — slower, and it turned a file write into a shell command the user then
+ * had to reason about. The agent uses its own file tools instead.
+ */
+export const CLIENT_CAPABILITIES = {
+  fs: { readTextFile: false, writeTextFile: false },
+} as const;
+
 export interface AcpInitializeResult {
   protocolVersion?: number;
   agentCapabilities?: { loadSession?: boolean; promptCapabilities?: Record<string, unknown> };
@@ -109,7 +122,7 @@ export class AcpSession {
 
     const init = await client.request<AcpInitializeResult>("initialize", {
       protocolVersion: ACP_PROTOCOL_VERSION,
-      clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      clientCapabilities: CLIENT_CAPABILITIES,
     });
     this.authMethods = init?.authMethods ?? [];
     return init ?? {};

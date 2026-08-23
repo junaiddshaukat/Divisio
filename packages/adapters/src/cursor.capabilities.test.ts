@@ -8,7 +8,7 @@ import { CursorAdapter } from "./cursor.ts";
  */
 describe("cursor capability honesty", () => {
   const setProbeResult = (adapter: CursorAdapter, supported: boolean | null) => {
-    (adapter as unknown as { acpSupported: boolean | null }).acpSupported = supported;
+    (adapter as unknown as { acp: { supported: boolean | null } }).acp.supported = supported;
   };
 
   test("claims nothing before the transport has been probed", () => {
@@ -45,5 +45,34 @@ describe("cursor capability honesty", () => {
     expect(adapter.capabilities.sessionResume).toBe(true);
     expect(adapter.capabilities.worktreeAware).toBe(true);
     expect(adapter.capabilities.usageSignals).toBe(false);
+  });
+});
+
+/**
+ * The protocol transport buys a warm session for every agent that speaks it,
+ * but supervision only where the agent actually asks before acting. An agent
+ * that runs its tools regardless must not present a supervised/full-access
+ * control, or the user believes they are supervising something they are not.
+ */
+describe("approval mediation is claimed per agent, not per transport", () => {
+  const force = (adapter: { acp: unknown }, supported: boolean) => {
+    (adapter.acp as { supported: boolean | null }).supported = supported;
+  };
+
+  test("an agent known to auto-approve declares no approvals even when warm", async () => {
+    const { GrokAdapter } = await import("./grok.ts");
+    const grok = new GrokAdapter();
+    force(grok as unknown as { acp: unknown }, true);
+    // Warm transport, so the structured tier is right...
+    expect(grok.tier).toBe("structured");
+    // ...but it never asks, so supervision would be a fiction.
+    expect(grok.capabilities.approvals).toBe(false);
+  });
+
+  test("an agent that routes tools through the permission request declares them", () => {
+    const cursor = new CursorAdapter();
+    force(cursor as unknown as { acp: unknown }, true);
+    expect(cursor.tier).toBe("structured");
+    expect(cursor.capabilities.approvals).toBe(true);
   });
 });

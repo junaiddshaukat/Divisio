@@ -11,7 +11,7 @@
  */
 
 import { logger } from "@divisio/shared/log";
-import { ACP_PROTOCOL_VERSION } from "./session.ts";
+import { ACP_PROTOCOL_VERSION, CLIENT_CAPABILITIES } from "./session.ts";
 
 const log = logger("adapter:acp");
 
@@ -96,7 +96,7 @@ async function runProbe(cmd: string[], cwd?: string): Promise<boolean> {
         method: "initialize",
         params: {
           protocolVersion: ACP_PROTOCOL_VERSION,
-          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+          clientCapabilities: CLIENT_CAPABILITIES,
         },
       })}\n`,
     );

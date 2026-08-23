@@ -38,8 +38,8 @@ import { logger } from "@divisio/shared/log";
 import { spawnWithEnv, terminateSubprocess } from "@divisio/shared/spawn";
 import { type CursorNormalizeState, normalizeCursorStreamLine } from "./cursor/normalize.ts";
 import { pushModelArg } from "./shared/modelArg.ts";
-import { AcpSession } from "./acp/session.ts";
-import { cachedAcpSupport, refreshAcpSupport } from "./acp/probe.ts";
+import type { AcpSession } from "./acp/session.ts";
+import { AcpTransport } from "./acp/transport.ts";
 
 const log = logger("adapter:cursor");
 
@@ -77,19 +77,18 @@ export class CursorAdapter implements ProviderAdapter {
   readonly contractVersion = ADAPTER_CONTRACT_VERSION;
 
   private readonly sessions = new Map<string, Session>();
-  /** Null until `detect()` has probed. Null is treated as "not supported". */
-  private acpSupported: boolean | null = null;
+  private readonly acp = new AcpTransport(ACP_COMMAND, {
+    // This agent exposes session modes and routes tool calls through the
+    // protocol's permission request.
+    mediatesApprovals: true,
+  });
 
-  /**
-   * Structured only once ACP is confirmed. Reported honestly so the UI does not
-   * promise mediation the active transport cannot deliver.
-   */
   get tier(): "structured" | "stream" {
-    return this.acpSupported === true ? "structured" : "stream";
+    return this.acp.tier;
   }
 
   get capabilities(): AdapterCapabilities {
-    return { ...BASE_CAPABILITIES, approvals: this.acpSupported === true };
+    return this.acp.capabilities(BASE_CAPABILITIES);
   }
 
   async detect(): Promise<DetectResult> {
@@ -106,17 +105,7 @@ export class CursorAdapter implements ProviderAdapter {
         };
       }
       const version = (out.trim() || err.trim()).split(/\s+/).pop() ?? null;
-      // Never block detection on the handshake. A signed-in agent can take
-      // seconds to answer, and this runs across every adapter each time the UI
-      // loads. Report what is known and let the probe settle in the background;
-      // until it does, capabilities stay conservative.
-      // Only ever upgrade from "unknown". A live session already proved what
-      // this transport can do; letting a cache expiry reset that to null would
-      // silently drop `approvals` out of the UI mid-use.
-      if (this.acpSupported === null) {
-        this.acpSupported = cachedAcpSupport(ACP_COMMAND);
-      }
-      refreshAcpSupport(ACP_COMMAND);
+      this.acp.noteDetect();
       return { available: true, version, detail: null };
     } catch {
       return {
@@ -142,60 +131,22 @@ export class CursorAdapter implements ProviderAdapter {
     };
     this.sessions.set(input.threadId, session);
 
-    // Attempt the protocol transport directly rather than probing first. A
-    // successful handshake IS the probe, and the standalone probe costs a whole
-    // second agent startup — the handshake alone is several seconds, so paying
-    // it twice was the dominant cost of opening a thread.
-    if (this.acpSupported !== false) {
-      try {
-        session.acp = await this.startAcp(session, input.resumeId ?? null);
-        this.acpSupported = true;
-      } catch (err) {
-        // Fall back rather than fail the thread: print mode still works, it
-        // just cannot mediate approvals.
-        log.warn("acp start failed, falling back to print mode", {
-          threadId: input.threadId,
-          detail: String(err),
-        });
-        session.acp = null;
-        this.acpSupported = false;
-      }
+    const opened = await this.acp.open({
+      cwd: input.cwd,
+      emit,
+      resumeId: input.resumeId ?? null,
+      threadId: input.threadId,
+      onExit: (dead) => {
+        if (session.acp === dead) session.acp = null;
+      },
+    });
+    if (opened) {
+      session.acp = opened.session;
+      session.nativeId = opened.nativeId;
     }
 
     emit({ type: "status", status: "ready" });
     return session;
-  }
-
-  /**
-   * Bring up an ACP agent for this thread.
-   *
-   * Resuming is attempted only when the agent advertises it, and a failed
-   * resume falls back to a fresh conversation — a stale id must not cost the
-   * user their ability to send.
-   */
-  private async startAcp(session: Session, resumeId: string | null): Promise<AcpSession> {
-    const acp = new AcpSession({
-      cmd: ACP_COMMAND,
-      cwd: session.cwd,
-      emit: (event) => session.emit(event),
-      onExit: () => {
-        if (session.acp === acp) session.acp = null;
-      },
-    });
-    const init = await acp.start();
-
-    if (resumeId && init.agentCapabilities?.loadSession) {
-      try {
-        await acp.loadConversation(resumeId);
-        session.nativeId = resumeId;
-        return acp;
-      } catch (err) {
-        log.info("resume failed, starting a fresh conversation", { detail: String(err) });
-      }
-    }
-
-    session.nativeId = await acp.openConversation();
-    return acp;
   }
 
   async sendTurn(handle: SessionHandle, turn: SendTurnInput): Promise<void> {
