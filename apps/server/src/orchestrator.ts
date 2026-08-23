@@ -113,6 +113,18 @@ interface LiveSession {
   committedAssistant: Set<string>;
   /** Stop was requested for this turn; CLI `is_error` after SIGTERM is not a failure. */
   stoppingTurnId: string | null;
+  /** Epoch ms of the last turn activity. Drives idle reaping. */
+  lastUsedAt: number;
+  /**
+   * Turns stopped before the adapter was ever handed them.
+   *
+   * `turn.started` is committed (and Stop is armed in the UI) before the
+   * pre-turn checkpoint and the adapter call. A Stop landing in that window
+   * used to no-op in the adapter while the orchestrator reported the turn
+   * interrupted — and then the turn was dispatched anyway, leaving a live CLI
+   * nothing was tracking. `sendTurn` consults this set after every await.
+   */
+  cancelledTurns: Set<string>;
 }
 
 /**
@@ -134,8 +146,32 @@ export const ORCHESTRATOR_COMMANDS = [
   "pairing.status", "pairing.createToken", "pairing.revoke", "pairing.revokeAll",
 ] as const;
 
+/**
+ * How long a provider process may sit idle before it is stopped.
+ *
+ * Sessions are kept warm so a turn does not pay the CLI's cold boot, but a
+ * warm process is real memory and a real child process. Threads a user opened
+ * and walked away from must not hold one indefinitely. Recovery is transparent:
+ * the next turn respawns and resumes from the persisted vendor session id.
+ */
+const IDLE_SESSION_STOP_MS = Number(process.env["DIVISIO_IDLE_SESSION_STOP_MS"] ?? 10 * 60 * 1000);
+
+/** How often to look for idle sessions. */
+const IDLE_SWEEP_MS = 60 * 1000;
+
+/**
+ * Upper bound on warm provider processes.
+ *
+ * Opening a thread starts its CLI in the background so the first turn does not
+ * pay a cold boot. That is only worth doing if it cannot grow without limit —
+ * past this many, the least recently used idle session is stopped.
+ */
+const MAX_WARM_SESSIONS = Number(process.env["DIVISIO_MAX_WARM_SESSIONS"] ?? 4);
+
 export class Orchestrator {
   private readonly sessions = new Map<string, LiveSession>();
+  /** Idle sweep timer. Null until `start()` arms it. */
+  private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** Resolvers for turns awaited internally, e.g. the handoff summary. */
   private readonly turnWaiters = new Map<string, { resolve(): void; reject(err: Error): void }>();
 
@@ -437,6 +473,36 @@ export class Orchestrator {
         payload: { threadId: p.threadId, mode: p.mode },
       },
     ]);
+    // Push the change onto the live session. Without this the toggle only took
+    // effect after a session teardown, so the UI control silently did nothing
+    // for the whole life of a thread.
+    const session = this.sessions.get(p.threadId);
+    if (session) {
+      const adapter = this.registry.get(session.provider);
+      if (adapter?.setPermissionMode) {
+        try {
+          void adapter.setPermissionMode(session.handle, p.mode);
+        } catch (err) {
+          log.warn("live permission mode update failed", {
+            threadId: p.threadId,
+            detail: String(err),
+          });
+        }
+      } else {
+        // The adapter bakes the mode into spawn argv. Drop the session so the
+        // next turn starts a process that actually honors the new mode; the
+        // vendor session id is persisted, so the conversation resumes.
+        log.info("restarting session to apply permission mode", {
+          threadId: p.threadId,
+          provider: session.provider,
+        });
+        this.sessions.delete(p.threadId);
+        void session.handle.close().catch((err) => {
+          log.warn("session close failed during mode change", { detail: String(err) });
+        });
+      }
+    }
+
     const thread = this.store.getThread(p.threadId);
     if (!thread) throw new CommandError("internal", "thread projection missing after mode set");
     return { thread };
@@ -498,6 +564,10 @@ export class Orchestrator {
   private snapshot(p: CommandPayloads["thread.snapshot"]): CommandResults["thread.snapshot"] {
     const thread = this.store.getThread(p.threadId);
     if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    // Opening a thread is the earliest reliable signal that a turn is coming.
+    // Boot the CLI now, while the user is still reading and typing, so the
+    // first turn does not pay for it. Never block the snapshot on this.
+    void this.prewarm(p.threadId);
     const live = this.sessions.get(p.threadId);
     const activeTurnId = live?.activeTurnId ?? null;
     const text = activeTurnId ? (live?.partialByTurn.get(activeTurnId) ?? "") : "";
@@ -1274,6 +1344,8 @@ export class Orchestrator {
       partialByTurn: new Map(),
       committedAssistant: new Set(),
       stoppingTurnId: null,
+      cancelledTurns: new Set(),
+      lastUsedAt: Date.now(),
     };
     this.sessions.set(threadId, live);
     this.persistVendorSession(threadId);
@@ -1325,9 +1397,11 @@ export class Orchestrator {
     }
 
     const turnId = newId("trn");
+    session.lastUsedAt = Date.now();
     session.activeTurnId = turnId;
     session.stoppingTurnId = null;
     session.pendingApprovals.clear();
+    session.cancelledTurns.clear();
 
     this.commit([
       {
@@ -1345,7 +1419,9 @@ export class Orchestrator {
     if (project && thread) {
       // Checkpoint the tree the agent will actually edit. Refs are shared
       // across worktrees, so a lane checkpoint is readable from anywhere.
-      const pre = await captureCheckpoint(this.workdirFor(thread), p.threadId, turnId, "pre");
+      const pre = await captureCheckpoint(this.workdirFor(thread), p.threadId, turnId, "pre", {
+        skipIfExists: true,
+      });
       this.commit([
         {
           type: "checkpoint.captured",
@@ -1361,6 +1437,14 @@ export class Orchestrator {
           },
         },
       ]);
+    }
+
+    // Stop can land while the checkpoint above is running. `interrupt` has
+    // already committed `turn.interrupted` and cleared `activeTurnId`; handing
+    // the turn to the adapter now would start a CLI nothing is tracking.
+    if (session.cancelledTurns.has(turnId)) {
+      session.cancelledTurns.delete(turnId);
+      return { turnId };
     }
 
     const adapter = this.registry.get(session.provider);
@@ -1401,10 +1485,35 @@ export class Orchestrator {
 
     // Mark stopping before the kill so a CLI `is_error` result is not a failure.
     session.stoppingTurnId = p.turnId;
+    // Claim the turn before any await. If the adapter has not been handed it
+    // yet, `sendTurn` sees this and refuses to dispatch after its checkpoint.
+    session.cancelledTurns.add(p.turnId);
     this.flushPartialAssistant(session, p.threadId, p.turnId);
 
     const adapter = this.registry.get(session.provider);
-    await adapter!.interruptTurn(session.handle, p.turnId);
+    try {
+      await adapter!.interruptTurn(session.handle, p.turnId);
+    } catch (err) {
+      // The turn must not stay "running" because the adapter failed to stop it.
+      // Leaving `activeTurnId` set here wedged the thread busy forever, and
+      // left `stoppingTurnId` matching it so every later error was swallowed.
+      session.activeTurnId = null;
+      session.stoppingTurnId = null;
+      session.pendingApprovals.clear();
+      this.commit([
+        {
+          type: "turn.failed",
+          threadId: p.threadId,
+          payload: {
+            threadId: p.threadId,
+            turnId: p.turnId,
+            code: "interrupt_failed",
+            message: err instanceof Error ? err.message : String(err),
+          },
+        },
+      ]);
+      throw new CommandError("internal", err instanceof Error ? err.message : String(err));
+    }
     session.activeTurnId = null;
     session.pendingApprovals.clear();
     this.commit([
@@ -1417,8 +1526,12 @@ export class Orchestrator {
   private flushPartialAssistant(session: LiveSession, threadId: string, turnId: string) {
     if (session.committedAssistant.has(turnId)) return;
     const text = session.partialByTurn.get(turnId);
-    if (!text) return;
+    // Mark the turn settled even with nothing to flush. Returning early left
+    // no dedupe mark, so a late `assistant.message` from a killed pump was
+    // committed against a turn already reported interrupted.
     session.committedAssistant.add(turnId);
+    session.partialByTurn.delete(turnId);
+    if (!text) return;
     this.commit([
       {
         type: "turn.message",
@@ -1698,6 +1811,11 @@ export class Orchestrator {
       case "turn.completed":
         if (session) this.flushPartialAssistant(session, threadId, event.turnId);
         if (session?.activeTurnId === event.turnId) session.activeTurnId = null;
+        // Without this, `stoppingTurnId` outlived the turn it belonged to and
+        // the `error` guard below matched unconditionally, silently dropping
+        // every provider error on the session until the next send.
+        if (session?.stoppingTurnId === event.turnId) session.stoppingTurnId = null;
+        session?.cancelledTurns.delete(event.turnId);
         session?.pendingApprovals.clear();
         this.commit([{ type: "turn.completed", threadId, payload: { threadId, turnId: event.turnId } }]);
         this.turnWaiters.get(event.turnId)?.resolve();
@@ -1767,7 +1885,95 @@ export class Orchestrator {
     }
   }
 
+  /**
+   * Arm background maintenance. Separate from the constructor so tests can
+   * drive the orchestrator without a timer keeping the process alive.
+   */
+  start(): void {
+    if (this.idleTimer) return;
+    this.idleTimer = setInterval(() => {
+      void this.reapIdleSessions();
+    }, IDLE_SWEEP_MS);
+    // Never hold the process open just to sweep.
+    this.idleTimer.unref?.();
+  }
+
+  /**
+   * Stop provider processes that have gone idle.
+   *
+   * Skips anything mid-turn or waiting on an approval — those are live even
+   * when quiet. The vendor session id is persisted first so the next turn
+   * resumes the conversation rather than starting cold.
+   */
+  private async reapIdleSessions(): Promise<void> {
+    if (IDLE_SESSION_STOP_MS <= 0) return;
+    const cutoff = Date.now() - IDLE_SESSION_STOP_MS;
+    for (const [threadId, session] of [...this.sessions]) {
+      if (session.activeTurnId) continue;
+      if (session.pendingApprovals.size > 0) continue;
+      if (session.lastUsedAt > cutoff) continue;
+
+      this.persistVendorSession(threadId);
+      this.sessions.delete(threadId);
+      log.info("stopping idle session", { threadId, provider: session.provider });
+      const adapter = this.registry.get(session.provider);
+      try {
+        await adapter?.stopSession(session.handle);
+      } catch (err) {
+        log.warn("failed to stop idle session", { threadId, err: String(err) });
+      }
+    }
+  }
+
+  /**
+   * Start a thread's provider session ahead of the first turn.
+   *
+   * Best-effort by definition: a provider that is missing, unauthenticated, or
+   * slow to start must surface at send time with a real error, not here. A
+   * failure is logged at debug and otherwise forgotten.
+   */
+  private async prewarm(threadId: string): Promise<void> {
+    if (MAX_WARM_SESSIONS <= 0) return;
+    const existing = this.sessions.get(threadId);
+    if (existing) {
+      existing.lastUsedAt = Date.now();
+      return;
+    }
+    await this.evictWarmSessionsBeyondCap();
+    try {
+      const session = await this.ensureSession(threadId);
+      session.lastUsedAt = Date.now();
+    } catch (err) {
+      log.debug("prewarm skipped", { threadId, detail: String(err) });
+    }
+  }
+
+  /** Stop least-recently-used idle sessions until one slot is free. */
+  private async evictWarmSessionsBeyondCap(): Promise<void> {
+    const idle = [...this.sessions.entries()]
+      .filter(([, s]) => !s.activeTurnId && s.pendingApprovals.size === 0)
+      .sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt);
+
+    // Leave room for the session about to be created.
+    let overBy = this.sessions.size - (MAX_WARM_SESSIONS - 1);
+    for (const [threadId, session] of idle) {
+      if (overBy <= 0) break;
+      overBy -= 1;
+      this.persistVendorSession(threadId);
+      this.sessions.delete(threadId);
+      log.info("evicting least recently used session", { threadId });
+      const adapter = this.registry.get(session.provider);
+      await adapter?.stopSession(session.handle).catch((err) => {
+        log.warn("failed to evict session", { threadId, err: String(err) });
+      });
+    }
+  }
+
   async shutdown() {
+    if (this.idleTimer) {
+      clearInterval(this.idleTimer);
+      this.idleTimer = null;
+    }
     for (const [threadId, session] of this.sessions) {
       this.persistVendorSession(threadId);
       const adapter = this.registry.get(session.provider);

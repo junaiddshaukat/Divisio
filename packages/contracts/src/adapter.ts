@@ -160,6 +160,15 @@ export interface ProviderAdapter {
     decision: "approve" | "deny",
   ): Promise<void>;
 
+  /**
+   * Optional. Applies a permission-mode change to a *live* session.
+   *
+   * Adapters that bake the mode into spawn argv cannot honor this, so the
+   * orchestrator falls back to restarting the session. Declaring it means the
+   * running process is reconfigured without losing conversation state.
+   */
+  setPermissionMode?(session: SessionHandle, mode: PermissionMode): void | Promise<void>;
+
   stopSession(session: SessionHandle): Promise<void>;
 }
 

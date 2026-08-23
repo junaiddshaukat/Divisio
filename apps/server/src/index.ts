@@ -278,6 +278,8 @@ try {
 }
 
 orchestrator.reconcileAfterCrash();
+// Arm the idle sweep so warm provider processes do not outlive their use.
+orchestrator.start();
 
 /**
  * Static hosting for the built web UI.
