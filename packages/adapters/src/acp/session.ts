@@ -175,9 +175,20 @@ export class AcpSession {
     return id;
   }
 
-  /** Resume a prior conversation. Only valid when the agent advertises it. */
+  /**
+   * Resume a prior conversation. Only valid when the agent advertises it.
+   *
+   * Takes the same shape as opening a new one, plus the id. Omitting
+   * `mcpServers` is rejected as invalid params, and the failure is
+   * indistinguishable from an expired session — which silently cost the user
+   * the whole conversation on every reopen.
+   */
   async loadConversation(sessionId: string): Promise<void> {
-    await this.client?.request("session/load", { sessionId, cwd: this.options.cwd });
+    await this.client?.request("session/load", {
+      sessionId,
+      cwd: this.options.cwd,
+      mcpServers: [],
+    });
     this.sessionId = sessionId;
   }
 
