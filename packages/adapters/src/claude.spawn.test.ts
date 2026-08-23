@@ -1,27 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { claudeTurnArgs } from "./claude.ts";
+import { claudeSessionArgs } from "./claude.ts";
 
-describe("claudeTurnArgs", () => {
+describe("claudeSessionArgs", () => {
+  test("drives a reusable stream-json session, not a one-shot prompt", () => {
+    const args = claudeSessionArgs({ nativeId: null, permissionMode: "supervised" });
+    // stream-json stdin is what lets one process serve many turns.
+    expect(args).toContain("--input-format");
+    expect(args).toContain("stream-json");
+    expect(args).toContain("--print");
+    // The prompt must never be baked into argv — it arrives on stdin.
+    expect(args.at(-1)).not.toBe("--");
+    expect(args).not.toContain("--");
+  });
+
   test("allowlists WebSearch in print mode under both permission modes", () => {
-    const supervised = claudeTurnArgs({
-      text: "research this",
-      nativeId: null,
-      permissionMode: "supervised",
-    });
-    expect(supervised).toContain("--print");
+    const supervised = claudeSessionArgs({ nativeId: null, permissionMode: "supervised" });
     expect(supervised).toContain("--permission-mode");
     expect(supervised).toContain("manual");
     const allow = supervised.find((a) => a.startsWith("--allowedTools="));
     expect(allow).toBeDefined();
     expect(allow).toContain("WebSearch");
     expect(allow).toContain("WebFetch");
-    // Variadic `--allowedTools WebSearch,WebFetch <prompt>` eats the prompt.
+    // Variadic `--allowedTools WebSearch,WebFetch` would eat the next token.
     expect(supervised).not.toContain("--allowedTools");
-    expect(supervised.at(-2)).toBe("--");
-    expect(supervised.at(-1)).toBe("research this");
 
-    const full = claudeTurnArgs({
-      text: "edit files",
+    const full = claudeSessionArgs({
       nativeId: "ses_1",
       permissionMode: "full_access",
       model: "opus",
@@ -30,7 +33,7 @@ describe("claudeTurnArgs", () => {
     expect(full).not.toContain("bypassPermissions");
     expect(full).toContain("--resume");
     expect(full).toContain("ses_1");
-    expect(full.find((a) => a.startsWith("--allowedTools="))).toContain("WebSearch");
-    expect(full.at(-1)).toBe("edit files");
+    expect(full).toContain("--model");
+    expect(full).toContain("opus");
   });
 });
