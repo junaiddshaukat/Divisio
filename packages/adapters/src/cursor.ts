@@ -77,11 +77,7 @@ export class CursorAdapter implements ProviderAdapter {
   readonly contractVersion = ADAPTER_CONTRACT_VERSION;
 
   private readonly sessions = new Map<string, Session>();
-  private readonly acp = new AcpTransport(ACP_COMMAND, {
-    // This agent exposes session modes and routes tool calls through the
-    // protocol's permission request.
-    mediatesApprovals: true,
-  });
+  private readonly acp = new AcpTransport(ACP_COMMAND);
 
   get tier(): "structured" | "stream" {
     return this.acp.tier;

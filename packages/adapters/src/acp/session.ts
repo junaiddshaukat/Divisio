@@ -52,12 +52,20 @@ interface PendingPermission {
 }
 
 export interface AcpSessionOptions {
-  /** argv that starts the agent in ACP mode, e.g. `["cursor-agent", "acp"]`. */
+  /** argv that starts the agent in ACP mode. */
   cmd: string[];
   cwd: string;
   emit: EmitRuntimeEvent;
   /** Called when the agent process exits on its own. */
   onExit?: (code: number | null, signal: string | null) => void;
+  /**
+   * Called the first time this agent asks permission for a tool call.
+   *
+   * Whether an agent asks is its own policy, not a property of the protocol —
+   * some run their tools and never ask. Observing one real request is the only
+   * honest evidence that supervision means anything here.
+   */
+  onMediationObserved?: () => void;
 }
 
 /**
@@ -293,6 +301,7 @@ export class AcpSession {
       return;
     }
     this.pendingPermissions.set(approvalId, { rpcId, options: mapped.options });
+    this.options.onMediationObserved?.();
     this.options.emit({ type: "status", status: "awaiting_approval" });
     this.options.emit(mapped.event);
   }

@@ -25,7 +25,7 @@ application bundle, and this product targets paired devices over a LAN.
 Embed **Monaco**, the editor from VS Code, as an editable file pane.
 
 - Loaded **lazily**. It arrives the first time the file pane is opened, so the
-  eager bundle stays at ~236 KB and first paint is unaffected for users who
+  eager bundle stays around 225 KB gzipped and first paint is unaffected for users who
   never open a file
 - Themed from our own tokens for surfaces; syntax colours stay with Monaco's
   base themes, which are tuned for contrast in a way a neutral palette is not

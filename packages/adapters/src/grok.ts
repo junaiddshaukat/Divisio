@@ -66,12 +66,7 @@ export class GrokAdapter implements ProviderAdapter {
   readonly contractVersion = ADAPTER_CONTRACT_VERSION;
 
   private readonly sessions = new Map<string, Session>();
-  private readonly acp = new AcpTransport(ACP_COMMAND, {
-    // Observed running tools without ever sending a permission request, and
-    // the stdio agent exposes no approval-policy option. The protocol still
-    // buys a warm session; it does not buy supervision here.
-    mediatesApprovals: false,
-  });
+  private readonly acp = new AcpTransport(ACP_COMMAND);
 
   get tier(): "structured" | "stream" {
     return this.acp.tier;

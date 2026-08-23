@@ -17,29 +17,27 @@ import { AcpSession } from "./session.ts";
 
 const log = logger("adapter:acp");
 
-export interface AcpTransportOptions {
-  /**
-   * Whether this agent actually asks before running dangerous tools.
-   *
-   * The protocol supports a permission request and this client handles one
-   * correctly, but whether an agent *sends* one is that agent's own policy.
-   * At least one agent runs its tools and never asks, so this cannot be
-   * inferred from the transport — it has to be observed per agent and stated
-   * here. Declaring approvals for an agent that auto-approves would put a
-   * supervised/full-access control in the UI that changes nothing, which is
-   * the most dangerous kind of wrong: the user believes they are supervising.
-   */
-  mediatesApprovals: boolean;
-}
-
 export class AcpTransport {
   /** Null until resolved. Null is treated as "not proven", never as "yes". */
   private supported: boolean | null = null;
 
-  constructor(
-    private readonly cmd: string[],
-    private readonly options: AcpTransportOptions,
-  ) {}
+  /**
+   * Set once this agent has actually asked permission for a tool call.
+   *
+   * Approvals are claimed from evidence rather than from the transport. The
+   * protocol carries a permission request and this client answers one
+   * correctly, but whether an agent *sends* one is that agent's own policy —
+   * at least one speaks the protocol and still runs its tools without asking.
+   * Claiming supervision for such an agent is the most dangerous kind of
+   * wrong, because the user believes they are supervising something they are
+   * not. Until an agent has asked once, we say we cannot mediate.
+   *
+   * The approve/deny bar does not depend on this: it appears whenever a real
+   * request is pending, so the first one is answerable like any other.
+   */
+  private mediationObserved = false;
+
+  constructor(private readonly cmd: string[]) {}
 
   get isSupported(): boolean | null {
     return this.supported;
@@ -58,10 +56,7 @@ export class AcpTransport {
    * than an absent one.
    */
   capabilities(base: AdapterCapabilities): AdapterCapabilities {
-    return {
-      ...base,
-      approvals: this.supported === true && this.options.mediatesApprovals,
-    };
+    return { ...base, approvals: this.supported === true && this.mediationObserved };
   }
 
   /**
@@ -97,6 +92,9 @@ export class AcpTransport {
       cwd: input.cwd,
       emit: input.emit,
       onExit: () => input.onExit(session),
+      onMediationObserved: () => {
+        this.mediationObserved = true;
+      },
     });
 
     try {

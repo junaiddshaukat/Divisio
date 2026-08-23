@@ -13,6 +13,10 @@ Size is now tracked rather than enforced — see the revision in
 [ADR 0006](../adr/0006-size-budget-tauri.md). These numbers exist to make growth
 visible, not to block a build.
 
+These figures were taken from one build and are **not re-measured
+automatically** — re-run the commands below before quoting them in a release,
+because a stale size claim is the kind of detail people check first.
+
 | Artifact | Size | Notes |
 | --- | --- | --- |
 | `Divisio.app` | **66 MB** | Shell, web UI, and the bundled daemon |
@@ -41,12 +45,16 @@ users who never open a file do not pay for it.
 
 | What loads | Size | When |
 | --- | --- | --- |
-| App shell (JS + CSS) | **~240 KB** | First paint |
+| App shell (JS + CSS) | **225 KB gzipped** (768 KB raw) | First paint |
 | Monaco + language workers | ~4 MB, split across chunks | Prefetched during idle, so opening the pane is instant |
 
 Reproduce with `bun run build`, then read `apps/web/dist/index.html` for what is
 referenced eagerly. A jump in the eager figure means something imported the
 editor at the top level again.
+
+Quote the gzipped figure when comparing against anything, and say so: it is
+what a user waits for over the network. The raw number is roughly three times
+larger and is the one that looks alarming for no reason.
 
 ## Latency — [ADR 0007](../adr/0007-performance-release-gates.md)
 
