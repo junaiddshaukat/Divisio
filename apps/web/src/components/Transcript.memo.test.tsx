@@ -3,8 +3,8 @@
  * second while a reply streams. Completed messages must not re-render with it,
  * or a long thread becomes slower to stream into than a short one.
  */
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-if (!globalThis.document) GlobalRegistrator.register();
+// Shared jsdom install, and before anything that binds to a DOM at import time.
+import "../../test/dom-setup.ts";
 // Tells React that updates below are wrapped in act(), so it batches them the
 // way it does in the browser instead of warning.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
