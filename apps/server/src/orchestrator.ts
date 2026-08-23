@@ -41,6 +41,7 @@ import type { PairingStatus } from "@divisio/contracts";
 import { probeToolchain } from "./toolchain.ts";
 import { collectUsageStats } from "./usage/collectUsage.ts";
 import { setupFor } from "@divisio/adapters/setup";
+import { collectCliUpdates } from "./providers/cliUpdates.ts";
 
 /** What the orchestrator needs from pairing, so it does not depend on transport. */
 export interface PairingControls {
@@ -126,7 +127,7 @@ export const ORCHESTRATOR_COMMANDS = [
   "thread.create", "thread.rename", "thread.delete", "thread.snapshot", "thread.setPermissionMode", "thread.setProvider", "thread.handoff",
   "thread.commit", "thread.diff", "thread.gitStatus", "thread.push",
   "turn.send", "turn.interrupt", "turn.diff", "turn.restore",
-  "approval.respond", "provider.detect", "provider.models", "customProvider.list", "customProvider.upsert", "customProvider.delete",
+  "approval.respond", "provider.detect", "provider.updates", "provider.models", "customProvider.list", "customProvider.upsert", "customProvider.delete",
   "toolchain.status", "stats.activity", "stats.usage",
   "lane.create", "lane.list", "lane.archive", "lane.diff", "lane.openPr",
   "file.tree", "file.read", "file.write",
@@ -192,6 +193,8 @@ export class Orchestrator {
         return await this.respondApproval(payload);
       case "provider.detect":
         return await this.detect();
+      case "provider.updates":
+        return await this.providerUpdates();
       case "provider.models":
         return await this.listModels(payload);
       case "customProvider.list":
@@ -495,11 +498,15 @@ export class Orchestrator {
   private snapshot(p: CommandPayloads["thread.snapshot"]): CommandResults["thread.snapshot"] {
     const thread = this.store.getThread(p.threadId);
     if (!thread) throw new CommandError("not_found", `no such thread: ${p.threadId}`);
+    const live = this.sessions.get(p.threadId);
+    const activeTurnId = live?.activeTurnId ?? null;
+    const text = activeTurnId ? (live?.partialByTurn.get(activeTurnId) ?? "") : "";
     return {
       thread,
       messages: this.store.listMessages(p.threadId),
       seq: this.store.head(),
-      activeTurnId: this.sessions.get(p.threadId)?.activeTurnId ?? null,
+      activeTurnId,
+      partial: activeTurnId && text.length > 0 ? { turnId: activeTurnId, text } : null,
       diffs: this.store.listTurnDiffs(p.threadId).map((d) => ({
         turnId: d.turnId,
         files: d.files as DiffFileEntry[],
@@ -1147,6 +1154,11 @@ export class Orchestrator {
       }),
     );
     return { providers };
+  }
+
+  private async providerUpdates(): Promise<CommandResults["provider.updates"]> {
+    const { providers } = await this.detect();
+    return { updates: await collectCliUpdates(providers) };
   }
 
   private async listModels(

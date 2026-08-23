@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { ActivityStats, PairingStatus, ProviderView, ToolchainStatus, UsageRangeDays, UsageStats } from "@divisio/contracts";
+import { useEffect, useRef, useState } from "react";
+import type { ActivityStats, PairingStatus, ProviderUpdate, ProviderView, ToolchainStatus, UsageRangeDays, UsageStats } from "@divisio/contracts";
 import { Button } from "./ui/Button.tsx";
 import {
   AppearanceIcon,
@@ -83,6 +83,7 @@ const SECTION_COPY: Record<SettingsSection, string> = {
 
 interface Props {
   providers: ProviderView[];
+  providerUpdates?: ProviderUpdate[];
   pairing: PairingStatus | null;
   connectionState: ConnectionState;
   client: Client | null;
@@ -97,6 +98,7 @@ interface Props {
   onRevoke(clientId: string): Promise<void>;
   onRevokeAll(): Promise<void>;
   onReplayWelcome?(): void;
+  onReconnect?(): void;
 }
 
 function NavIcon({ kind }: { kind: NavIconId }) {
@@ -126,6 +128,7 @@ function NavIcon({ kind }: { kind: NavIconId }) {
  */
 export function SettingsShell({
   providers,
+  providerUpdates = [],
   pairing,
   connectionState,
   client,
@@ -140,6 +143,7 @@ export function SettingsShell({
   onRevoke,
   onRevokeAll,
   onReplayWelcome,
+  onReconnect,
 }: Props) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [toolchainKey, setToolchainKey] = useState(0);
@@ -162,8 +166,18 @@ export function SettingsShell({
   }, [onClose]);
 
   useEffect(() => {
-    if (section === "connections") void onEnsurePairing();
-  }, [section, onEnsurePairing]);
+    if (section === "connections" && connectionState === "open") void onEnsurePairing();
+  }, [section, onEnsurePairing, connectionState]);
+
+  const wasConnected = useRef(connectionState === "open");
+  useEffect(() => {
+    if (connectionState === "open" && !wasConnected.current) {
+      setToolchainKey((k) => k + 1);
+      setActivityKey((k) => k + 1);
+      setUsageKey((k) => k + 1);
+    }
+    wasConnected.current = connectionState === "open";
+  }, [connectionState]);
 
   const title = NAV_GROUPS.flatMap((g) => g.items).find((n) => n.id === section)?.label ?? "Settings";
   const subtitle = SECTION_COPY[section];
@@ -253,7 +267,11 @@ export function SettingsShell({
               )}
 
               {section === "general" && (
-                <GeneralSettings connectionState={connectionState} onReplayWelcome={onReplayWelcome} />
+                <GeneralSettings
+                  connectionState={connectionState}
+                  onReplayWelcome={onReplayWelcome}
+                  onReconnect={onReconnect}
+                />
               )}
 
               {section === "appearance" && <AppearanceSettings />}
@@ -261,6 +279,7 @@ export function SettingsShell({
               {section === "providers" && (
                 <ProvidersSettings
                   providers={providers}
+                  updates={providerUpdates}
                   onRefresh={onRefreshProviders}
                   client={client}
                 />
@@ -281,7 +300,11 @@ export function SettingsShell({
                     onClose={onClose}
                   />
                 ) : (
-                  <p className="settings-section-desc">Loading pairing status…</p>
+                  <p className="settings-section-desc">
+                    {connectionState === "open"
+                      ? "Loading pairing status…"
+                      : "Connect to the local daemon to manage paired devices."}
+                  </p>
                 ))}
 
               {section === "keybindings" && <KeybindingsSettings />}

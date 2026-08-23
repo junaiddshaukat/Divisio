@@ -273,37 +273,67 @@
 
 .composer-hero .composer {
   padding: var(--space-6) var(--space-6) var(--space-5);
-  max-width: 720px;
+  max-width: 640px;
 }
 .composer-hero .composer textarea {
   font-size: var(--text-lead);
-  min-height: 72px;
+  min-height: 88px;
 }
 
 .composer-resume-note {
   max-width: 760px;
   margin: 8px auto 0;
+  text-align: center;
   font-size: 12px;
   line-height: 1.4;
   color: var(--muted-foreground);
 }
+.composer-hero .composer-resume-note {
+  max-width: 640px;
+}
 
-.composer-project.menu-select {
+.composer-project.menu-select,
+.menu-select.menu-select-pill {
   width: auto;
-  max-width: 180px;
+  max-width: 200px;
   flex-shrink: 1;
   min-width: 0;
 }
-.composer-project .menu-select-trigger {
+.menu-select-trigger.menu-select-trigger-pill {
+  width: auto;
   min-height: 28px;
   height: 28px;
   padding: 0 10px;
+  gap: 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
+  justify-content: flex-start;
 }
-:root:not(.dark) .composer-project .menu-select-trigger {
+:root:not(.dark) .composer-project .menu-select-trigger-pill,
+:root:not(.dark) .menu-select-trigger-pill {
   background: rgba(0, 0, 0, 0.04);
+}
+.menu-select-trigger-pill:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+:root:not(.dark) .menu-select-trigger-pill:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.07);
+}
+.menu-select-trigger-pill .menu-select-label {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.menu-select-trigger-pill .menu-select-chevron {
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+}
+.menu-select-trigger-pill .lucide {
+  width: 12px;
+  height: 12px;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
 }
 .composer-project-label {
   font-size: var(--text-ui);

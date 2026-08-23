@@ -1,4 +1,6 @@
 import type { ActivityDay, ActivityTotals } from "@divisio/contracts";
+import { PRODUCT_NAME } from "@divisio/shared/brand";
+import markUrl from "./assets/divisio-mark.png";
 
 export interface ShareCardData {
   name: string;
@@ -137,10 +139,20 @@ export async function renderShareCardPng(data: ShareCardData): Promise<Blob> {
   ctx.fillText(data.handle, padX + av + 14, y + 38);
 
   // Brand
+  const markSize = 22;
+  const markGap = 8;
   ctx.fillStyle = "#18181b";
   ctx.font = "650 14px ui-sans-serif, system-ui, sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText("Divisio", W - padX, y + 28);
+  const brand = PRODUCT_NAME;
+  const brandW = ctx.measureText(brand).width;
+  try {
+    const mark = await loadImage(markUrl);
+    ctx.drawImage(mark, W - padX - brandW - markGap - markSize, y + 6, markSize, markSize);
+  } catch {
+    /* card still names the product */
+  }
+  ctx.fillText(brand, W - padX, y + 28);
   ctx.textAlign = "left";
 
   y = 120;

@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { PRODUCT_SLUG } from "@divisio/shared/brand";
 import type { DiffFileEntry } from "@divisio/contracts";
 import { logger } from "@divisio/shared/log";
+import { attachLineCounts, numstatMap, parseNameStatusLine } from "../git/diffMeta.ts";
 
 const log = logger("checkpoint");
 
@@ -143,16 +144,16 @@ export async function diffCheckpoints(
 
   const files: DiffFileEntry[] = [];
   for (const line of names.stdout.split("\n")) {
-    if (!line.trim()) continue;
-    const [statusRaw, ...pathParts] = line.split("\t");
-    const path = pathParts.join("\t");
-    const statusChar = (statusRaw?.[0] ?? "?") as DiffFileEntry["status"];
-    if (path) files.push({ path, status: ["A", "M", "D", "R"].includes(statusChar) ? statusChar : "?" });
+    const row = parseNameStatusLine(line);
+    if (row) files.push(row);
   }
+
+  const numstat = await git(cwd, ["diff", "--numstat", from.stdout, to.stdout]);
+  const counted = numstat.code === 0 ? attachLineCounts(files, numstatMap(numstat.stdout)) : files;
 
   const patch = await git(cwd, ["diff", from.stdout, to.stdout]);
   return {
-    files,
+    files: counted,
     patch: patch.code === 0 ? patch.stdout || null : null,
     status: "ready",
   };

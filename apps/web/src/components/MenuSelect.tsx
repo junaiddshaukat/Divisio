@@ -19,6 +19,8 @@ interface Props {
   /** Accessible name for the trigger. */
   "aria-label"?: string;
   className?: string;
+  /** Compact chip for the composer bar. Dialogs keep the field look. */
+  variant?: "field" | "pill";
 }
 
 interface PanelPos {
@@ -40,6 +42,7 @@ export function MenuSelect({
   placeholder = "Select…",
   "aria-label": ariaLabel,
   className = "",
+  variant = "field",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<PanelPos | null>(null);
@@ -108,11 +111,11 @@ export function MenuSelect({
   }, [open]);
 
   return (
-    <div className={`menu-select ${className}`.trim()} ref={rootRef}>
+    <div className={`menu-select${variant === "pill" ? " menu-select-pill" : ""} ${className}`.trim()} ref={rootRef}>
       <button
         ref={triggerRef}
         type="button"
-        className="menu-select-trigger field"
+        className={variant === "pill" ? "menu-select-trigger menu-select-trigger-pill" : "menu-select-trigger field"}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -124,7 +127,9 @@ export function MenuSelect({
           {current?.icon}
           <span className="menu-select-text">
             <span className="menu-select-label">{current?.label ?? placeholder}</span>
-            {current?.detail && <span className="menu-select-detail">{current.detail}</span>}
+            {variant === "field" && current?.detail && (
+              <span className="menu-select-detail">{current.detail}</span>
+            )}
           </span>
         </span>
         <ChevronDownIcon className="menu-select-chevron" />

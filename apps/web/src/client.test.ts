@@ -102,4 +102,32 @@ describe("Client connection", () => {
       daemon.stop();
     }
   });
+
+  test("a rejected handshake notifies onHandshakeFailed", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch() {
+        return new Response("forbidden", { status: 401 });
+      },
+    });
+    let handshakeFails = 0;
+    const client = new Client(`ws://127.0.0.1:${server.port}/ws`, "stale-token", {
+      onIncompatible() {},
+      onEvent() {},
+      onDelta() {},
+      onState() {},
+      onResync() {},
+      onHandshakeFailed() {
+        handshakeFails += 1;
+      },
+    });
+    try {
+      client.connect();
+      await waitFor(() => handshakeFails >= 1);
+      expect(handshakeFails).toBeGreaterThanOrEqual(1);
+    } finally {
+      client.close();
+      server.stop(true);
+    }
+  });
 });

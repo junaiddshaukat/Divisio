@@ -36,17 +36,6 @@ export function resetUsageStatsCache(): void {
   usageInflight.clear();
 }
 
-/** Fill the 30-day cache after listen so Settings → Usage is not the first scan. */
-export function warmUsageCache(store: EventStore): void {
-  // Defer so /health and the first WebSocket are not competing with a 30-day
-  // home scan on the single-threaded daemon.
-  setTimeout(() => {
-    void collectUsageStats(store, 30).catch(() => {
-      /* first open will scan again */
-    });
-  }, 2500);
-}
-
 export async function collectUsageStats(store: EventStore, days: unknown): Promise<UsageStats> {
   const rangeDays = normalizeUsageRange(days) as UsageRangeDays;
   const hit = usageCache.get(rangeDays);

@@ -105,6 +105,76 @@
   .attention-stack { left: var(--space-4); right: var(--space-4); max-width: none; bottom: 80px; }
 }
 
+/* ------------------------------- cli updates ------------------------------ */
+
+.update-toast-stack {
+  position: fixed;
+  left: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 60;
+  max-width: 360px;
+}
+
+.update-toast {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  animation: update-toast-in var(--duration-slow) var(--ease-out);
+}
+
+@keyframes update-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-toast { animation: none; }
+}
+
+.update-toast-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.update-toast-head > svg {
+  color: var(--foreground);
+}
+.update-toast-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: var(--weight-semibold);
+  color: var(--foreground);
+}
+.update-toast-body {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--muted-foreground);
+  line-height: var(--leading-normal);
+}
+.update-toast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+@media (max-width: 860px) {
+  .update-toast-stack { left: var(--space-4); right: var(--space-4); max-width: none; bottom: 148px; }
+}
+
 /* --------------------------------- board ---------------------------------- */
 
 .lane-branch {

@@ -9,11 +9,45 @@ import {
   DiffIcon,
   FileIcon,
   MenuIcon,
+  SearchIcon,
+  SidebarIcon,
   TerminalIcon,
 } from "./ui/icons.ts";
 
 /** Right-column surfaces only — terminal lives in the bottom dock. */
 export type RightSurface = "picker" | "changes" | "files" | "browser" | null;
+
+export function TopbarLead({
+  sidebarCollapsed,
+  onToggleSidebar,
+  onSearch,
+  onNav,
+}: {
+  sidebarCollapsed: boolean;
+  onToggleSidebar(): void;
+  onSearch(): void;
+  onNav(): void;
+}) {
+  return (
+    <div className="topbar-chrome">
+      <IconButton label="Menu" icon={<MenuIcon />} size="sm" className="nav-toggle" onClick={onNav} />
+      <IconButton
+        label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        icon={<SidebarIcon />}
+        size="md"
+        className="topbar-lead-btn"
+        onClick={onToggleSidebar}
+      />
+      <IconButton
+        label="Search (⌘K)"
+        icon={<SearchIcon />}
+        size="md"
+        className="topbar-lead-btn"
+        onClick={onSearch}
+      />
+    </div>
+  );
+}
 
 interface Props {
   thread: ThreadView;
@@ -25,6 +59,9 @@ interface Props {
   handoffBusy: boolean;
   dirty: boolean;
   workdir: string | null;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?(): void;
+  onSearch?(): void;
   onNav(): void;
   onSurface(surface: Exclude<RightSurface, null>): void;
   onCloseSurface(): void;
@@ -51,6 +88,9 @@ export function ThreadTopbar({
   handoffBusy,
   dirty,
   workdir,
+  sidebarCollapsed,
+  onToggleSidebar,
+  onSearch,
   onNav,
   onSurface,
   onCloseSurface,
@@ -74,8 +114,17 @@ export function ThreadTopbar({
       : gitActions;
 
   return (
-    <header className="topbar">
-      <IconButton label="Menu" icon={<MenuIcon />} size="sm" className="nav-toggle" onClick={onNav} />
+    <header className="topbar" data-tauri-drag-region>
+      {onToggleSidebar && onSearch ? (
+        <TopbarLead
+          sidebarCollapsed={!!sidebarCollapsed}
+          onToggleSidebar={onToggleSidebar}
+          onSearch={onSearch}
+          onNav={onNav}
+        />
+      ) : (
+        <IconButton label="Menu" icon={<MenuIcon />} size="sm" className="nav-toggle" onClick={onNav} />
+      )}
 
       <div className="crumb">
         <span className="crumb-project">{projectName}</span>

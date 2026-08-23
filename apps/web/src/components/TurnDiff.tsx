@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { DiffFileEntry } from "@divisio/contracts";
-import { DiffHunkView } from "./DiffHunkView.tsx";
+import { DiffHunkView, resolvedLineCounts } from "./DiffHunkView.tsx";
+import { DiffLineCounts } from "./FileChangeList.tsx";
 import { Button } from "./ui/Button.tsx";
 
 interface Props {
@@ -44,11 +45,16 @@ export function TurnDiff({ turnId, files, patch, status, detail, onRestore, onCl
         )}
         {files.length > 0 && (
           <ul className="diff-files">
-            {files.map((f) => (
-              <li key={f.path}>
-                <span className="pill">{f.status}</span> {f.path}
-              </li>
-            ))}
+            {files.map((f) => {
+              const counts = resolvedLineCounts(f);
+              return (
+                <li key={f.path}>
+                  <span className="pill">{f.status}</span>
+                  <span className="diff-file-path">{f.path}</span>
+                  {counts ? <DiffLineCounts adds={counts.adds} dels={counts.dels} /> : null}
+                </li>
+              );
+            })}
           </ul>
         )}
         {patch && <DiffHunkView patch={patch} />}

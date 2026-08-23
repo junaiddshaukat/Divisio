@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Button } from "./ui/Button.tsx";
-import { ChevronDownIcon, CommitIcon } from "./ui/icons.ts";
+import { Button, IconButton } from "./ui/Button.tsx";
+import { ChevronDownIcon, CloseIcon, CommitIcon, CopyIcon } from "./ui/icons.ts";
 
 export type GitPrimary = "commit" | "commit_push" | "push" | "create_pr";
 
@@ -22,6 +22,20 @@ interface Props {
   }>;
 }
 
+type GitNotice = {
+  tone: "ok" | "error";
+  title: string;
+  detail: string;
+};
+
+function fail(title: string, detail?: string | null): GitNotice {
+  return { tone: "error", title, detail: (detail ?? "").trim() || "Something went wrong." };
+}
+
+function ok(title: string, detail = ""): GitNotice {
+  return { tone: "ok", title, detail };
+}
+
 /**
  * Header git chrome. Diff stays in Changes; ship actions live here.
  * Menu + commit popover close on outside click / Escape.
@@ -39,10 +53,12 @@ export function GitActionsControl({
   const [menuOpen, setMenuOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
-  const [hint, setHint] = useState<string | null>(null);
+  const [hint, setHint] = useState<GitNotice | null>(null);
   const [working, setWorking] = useState(false);
   const [pending, setPending] = useState<"commit" | "commit_push" | "pr" | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const copiedAt = useRef(0);
+  const [copied, setCopied] = useState(false);
 
   const primary: GitPrimary = dirty
     ? hasRemote
@@ -63,6 +79,9 @@ export function GitActionsControl({
           ? "Push"
           : "Commit";
 
+  const commitTitle =
+    pending === "pr" ? "Commit & open PR" : pending === "commit_push" ? "Commit & push" : "Commit";
+
   useEffect(() => {
     if (!open) {
       setMessage("");
@@ -71,7 +90,13 @@ export function GitActionsControl({
   }, [open]);
 
   useEffect(() => {
-    if (!menuOpen && !open) return;
+    if (hint?.tone !== "ok") return;
+    const t = window.setTimeout(() => setHint(null), 2400);
+    return () => window.clearTimeout(t);
+  }, [hint]);
+
+  useEffect(() => {
+    if (!menuOpen && !open && !hint) return;
     const onDoc = (e: MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) {
         setMenuOpen(false);
@@ -82,6 +107,7 @@ export function GitActionsControl({
       if (e.key === "Escape") {
         setMenuOpen(false);
         setOpen(false);
+        setHint(null);
       }
     };
     document.addEventListener("mousedown", onDoc);
@@ -90,7 +116,20 @@ export function GitActionsControl({
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
-  }, [menuOpen, open]);
+  }, [menuOpen, open, hint]);
+
+  const copyDetail = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedAt.current = Date.now();
+      setCopied(true);
+      window.setTimeout(() => {
+        if (Date.now() - copiedAt.current >= 1200) setCopied(false);
+      }, 1300);
+    } catch {
+      /* clipboard can be denied */
+    }
+  };
 
   const runCommit = async (alsoPush: boolean) => {
     const msg = message.trim();
@@ -100,23 +139,25 @@ export function GitActionsControl({
     try {
       const committed = await onCommit(msg);
       if (!committed.ok) {
-        setHint(committed.detail ?? "Commit failed");
+        setHint(fail("Couldn't commit", committed.detail));
         return;
       }
       if (alsoPush) {
         const pushed = await onPush();
         if (!pushed.ok) {
-          setHint(pushed.detail ?? "Push failed after commit");
+          setHint(fail("Committed, but push failed", pushed.detail));
           return;
         }
-        setHint("Committed and pushed.");
+        setOpen(false);
+        setMessage("");
+        setHint(ok("Committed and pushed"));
       } else {
-        setHint("Committed.");
+        setOpen(false);
+        setMessage("");
+        setHint(ok("Committed"));
       }
-      setOpen(false);
-      setMessage("");
     } catch (err) {
-      setHint(err instanceof Error ? err.message : String(err));
+      setHint(fail("Couldn't commit", err instanceof Error ? err.message : String(err)));
     } finally {
       setWorking(false);
     }
@@ -128,9 +169,9 @@ export function GitActionsControl({
     setMenuOpen(false);
     try {
       const res = await onPush();
-      setHint(res.ok ? "Pushed." : (res.detail ?? "Push failed"));
+      setHint(res.ok ? ok("Pushed") : fail("Couldn't push", res.detail));
     } catch (err) {
-      setHint(err instanceof Error ? err.message : String(err));
+      setHint(fail("Couldn't push", err instanceof Error ? err.message : String(err)));
     } finally {
       setWorking(false);
     }
@@ -151,16 +192,16 @@ export function GitActionsControl({
       if (res.status === "needs_commit") {
         setPending("pr");
         setOpen(true);
-        setHint(res.detail ?? "Commit before opening a PR");
+        setHint(fail("Commit before opening a PR", res.detail));
         return;
       }
       if (res.status === "error") {
-        setHint(res.detail ?? "PR failed");
+        setHint(fail("Couldn't open a pull request", res.detail));
         return;
       }
-      setHint(res.url ? "Pull request opened." : res.compareUrl ? "Pushed — finish on GitHub." : "Done.");
+      setHint(ok(res.url ? "Pull request opened" : res.compareUrl ? "Pushed — finish on GitHub" : "Done"));
     } catch (err) {
-      setHint(err instanceof Error ? err.message : String(err));
+      setHint(fail("Couldn't open a pull request", err instanceof Error ? err.message : String(err)));
     } finally {
       setWorking(false);
     }
@@ -169,6 +210,7 @@ export function GitActionsControl({
   const primaryClick = () => {
     setMenuOpen(false);
     if (primary === "commit" || primary === "commit_push") {
+      setHint(null);
       setPending(primary === "commit_push" ? "commit_push" : "commit");
       setOpen(true);
       return;
@@ -186,16 +228,14 @@ export function GitActionsControl({
         setWorking(true);
         try {
           const res = await onOpenPr("Pull request from Divisio", message.trim());
-          setHint(
-            res.status === "error"
-              ? (res.detail ?? "PR failed")
-              : res.url
-                ? "Pull request opened."
-                : "Done.",
-          );
-          if (res.status !== "error" && res.status !== "needs_commit") setOpen(false);
+          if (res.status === "error" || res.status === "needs_commit") {
+            setHint(fail("Couldn't open a pull request", res.detail));
+            return;
+          }
+          setOpen(false);
+          setHint(ok(res.url ? "Pull request opened" : "Done"));
         } catch (err) {
-          setHint(err instanceof Error ? err.message : String(err));
+          setHint(fail("Couldn't open a pull request", err instanceof Error ? err.message : String(err)));
         } finally {
           setWorking(false);
         }
@@ -204,6 +244,31 @@ export function GitActionsControl({
       void runCommit(pending === "commit_push");
     }
   };
+
+  const renderNotice = (item: GitNotice, inPopover: boolean) => (
+    <div
+      className={`git-result git-result-${item.tone}${inPopover ? " is-inline" : ""}`}
+      role={item.tone === "error" ? "alert" : "status"}
+    >
+      <div className="git-result-head">
+        <span className="git-result-title">{item.title}</span>
+        <div className="git-result-tools">
+          {item.tone === "error" && item.detail && (
+            <IconButton
+              label={copied ? "Copied" : "Copy error"}
+              icon={<CopyIcon />}
+              size="sm"
+              onClick={() => void copyDetail(item.detail)}
+            />
+          )}
+          {!inPopover && (
+            <IconButton label="Dismiss" icon={<CloseIcon />} size="sm" onClick={() => setHint(null)} />
+          )}
+        </div>
+      </div>
+      {item.detail ? <pre className="git-result-body">{item.detail}</pre> : null}
+    </div>
+  );
 
   return (
     <div className="git-actions" ref={rootRef}>
@@ -242,6 +307,7 @@ export function GitActionsControl({
               disabled={disabled || !dirty}
               onClick={() => {
                 setMenuOpen(false);
+                setHint(null);
                 setPending("commit");
                 setOpen(true);
               }}
@@ -254,6 +320,7 @@ export function GitActionsControl({
               disabled={disabled || !dirty || !hasRemote}
               onClick={() => {
                 setMenuOpen(false);
+                setHint(null);
                 setPending("commit_push");
                 setOpen(true);
               }}
@@ -279,18 +346,31 @@ export function GitActionsControl({
 
       {open && (
         <div className="git-commit-popover">
-          <input
+          <div className="git-commit-kicker">{commitTitle}</div>
+          <label className="git-commit-label" htmlFor="git-commit-msg">
+            Message
+          </label>
+          <textarea
+            id="git-commit-msg"
+            className="field git-commit-field"
             autoFocus
-            placeholder="Commit message"
+            rows={3}
+            placeholder="What did you change?"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && message.trim()) submitPending();
-              if (e.key === "Escape") setOpen(false);
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && message.trim()) {
+                e.preventDefault();
+                submitPending();
+              }
             }}
             disabled={working}
           />
-          <div className="actions">
+          {hint?.tone === "error" && renderNotice(hint, true)}
+          <div className="git-commit-actions">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
             <Button
               variant="primary"
               size="sm"
@@ -299,13 +379,10 @@ export function GitActionsControl({
             >
               {pending === "pr" ? "Commit & PR" : pending === "commit_push" ? "Commit & push" : "Commit"}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
           </div>
         </div>
       )}
-      {hint && <span className="git-hint">{hint}</span>}
+      {!open && hint && renderNotice(hint, false)}
     </div>
   );
 }

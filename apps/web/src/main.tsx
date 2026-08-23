@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import { applyThemePreference, loadTheme } from "./themePrefs.ts";
+import { installExternalLinkOpener } from "./platform.ts";
 import "./index.css";
 
 // Color mode: System / Light / Dark (see themePrefs.ts). Apply before React paints.
@@ -21,6 +22,8 @@ const isDesktop =
 if (isDesktop) {
   document.documentElement.classList.add("desktop-vibrancy");
 }
+
+installExternalLinkOpener();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

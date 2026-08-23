@@ -19,10 +19,17 @@ const DAEMON_PORT: u16 = 4577;
 struct DaemonState {
   child: Mutex<Option<Child>>,
   token: Mutex<Option<String>>,
+  error: Mutex<Option<String>>,
 }
 
 #[tauri::command]
 fn auth_token(state: State<'_, DaemonState>) -> Result<String, String> {
+  // Disk is the source of truth — a cached value goes stale if the daemon
+  // rewrote the file after we first attached.
+  if let Some(from_disk) = try_read_token() {
+    let _ = store_token_value(&state, from_disk.clone());
+    return Ok(from_disk);
+  }
   state
     .token
     .lock()
@@ -33,7 +40,12 @@ fn auth_token(state: State<'_, DaemonState>) -> Result<String, String> {
 
 #[tauri::command]
 fn daemon_ready(state: State<'_, DaemonState>) -> bool {
-  state.token.lock().map(|g| g.is_some()).unwrap_or(false)
+  try_read_token().is_some() || state.token.lock().map(|g| g.is_some()).unwrap_or(false)
+}
+
+#[tauri::command]
+fn daemon_error(state: State<'_, DaemonState>) -> Option<String> {
+  state.error.lock().ok().and_then(|g| g.clone())
 }
 
 /// Reveal a folder in the file manager, or open it with Cursor / VS Code.
@@ -83,6 +95,47 @@ fn open_external(path: String, with: String) -> Result<(), String> {
     Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
       Err(format!("{with} CLI not on PATH — install it, then retry"))
     }
+    Err(err) => Err(err.to_string()),
+  }
+}
+
+/// Open an http(s) or mailto link in the system browser.
+///
+/// The webview ignores `target="_blank"` (clicks look live, nothing opens).
+/// Only these schemes are allowed so agent markdown cannot `open` a local path.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+  let url = url.trim();
+  if url.contains('\n') || url.contains('\r') || url.contains('\0') {
+    return Err("invalid url".into());
+  }
+  let lower = url.to_ascii_lowercase();
+  if !(lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:"))
+  {
+    return Err("only http, https, and mailto links can be opened".into());
+  }
+
+  #[cfg(target_os = "macos")]
+  let mut cmd = {
+    let mut c = Command::new("open");
+    c.arg(url);
+    c
+  };
+  #[cfg(target_os = "windows")]
+  let mut cmd = {
+    let mut c = Command::new("cmd");
+    c.args(["/c", "start", "", url]);
+    c
+  };
+  #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+  let mut cmd = {
+    let mut c = Command::new("xdg-open");
+    c.arg(url);
+    c
+  };
+
+  match cmd.spawn() {
+    Ok(_) => Ok(()),
     Err(err) => Err(err.to_string()),
   }
 }
@@ -245,6 +298,7 @@ fn start_daemon() -> Result<Child, String> {
 
   let mut child = command
     .env("DIVISIO_DEV_ORIGINS", origins)
+    .env("DIVISIO_PARENT_PID", std::process::id().to_string())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .spawn()
@@ -298,27 +352,60 @@ fn incompatible_daemon_err() -> String {
   )
 }
 
+fn port_busy_err() -> String {
+  format!(
+    "Port {DAEMON_PORT} is in use by a process this app cannot attach to. \
+     Stop that process and reopen Divisio."
+  )
+}
+
+/// Wait for a dying leftover on :4577 to either become a compatible daemon
+/// we can attach to, or release the port so we can spawn.
+fn wait_to_attach_or_free(timeout: Duration) -> Result<Option<String>, String> {
+  let start = Instant::now();
+  let mut logged = false;
+  loop {
+    if !port_open() {
+      return Ok(None);
+    }
+    if let Some(body) = health_body() {
+      if daemon_is_compatible(&body) {
+        let token = read_token_file()?;
+        return Ok(Some(token));
+      }
+      return Err(incompatible_daemon_err());
+    }
+    if !logged {
+      eprintln!("[divisio] waiting for :{DAEMON_PORT} to become attachable or free");
+      logged = true;
+    }
+    if start.elapsed() > timeout {
+      return Err(port_busy_err());
+    }
+    thread::sleep(Duration::from_millis(200));
+  }
+}
+
+fn set_error(state: &DaemonState, err: Option<String>) {
+  if let Ok(mut guard) = state.error.lock() {
+    *guard = err;
+  }
+}
+
 fn bootstrap_daemon(app: &AppHandle) -> Result<(), String> {
   let state = app.state::<DaemonState>();
 
   // Attach to a compatible daemon already listening (dev server, leftover
   // sidecar). Do not store a child we did not spawn — window close must not
   // kill someone else's process.
-  if existing_daemon_is_compatible() {
-    let token = read_token_file()?;
-    store_token_value(&state, token)?;
-    eprintln!("[divisio] attached to existing daemon on :{DAEMON_PORT}");
-    return Ok(());
-  }
-
-  if port_open() {
-    if health_body().is_some() {
-      return Err(incompatible_daemon_err());
+  match wait_to_attach_or_free(Duration::from_secs(8))? {
+    Some(token) => {
+      store_token_value(&state, token)?;
+      set_error(&state, None);
+      eprintln!("[divisio] attached to existing daemon on :{DAEMON_PORT}");
+      return Ok(());
     }
-    return Err(format!(
-      "Port {DAEMON_PORT} is in use by a process this app cannot attach to. \
-       Stop that process and reopen Divisio."
-    ));
+    None => {}
   }
 
   let mut child = start_daemon()?;
@@ -375,13 +462,24 @@ pub fn run() {
     .manage(DaemonState {
       child: Mutex::new(None),
       token: Mutex::new(None),
+      error: Mutex::new(None),
     })
-    .invoke_handler(tauri::generate_handler![auth_token, daemon_ready, open_external])
+    .invoke_handler(tauri::generate_handler![
+      auth_token,
+      daemon_ready,
+      daemon_error,
+      open_external,
+      open_url
+    ])
     .setup(|app| {
       match bootstrap_daemon(app.handle()) {
-        Ok(()) => eprintln!("[divisio] daemon ready"),
+        Ok(()) => {
+          set_error(&app.state::<DaemonState>(), None);
+          eprintln!("[divisio] daemon ready");
+        }
         Err(err) => {
           eprintln!("[divisio] daemon bootstrap failed: {err}");
+          set_error(&app.state::<DaemonState>(), Some(err));
           // Still show the window — the UI can surface the error via missing token.
         }
       }

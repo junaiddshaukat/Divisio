@@ -57,6 +57,11 @@ export interface CommandPayloads {
   "approval.respond": { threadId: string; approvalId: string; decision: "approve" | "deny" };
   "provider.detect": Record<string, never>;
   /**
+   * Compare installed CLI versions to npm latest. Offline or unknown
+   * packages return an empty list — never invented.
+   */
+  "provider.updates": Record<string, never>;
+  /**
    * Live model catalogs from adapters that can list them. `kind` limits the
    * probe to one provider; omit to refresh all. Not a required command —
    * older daemons simply leave the UI on curated aliases.
@@ -204,6 +209,16 @@ export interface ProviderView {
   preferredModel?: string | null;
 }
 
+/** A CLI on PATH that npm reports a newer version for. */
+export interface ProviderUpdate {
+  kind: string;
+  label: string;
+  installed: string;
+  latest: string;
+  /** Shell command the user runs; Divisio does not execute it. */
+  command: string;
+}
+
 /** BYOK OpenAI-compatible endpoint (Settings → Providers). API key is masked. */
 export interface CustomProviderView {
   id: string;
@@ -231,6 +246,11 @@ export interface CommandResults {
     seq: number;
     /** Live turn id when the session is mid-turn; null when idle. */
     activeTurnId: string | null;
+    /**
+     * In-flight assistant text for the live turn. Deltas are not in the event
+     * log, so a client that left the thread and comes back hydrates from here.
+     */
+    partial: { turnId: string; text: string } | null;
     /** Checkpoint diffs for chat chips / Changes pane hydration. */
     diffs: Array<{ turnId: string; files: DiffFileEntry[] }>;
   };
@@ -269,6 +289,7 @@ export interface CommandResults {
     detail?: string;
   };
   "provider.detect": { providers: ProviderView[] };
+  "provider.updates": { updates: ProviderUpdate[] };
   "provider.models": { catalogs: Record<string, ModelCatalog> };
   "customProvider.list": { providers: CustomProviderView[] };
   "customProvider.upsert": { provider: CustomProviderView };

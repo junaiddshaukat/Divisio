@@ -1,15 +1,31 @@
 /**
  * Read-only SQLite homes (Cursor state.vscdb, OpenCode opencode.db).
  * bun:sqlite stays in the server — adapters stay portable.
+ *
+ * Cursor's globalStorage DB is often multiple GB of composer transcripts.
+ * Never SELECT those blobs into JS, never mmap the file, never scan a
+ * database larger than MAX_VENDOR_DB_BYTES — opening Divisio used to RSS 8GB
+ * from this path alone.
  */
 
 import { Database } from "bun:sqlite";
-import { parseCursorBubble, parseOpenCodeModel, parseOpenCodePart, type TranscriptUsage } from "@divisio/adapters/usage";
+import {
+  cursorUsageFromFields,
+  parseOpenCodeModel,
+  parseOpenCodePart,
+  type TranscriptUsage,
+} from "@divisio/adapters/usage";
+
+/** Skip vendor DBs bigger than this. A full table scan of Cursor's 5GB+ file freezes the daemon. */
+export const MAX_VENDOR_DB_BYTES = 128 * 1024 * 1024;
 
 function openReadonly(path: string): Database | null {
   try {
     const db = new Database(path, { readonly: true });
     db.exec("pragma busy_timeout = 5000");
+    // Default mmap would show the whole file as process memory in Activity Monitor.
+    db.exec("pragma mmap_size = 0");
+    db.exec("pragma cache_size = -4000");
     return db;
   } catch {
     return null;
@@ -26,17 +42,49 @@ export function readCursorDb(path: string): TranscriptUsage[] {
   if (!db) return [];
   try {
     if (!tableNames(db).has("cursorDiskKV")) return [];
+    // json_extract runs in SQLite. The composer `value` blob never enters JS.
     const rows = db
       .query(
-        `SELECT key, value FROM cursorDiskKV
-         WHERE key LIKE 'bubbleId:%'
-           AND value LIKE '%"tokenCount"%'`,
+        `SELECT
+           key,
+           json_extract(value, '$.tokenCount.inputTokens') AS inputTokens,
+           json_extract(value, '$.tokenCount.outputTokens') AS outputTokens,
+           json_extract(value, '$.tokenCount.input_tokens') AS input_tokens,
+           json_extract(value, '$.tokenCount.output_tokens') AS output_tokens,
+           json_extract(value, '$.createdAt') AS createdAt,
+           json_extract(value, '$.timestamp') AS timestamp,
+           coalesce(
+             json_extract(value, '$.modelName'),
+             json_extract(value, '$.model'),
+             json_extract(value, '$.modelInfo.modelName'),
+             json_extract(value, '$.modelInfo.model')
+           ) AS model,
+           json_extract(value, '$.bubbleId') AS bubbleId
+         FROM cursorDiskKV
+         WHERE key LIKE 'bubbleId:%'`,
       )
-      .all() as Array<{ key: string; value: string }>;
+      .all() as Array<{
+      key: string;
+      inputTokens: unknown;
+      outputTokens: unknown;
+      input_tokens: unknown;
+      output_tokens: unknown;
+      createdAt: unknown;
+      timestamp: unknown;
+      model: unknown;
+      bubbleId: unknown;
+    }>;
     const records: TranscriptUsage[] = [];
     const seen = new Set<string>();
     for (const row of rows) {
-      const rec = parseCursorBubble(row.value, row.key);
+      const rec = cursorUsageFromFields(row.key, {
+        inputTokens: row.inputTokens ?? row.input_tokens,
+        outputTokens: row.outputTokens ?? row.output_tokens,
+        createdAt: row.createdAt,
+        timestamp: row.timestamp,
+        model: row.model,
+        bubbleId: row.bubbleId,
+      });
       if (!rec) continue;
       if (rec.dedupeKey) {
         if (seen.has(rec.dedupeKey)) continue;

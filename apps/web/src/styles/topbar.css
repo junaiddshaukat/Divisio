@@ -3,22 +3,72 @@
  */
 
 .topbar {
+  grid-area: chrome;
   height: var(--workspace-topbar-height);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: 0 var(--space-5);
+  gap: 0;
+  padding: 0 var(--space-5) 0 0;
   flex-shrink: 0;
   min-width: 0;
   background: var(--background);
+  position: relative;
+  z-index: 10;
+  overflow: visible;
+}
+
+/* Lights + sidebar toggle + search as one titlebar cluster. Auto-width so
+   the crumb follows after a modest gap — not a hole the width of the sidebar. */
+.topbar-chrome {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  height: 100%;
+  width: auto;
+  padding-left: var(--space-8);
+}
+
+.topbar button,
+.topbar a,
+.topbar input {
+  -webkit-app-region: no-drag;
+}
+
+html.desktop-vibrancy .topbar-chrome {
+  /* Lights at x:16 occupy 16 + 3×12 + 2×8 = 68px. 16px optical gap after
+     green, minus the 6px inset of a 16px glyph in a 28px hit target. */
+  padding-left: 100px;
+}
+
+.topbar-chrome .topbar-lead-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  line-height: 0;
+  color: var(--foreground);
+  opacity: var(--icon-rest);
+}
+.topbar-chrome .topbar-lead-btn:hover,
+.topbar-chrome .topbar-lead-btn:focus-visible {
+  opacity: 1;
+  color: var(--foreground);
+}
+
+.topbar-chrome .topbar-lead-btn .lucide {
+  display: block;
+  width: var(--icon-md);
+  height: var(--icon-md);
 }
 
 .crumb {
   display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
+  align-items: center;
+  gap: 6px;
   min-width: 0;
+  padding-left: var(--space-6);
   font-size: var(--text-ui);
 }
 .crumb-project {
@@ -38,12 +88,18 @@
   white-space: nowrap;
 }
 
+.topbar-lead-btn {
+  flex-shrink: 0;
+}
+
 .topbar-actions {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   flex-shrink: 0;
+  position: relative;
+  z-index: 8;
 }
 
 /* ------------------------------- segmented -------------------------------
@@ -107,6 +163,12 @@
 }
 .topbar-actions.is-compact .status-chip {
   padding: 0 var(--space-3);
+}
+
+@media (max-width: 860px) {
+  html.desktop-vibrancy .topbar-chrome {
+    padding-left: 0;
+  }
 }
 
 /* --------------------------------- status --------------------------------- */

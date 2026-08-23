@@ -3,6 +3,8 @@ import type { LaneView, ProjectView, ThreadView } from "@divisio/contracts";
 import type { ConnectionState } from "../client.ts";
 import { confirmDanger } from "../confirm.ts";
 import { rollUp, statusOf } from "../status.ts";
+import { PRODUCT_NAME } from "@divisio/shared/brand";
+import { BrandMark } from "./BrandMark.tsx";
 import { ProjectContextMenu, type ProjectContextMenuState } from "./ProjectContextMenu.tsx";
 import { ThreadContextMenu, type ThreadContextMenuState } from "./ThreadContextMenu.tsx";
 import { IconButton } from "./ui/Button.tsx";
@@ -16,9 +18,7 @@ import {
   ProjectIcon,
   ProjectOpenIcon,
   ProviderIcon,
-  SearchIcon,
   SettingsIcon,
-  SidebarHideIcon,
 } from "./ui/icons.ts";
 
 interface Props {
@@ -33,15 +33,14 @@ interface Props {
   onAddProject(): void;
   onProviders(): void;
   onSettings(): void;
-  /** Footer connection chip — opens General, where the daemon is explained. */
   onConnection?(): void;
+  /** Click the status chip while offline to reconnect now. */
+  onRetry?(): void;
   onProfile(): void;
   onLanes(): void;
-  onSearch?(): void;
   laneCount: number;
   view: "thread" | "board";
   onDevices(): void;
-  onHideSidebar?(): void;
   width?: number;
   onResizeWidth?(width: number): void;
   onRenameThread?(threadId: string, title: string): void;
@@ -84,13 +83,12 @@ export function Sidebar({
   onProviders,
   onSettings,
   onConnection,
+  onRetry,
   onProfile,
   onLanes,
-  onSearch,
   laneCount,
   view,
   onDevices,
-  onHideSidebar,
   width,
   onResizeWidth,
   onRenameThread,
@@ -195,13 +193,11 @@ export function Sidebar({
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
           >
-            <span className="sidebar-brand-name">Divisio</span>
+            <BrandMark size={22} />
+            <span className="sidebar-brand-name">{PRODUCT_NAME}</span>
             <ChevronDownIcon className="sidebar-brand-chevron" />
           </button>
           <div className="sidebar-brand-actions">
-            {onSearch && (
-              <IconButton label="Search" icon={<SearchIcon />} size="sm" onClick={onSearch} />
-            )}
             <IconButton label="Profile" icon={<ProfileIcon />} size="sm" onClick={onProfile} />
           </div>
           {menuOpen && (
@@ -219,21 +215,6 @@ export function Sidebar({
                   Devices
                 </button>
               </li>
-              {onHideSidebar && (
-                <li role="none">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onHideSidebar();
-                    }}
-                  >
-                    <SidebarHideIcon />
-                    Hide sidebar
-                  </button>
-                </li>
-              )}
             </ul>
           )}
         </div>
@@ -384,24 +365,30 @@ export function Sidebar({
             state === "open"
               ? "Local daemon is connected — agents on this machine run through it"
               : state === "connecting"
-                ? "Connecting to the local daemon"
-                : "Local daemon disconnected — chats will not run until it reconnects"
+                ? "Connecting to the local daemon. Click to retry now."
+                : "Disconnected from local daemon. Click to retry."
           }
           aria-label={
             state === "open"
               ? "Connected to local daemon. Open General settings."
               : state === "connecting"
-                ? "Connecting to local daemon. Open General settings."
-                : "Disconnected from local daemon. Open General settings."
+                ? "Connecting to local daemon. Click to retry."
+                : "Disconnected from local daemon. Click to retry."
           }
-          onClick={() => (onConnection ?? onSettings)()}
+          onClick={() => {
+            if (state !== "open") {
+              onRetry?.();
+              return;
+            }
+            (onConnection ?? onSettings)();
+          }}
         >
           <span className="sidebar-foot-lead" aria-hidden>
             <span
               className={`status-dot dot-${state === "open" ? "ready" : state === "connecting" ? "busy" : "error"}${state === "connecting" ? " is-pulsing" : ""}`}
             />
           </span>
-          {state === "open" ? "Connected" : state === "connecting" ? "Connecting" : "Disconnected"}
+          {state === "open" ? "Connected" : state === "connecting" ? "Connecting" : "Disconnected — Retry"}
         </button>
         <button type="button" className="sidebar-foot-settings" onClick={onSettings}>
           <SettingsIcon />

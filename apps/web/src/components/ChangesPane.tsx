@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DiffFileEntry } from "@divisio/contracts";
-import { countDiffStats, DiffHunkView } from "./DiffHunkView.tsx";
+import { countDiffStats, DiffHunkView, resolvedLineCounts, sumStoredLineCounts } from "./DiffHunkView.tsx";
+import { DiffLineCounts } from "./FileChangeList.tsx";
 import { Button } from "./ui/Button.tsx";
 import { ChevronDownIcon, ChevronRightIcon } from "./ui/icons.ts";
 
@@ -75,15 +76,10 @@ export function ChangesPane({
   const [commitHint, setCommitHint] = useState<string | null>(null);
 
   const byFile = useMemo(() => (patch ? splitPatchByFile(patch) : new Map<string, string>()), [patch]);
-  const totals = useMemo(() => countDiffStats(patch), [patch]);
-
-  const fileStats = useMemo(() => {
-    const map = new Map<string, { adds: number; dels: number }>();
-    for (const f of files) {
-      map.set(f.path, countDiffStats(byFile.get(f.path)));
-    }
-    return map;
-  }, [files, byFile]);
+  const totals = useMemo(
+    () => sumStoredLineCounts(files) ?? countDiffStats(patch),
+    [files, patch],
+  );
 
   useEffect(() => {
     setConfirming(false);
@@ -209,7 +205,7 @@ export function ChangesPane({
 
         {files.map((f) => {
           const filePatch = byFile.get(f.path) ?? null;
-          const stats = fileStats.get(f.path) ?? { adds: 0, dels: 0 };
+          const stats = resolvedLineCounts(f, filePatch ? countDiffStats(filePatch) : null);
           const isCollapsed = collapsed.has(f.path);
           const dir = fileDir(f.path);
           return (
@@ -237,8 +233,7 @@ export function ChangesPane({
                     <span className="changes-file-base">{fileBase(f.path)}</span>
                   </span>
                   <span className="changes-file-counts">
-                    {stats.adds > 0 && <span className="adds">+{stats.adds}</span>}
-                    {stats.dels > 0 && <span className="dels">−{stats.dels}</span>}
+                    {stats ? <DiffLineCounts adds={stats.adds} dels={stats.dels} /> : null}
                   </span>
                 </button>
               </header>

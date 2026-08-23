@@ -451,14 +451,6 @@ html:not(.dark) .profile-summary > div {
   color: #18181b;
   flex-shrink: 0;
 }
-.share-card-brand-mark {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  padding: 3px 5px;
-  border-radius: 6px;
-  border: 1px solid #e4e4e7;
-  background: #f4f4f5;
-}
 
 .share-heatmap {
   display: flex;

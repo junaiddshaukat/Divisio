@@ -11,7 +11,7 @@ export {
   type TranscriptProvider,
   type TranscriptUsage,
 } from "./transcripts.ts";
-export { parseCursorBubble } from "./cursor.ts";
+export { cursorUsageFromFields, parseCursorBubble, type CursorBubbleFields } from "./cursor.ts";
 export {
   flushGrokTranscript,
   grokLineMightCarryUsage,

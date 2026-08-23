@@ -155,11 +155,12 @@ Names are the contract surface; payloads are locked in `packages/contracts` at P
 | --- | --- |
 | `session.resume` | Reconnect with a cursor (above) |
 | `project.create` / `project.list` | Directory-rooted workspaces |
-| `thread.create` / `thread.snapshot` | Snapshot returns projection state plus its `seq` watermark |
+| `thread.create` / `thread.snapshot` | Snapshot returns projection state, its `seq` watermark, and in-flight assistant text (`partial`) when a turn is still running |
 | `turn.send` | Starts a turn; returns `turnId` |
 | `turn.interrupt` | Takes an explicit `turnId` — never "the current turn" |
 | `approval.respond` | Carries the approval id being answered |
 | `provider.detect` | Refresh capability matrix |
+| `provider.updates` | Optional. npm latest vs installed CLI versions; empty when offline. Not a required command |
 
 Every command that acts on in-flight work names its target explicitly. There is no implicit "current" turn, session, or approval on the wire — that ambiguity is unresolvable when two clients are connected to the same thread.
 

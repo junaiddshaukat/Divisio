@@ -1,6 +1,6 @@
 /**
  * Gemini CLI community adapter — Stream tier.
- * `gemini -p … --output-format stream-json`
+ * `gemini -p … --output-format stream-json --skip-trust`
  */
 
 import {
@@ -21,6 +21,20 @@ import { pumpCommunityNdjson } from "./shared/pump.ts";
 
 const log = logger("community:gemini");
 const BINARY = "gemini";
+
+/** Workspace trust for a Divisio-chosen project cwd. Not tool auto-approve. */
+export function geminiTurnArgs(input: {
+  text: string;
+  nativeId: string | null;
+  permissionMode: PermissionMode;
+  model?: string;
+}): string[] {
+  const args = ["-p", input.text, "--output-format", "stream-json", "--skip-trust"];
+  if (input.nativeId) args.push("--resume", input.nativeId);
+  if (input.permissionMode === "full_access") args.push("--yolo");
+  pushModelArg(args, input.model);
+  return args;
+}
 
 interface Session extends SessionHandle {
   proc: TurnProcess | null;
@@ -80,17 +94,25 @@ export class GeminiAdapter implements ProviderAdapter {
     if (!session) throw new Error(`no session for thread ${handle.threadId}`);
     if (session.proc) throw new Error("turn already running");
 
-    const args = ["-p", turn.text, "--output-format", "stream-json"];
-    if (session.nativeId) args.push("--resume", session.nativeId);
-    if (session.permissionMode === "full_access") args.push("--yolo");
-    pushModelArg(args, turn.model);
+    const args = geminiTurnArgs({
+      text: turn.text,
+      nativeId: session.nativeId,
+      permissionMode: session.permissionMode,
+      model: turn.model,
+    });
 
     log.info("spawning turn", { threadId: session.threadId, turnId: turn.turnId, resume: !!session.nativeId });
 
     const proc = Bun.spawn({
       cmd: [BINARY, ...args],
       cwd: session.cwd,
-      env: { ...(process.env as Record<string, string>) },
+      env: {
+        ...(process.env as Record<string, string>),
+        // Headless: no TTY for the trust dialog. The project folder was already
+        // chosen in Divisio. This is workspace trust, not --yolo tool auto-approve.
+        GEMINI_CLI_TRUST_WORKSPACE: "true",
+        GEMINI_TRUST_WORKSPACE: "true",
+      },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

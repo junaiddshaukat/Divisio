@@ -40,9 +40,14 @@ Divisio drives **already-authenticated** CLIs. Installing Divisio does not repla
 | GitHub Copilot | Stream (`--output-format json`) | `CopilotAdapter` | community |
 | Antigravity | Stream (`agy --output-format stream-json`) | `AntigravityAdapter` | community |
 
+### First-party spawn notes
+
+- **Claude Code:** `claude --print --output-format stream-json --permission-mode <manual|acceptEdits> --allowedTools=WebSearch,WebFetch -- <prompt>`. `--allowedTools` is variadic; the `=` form (and `--` before the prompt) keeps the prompt from being eaten. Print mode has no TTY, so Claude auto-denies WebSearch unless it is allowlisted. That is not `bypassPermissions`.
+
 ### Community P2 spawn notes
 
-- **Gemini:** `gemini -p <prompt> --output-format stream-json [--resume <id>] [--yolo]`
+- **Gemini:** `gemini -p <prompt> --output-format stream-json --skip-trust [--resume <id>] [--yolo]`
+  Workspace trust is set for the session (`--skip-trust` and `GEMINI_CLI_TRUST_WORKSPACE`) because Divisio already chose the project folder and there is no TTY for Gemini’s trust dialog. That is not tool auto-approve; `--yolo` stays on full access only.
 - **Copilot:** `copilot -p <prompt> --output-format json -s --no-ask-user [--allow-all]`
 - **Antigravity:** `agy -p <prompt> --output-format stream-json [--conversation <id>] [--dangerously-skip-permissions]`
 

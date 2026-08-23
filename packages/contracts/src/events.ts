@@ -78,6 +78,10 @@ export type VendorResumeOutcome = "resumed" | "cold" | "unsupported" | "failed";
 export interface DiffFileEntry {
   path: string;
   status: "A" | "M" | "D" | "R" | "?";
+  /** Lines added in this file. Optional — older events omit it. */
+  additions?: number;
+  /** Lines removed in this file. Optional — older events omit it. */
+  deletions?: number;
 }
 
 export interface EventPayloads {

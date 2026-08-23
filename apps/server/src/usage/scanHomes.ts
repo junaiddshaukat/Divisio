@@ -28,9 +28,15 @@ import {
   qwenLineMightCarryUsage,
   type TranscriptUsage,
 } from "@divisio/adapters/usage";
-import { readCursorDb, readOpenCodeDb } from "./scanSqlite.ts";
+import { readCursorDb, readOpenCodeDb, MAX_VENDOR_DB_BYTES } from "./scanSqlite.ts";
+import { logger } from "@divisio/shared/log";
+
+const log = logger("usage");
 
 const MTIME_SLACK_MS = 48 * 60 * 60 * 1000;
+/** Skip a single jsonl file bigger than this — stream-parsing it still spikes RSS. */
+export const MAX_JSONL_FILE_BYTES = 32 * 1024 * 1024;
+const FILE_CACHE_MAX = 256;
 
 export interface ScanHomesInput {
   /** Inclusive window start (epoch ms). Files older than this minus slack are skipped. */
@@ -44,6 +50,10 @@ export interface ScanHomesInput {
   qwenFiles?: string[];
   cursorDbPaths?: string[];
   opencodeDbPaths?: string[];
+  /** Test override — production uses MAX_VENDOR_DB_BYTES. */
+  maxSqliteBytes?: number;
+  /** Test override — production uses MAX_JSONL_FILE_BYTES. */
+  maxJsonlBytes?: number;
 }
 
 export interface ScanHomesResult {
@@ -59,7 +69,7 @@ interface FileCacheEntry {
 
 const fileCache = new Map<string, FileCacheEntry>();
 const WINDOW_TTL_MS = 20_000;
-const FILE_CONCURRENCY = 8;
+const FILE_CONCURRENCY = 2;
 
 const windowCache = new Map<string, { at: number; result: ScanHomesResult }>();
 const windowInflight = new Map<string, Promise<ScanHomesResult>>();
@@ -68,6 +78,16 @@ export function resetUsageScanCache(): void {
   fileCache.clear();
   windowCache.clear();
   windowInflight.clear();
+}
+
+function rememberFile(path: string, entry: FileCacheEntry): void {
+  if (fileCache.has(path)) fileCache.delete(path);
+  fileCache.set(path, entry);
+  while (fileCache.size > FILE_CACHE_MAX) {
+    const oldest = fileCache.keys().next().value;
+    if (oldest === undefined) break;
+    fileCache.delete(oldest);
+  }
 }
 
 async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -303,7 +323,11 @@ async function recordsForFile(
   kind: JsonlKind,
 ): Promise<TranscriptUsage[]> {
   const hit = fileCache.get(path);
-  if (hit && hit.size === size && hit.mtimeMs === mtimeMs) return hit.records;
+  if (hit && hit.size === size && hit.mtimeMs === mtimeMs) {
+    fileCache.delete(path);
+    fileCache.set(path, hit);
+    return hit.records;
+  }
   const records =
     kind === "claude"
       ? await readClaudeFile(path)
@@ -312,7 +336,7 @@ async function recordsForFile(
         : kind === "grok"
           ? await readGrokFile(path)
           : await readQwenFile(path);
-  fileCache.set(path, { mtimeMs, size, records });
+  rememberFile(path, { mtimeMs, size, records });
   return records;
 }
 
@@ -322,6 +346,7 @@ async function scanJsonlDir(
   match: (name: string) => boolean,
   sinceMs: number,
   untilMs: number,
+  maxJsonlBytes: number,
 ): Promise<{ records: TranscriptUsage[]; files: number }> {
   const seenFiles = new Set<string>();
   const allPaths: string[] = [];
@@ -342,6 +367,10 @@ async function scanJsonlDir(
       return { records: [] as TranscriptUsage[], counted: 0 };
     }
     if (st.mtimeMs < floor) return { records: [], counted: 0 };
+    if (st.size > maxJsonlBytes) {
+      log.warn("skipping oversized transcript", { kind, bytes: st.size });
+      return { records: [], counted: 0 };
+    }
     const parsed = await recordsForFile(path, st.size, st.mtimeMs, kind);
     const records = parsed.filter((rec) => rec.timestampMs >= sinceMs && rec.timestampMs < untilMs);
     return { records, counted: 1 };
@@ -358,6 +387,7 @@ async function scanLooseFiles(
   kind: JsonlKind,
   sinceMs: number,
   untilMs: number,
+  maxJsonlBytes: number,
 ): Promise<{ records: TranscriptUsage[]; files: number }> {
   const seen = new Set<string>();
   const uniquePaths = paths.filter((path) => {
@@ -374,6 +404,10 @@ async function scanLooseFiles(
       return { records: [] as TranscriptUsage[], counted: 0 };
     }
     if (!st.isFile() || st.mtimeMs < floor) return { records: [], counted: 0 };
+    if (st.size > maxJsonlBytes) {
+      log.warn("skipping oversized transcript", { kind, bytes: st.size });
+      return { records: [], counted: 0 };
+    }
     const parsed = await recordsForFile(path, st.size, st.mtimeMs, kind);
     const records = parsed.filter((rec) => rec.timestampMs >= sinceMs && rec.timestampMs < untilMs);
     return { records, counted: 1 };
@@ -389,6 +423,7 @@ async function scanSqlite(
   kind: "cursor" | "opencode",
   sinceMs: number,
   untilMs: number,
+  maxSqliteBytes: number,
 ): Promise<{ records: TranscriptUsage[]; files: number }> {
   const path = await firstExistingFile(candidates);
   if (!path) return { records: [], files: 0 };
@@ -398,14 +433,20 @@ async function scanSqlite(
   } catch {
     return { records: [], files: 0 };
   }
+  if (st.size > maxSqliteBytes) {
+    log.warn("skipping oversized vendor database", { kind, bytes: st.size, max: maxSqliteBytes });
+    return { records: [], files: 0 };
+  }
   const cacheKey = `${kind}:${path}`;
   const hit = fileCache.get(cacheKey);
   let parsedAll: TranscriptUsage[];
   if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) {
+    fileCache.delete(cacheKey);
+    fileCache.set(cacheKey, hit);
     parsedAll = hit.records;
   } else {
     parsedAll = kind === "cursor" ? readCursorDb(path) : readOpenCodeDb(path);
-    fileCache.set(cacheKey, { mtimeMs: st.mtimeMs, size: st.size, records: parsedAll });
+    rememberFile(cacheKey, { mtimeMs: st.mtimeMs, size: st.size, records: parsedAll });
   }
   const records = parsedAll.filter((rec) => rec.timestampMs >= sinceMs && rec.timestampMs < untilMs);
   return { records, files: 1 };
@@ -431,6 +472,8 @@ function windowKey(input: ScanHomesInput): string {
     input.qwenFiles,
     input.cursorDbPaths,
     input.opencodeDbPaths,
+    input.maxSqliteBytes,
+    input.maxJsonlBytes,
   ]);
 }
 
@@ -445,22 +488,26 @@ async function scanVendorHomesUncached(input: ScanHomesInput): Promise<ScanHomes
   const qwenLoose = input.qwenFiles ?? (skipDefaults ? [] : qwenUsageFiles());
   const cursorDbs = input.cursorDbPaths ?? (skipDefaults ? [] : cursorStateDbCandidates());
   const opencodeDbs = input.opencodeDbPaths ?? (skipDefaults ? [] : opencodeDbCandidates());
+  const maxSqliteBytes = input.maxSqliteBytes ?? MAX_VENDOR_DB_BYTES;
+  const maxJsonlBytes = input.maxJsonlBytes ?? MAX_JSONL_FILE_BYTES;
 
-  const [claude, codex, grok, qwenDir, qwenFile, cursor, opencode] = await Promise.all([
-    scanJsonlDir(claudeRoots, "claude", (n) => n.endsWith(".jsonl"), input.sinceMs, input.untilMs),
-    scanJsonlDir(codexRoots, "codex", (n) => n.endsWith(".jsonl"), input.sinceMs, input.untilMs),
-    scanJsonlDir(grokRoots, "grok", (n) => n === "updates.jsonl", input.sinceMs, input.untilMs),
+  const [claude, codex, grok, qwenDir, qwenFile] = await Promise.all([
+    scanJsonlDir(claudeRoots, "claude", (n) => n.endsWith(".jsonl"), input.sinceMs, input.untilMs, maxJsonlBytes),
+    scanJsonlDir(codexRoots, "codex", (n) => n.endsWith(".jsonl"), input.sinceMs, input.untilMs, maxJsonlBytes),
+    scanJsonlDir(grokRoots, "grok", (n) => n === "updates.jsonl", input.sinceMs, input.untilMs, maxJsonlBytes),
     scanJsonlDir(
       qwenRoots,
       "qwen",
       (n) => n.startsWith("token-usage") && n.endsWith(".jsonl"),
       input.sinceMs,
       input.untilMs,
+      maxJsonlBytes,
     ),
-    scanLooseFiles(qwenLoose, "qwen", input.sinceMs, input.untilMs),
-    scanSqlite(cursorDbs, "cursor", input.sinceMs, input.untilMs),
-    scanSqlite(opencodeDbs, "opencode", input.sinceMs, input.untilMs),
+    scanLooseFiles(qwenLoose, "qwen", input.sinceMs, input.untilMs, maxJsonlBytes),
   ]);
+  // SQLite after jsonl so a huge Cursor DB cannot overlap Codex/Claude walks.
+  const cursor = await scanSqlite(cursorDbs, "cursor", input.sinceMs, input.untilMs, maxSqliteBytes);
+  const opencode = await scanSqlite(opencodeDbs, "opencode", input.sinceMs, input.untilMs, maxSqliteBytes);
 
   const seen = new Set<string>();
   const records: TranscriptUsage[] = [];

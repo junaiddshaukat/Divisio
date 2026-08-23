@@ -3,6 +3,7 @@ import type { DiffFileEntry } from "@divisio/contracts";
 import { useSmoothReveal } from "../hooks/useSmoothReveal.ts";
 import { Markdown } from "./Markdown.tsx";
 import { ThinkingStatus } from "./ThinkingStatus.tsx";
+import { FileChangeList } from "./FileChangeList.tsx";
 import { IconButton } from "./ui/Button.tsx";
 import { CheckIcon, CopyIcon } from "./ui/icons.ts";
 import { WorkEntries, type WorkEntry } from "./WorkEntries.tsx";
@@ -96,7 +97,7 @@ function AssistantMessage({
       <div className="msg-assistant">
         <Markdown source={text} />
         {changedFiles && changedFiles.length > 0 && turnId && onOpenChanges && (
-          <ChangedFilesChip turnId={turnId} files={changedFiles} onOpen={onOpenChanges} />
+          <FileChangeList turnId={turnId} files={changedFiles} onOpen={onOpenChanges} />
         )}
       </div>
       <div className="msg-assistant-meta">
@@ -126,44 +127,3 @@ function StreamingAssistant({ text }: { text: string }) {
   );
 }
 
-function ChangedFilesChip({
-  turnId,
-  files,
-  onOpen,
-}: {
-  turnId: string;
-  files: DiffFileEntry[];
-  onOpen(turnId: string, path?: string): void;
-}) {
-  const preview = files.slice(0, 3);
-  return (
-    <div className="changed-files-card">
-      <button className="changed-files-summary" onClick={() => onOpen(turnId)}>
-        {files.length} changed file{files.length === 1 ? "" : "s"}
-      </button>
-      <div className="changed-files-chips">
-        {preview.map((f) => (
-          <button
-            key={f.path}
-            className="file-chip"
-            title={f.path}
-            onClick={() => onOpen(turnId, f.path)}
-          >
-            <span className={`diff-status status-${f.status}`}>{f.status}</span>
-            {basename(f.path)}
-          </button>
-        ))}
-        {files.length > 3 && (
-          <button className="file-chip more" onClick={() => onOpen(turnId)}>
-            +{files.length - 3} more
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function basename(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i >= 0 ? path.slice(i + 1) : path;
-}

@@ -7,6 +7,9 @@ import {
   shareCaption,
   type ShareCardData,
 } from "../shareActivity.ts";
+import { PRODUCT_NAME } from "@divisio/shared/brand";
+import { BrandMark } from "./BrandMark.tsx";
+import { openUrl } from "../platform.ts";
 import { Button, IconButton } from "./ui/Button.tsx";
 import { CloseIcon, SaveIcon } from "./ui/icons.ts";
 
@@ -154,7 +157,7 @@ export function ShareActivityDialog({ name, avatar, stats, onClose }: Props) {
   };
 
   const openIntent = (url: string) => {
-    window.open(url, "_blank", "noopener,noreferrer");
+    void openUrl(url);
   };
 
   return (
@@ -182,8 +185,8 @@ export function ShareActivityDialog({ name, avatar, stats, onClose }: Props) {
               </div>
             </div>
             <div className="share-card-brand" aria-hidden>
-              <span className="share-card-brand-mark">&gt;_</span>
-              Divisio
+              <BrandMark size={20} tone="light" />
+              {PRODUCT_NAME}
             </div>
           </div>
 

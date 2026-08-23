@@ -135,6 +135,34 @@ describe("scanVendorHomes", () => {
     expect(scan.records[0]).toMatchObject({ provider: "cursor", inputTokens: 25, outputTokens: 5 });
   });
 
+  test("skips an oversized Cursor database instead of loading it", async () => {
+    dir = mkdtempSync(join(tmpdir(), "divisio-usage-"));
+    const dbPath = join(dir, "state.vscdb");
+    const { Database } = await import("bun:sqlite");
+    const db = new Database(dbPath, { create: true });
+    db.exec("create table cursorDiskKV (key text, value text)");
+    db.query("insert into cursorDiskKV (key, value) values (?, ?)").run(
+      "bubbleId:comp1:b1",
+      JSON.stringify({
+        bubbleId: "b1",
+        createdAt: Date.now(),
+        modelName: "gpt-5",
+        tokenCount: { inputTokens: 25, outputTokens: 5 },
+      }),
+    );
+    db.close();
+
+    const now = Date.now();
+    const scan = await scanVendorHomes({
+      sinceMs: now - 24 * 60 * 60 * 1000,
+      untilMs: now + 24 * 60 * 60 * 1000,
+      cursorDbPaths: [dbPath],
+      maxSqliteBytes: 1,
+    });
+    expect(scan.files.cursor).toBe(0);
+    expect(scan.records).toHaveLength(0);
+  });
+
   test("reads OpenCode step-finish tokens from sqlite", async () => {
     dir = mkdtempSync(join(tmpdir(), "divisio-usage-"));
     const dbPath = join(dir, "opencode.db");

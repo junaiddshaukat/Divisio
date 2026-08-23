@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { CustomProviderView, ProviderView } from "@divisio/contracts";
+import type { CustomProviderView, ProviderUpdate, ProviderView } from "@divisio/contracts";
 import {
   ACCENT_SWATCHES,
   displayLabel,
@@ -18,12 +18,14 @@ import { CAPABILITY_FLAGS, capabilityOn } from "../../capabilityFlags.ts";
 
 interface Props {
   providers: ProviderView[];
+  updates?: ProviderUpdate[];
   onRefresh(): void;
   /** Daemon client for BYOK CRUD. */
   client: Client | null;
 }
 
-function statusMeta(p: ProviderView): string | null {
+function statusMeta(p: ProviderView, update?: ProviderUpdate): string | null {
+  if (update) return `v${update.installed} → ${update.latest}`;
   if (p.version) return `v${p.version}`;
   if (!p.available) return p.detail;
   return null;
@@ -45,7 +47,7 @@ const EMPTY_DRAFT: Draft = {
 };
 
 /** Provider rows with enable toggle; expand for display name, accent, and declared capabilities. */
-export function ProvidersSettings({ providers, onRefresh, client }: Props) {
+export function ProvidersSettings({ providers, updates = [], onRefresh, client }: Props) {
   const [prefs, setPrefs] = useState<ProviderPrefsMap>(() => loadProviderPrefs());
   const [openKind, setOpenKind] = useState<string | null>(null);
   const [customs, setCustoms] = useState<CustomProviderView[]>([]);
@@ -138,7 +140,8 @@ export function ProvidersSettings({ providers, onRefresh, client }: Props) {
           const label = displayLabel(p.kind, p.label, prefs);
           const enabled = isProviderEnabled(p.kind, prefs);
           const expanded = openKind === p.kind;
-          const meta = statusMeta(p);
+          const update = updates.find((u) => u.kind === p.kind);
+          const meta = statusMeta(p, update);
           return (
             <div
               key={p.kind}
@@ -253,6 +256,12 @@ export function ProvidersSettings({ providers, onRefresh, client }: Props) {
                       })}
                     </ul>
                   </div>
+                  {update && (
+                    <p className="provider-update-hint">
+                      {update.latest} is available. Run <code>{update.command}</code> in a terminal —
+                      Divisio does not install updates.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

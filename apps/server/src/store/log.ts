@@ -8,6 +8,7 @@ import {
   type DomainEvent,
   type EventType,
   type NewEvent,
+  type DiffFileEntry,
   type UsageRangeDays,
   type UsageStats,
   type LaneStatus,
@@ -501,12 +502,12 @@ export class EventStore {
     return {
       fromRef: row.from_ref,
       toRef: row.to_ref,
-      files: JSON.parse(row.files_json) as Array<{ path: string; status: string }>,
+      files: JSON.parse(row.files_json) as DiffFileEntry[],
     };
   }
 
   /** Every recorded diff for a thread, used to build the handoff file list. */
-  listTurnDiffs(threadId: string): Array<{ turnId: string; files: Array<{ path: string; status: string }> }> {
+  listTurnDiffs(threadId: string): Array<{ turnId: string; files: DiffFileEntry[] }> {
     return this.db
       .query<{ turn_id: string; files_json: string }, [string]>(
         "select turn_id, files_json from turn_diffs where thread_id = ?",
@@ -514,7 +515,7 @@ export class EventStore {
       .all(threadId)
       .map((r) => ({
         turnId: r.turn_id,
-        files: JSON.parse(r.files_json) as Array<{ path: string; status: string }>,
+        files: JSON.parse(r.files_json) as DiffFileEntry[],
       }));
   }
 

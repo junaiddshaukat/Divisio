@@ -8,6 +8,11 @@ import type { TurnProcess } from "@divisio/adapters";
 
 const log = logger("community:stream");
 
+/** Drop CSI color codes so a CLI crash is readable in the thread, not `[31m…[0m`. */
+export function visibleCliText(text: string): string {
+  return text.replace(/\x1B\[[0-9;]*[A-Za-z]/g, "").trim();
+}
+
 export type LineNormalizer<S> = (
   msg: Record<string, unknown>,
   turnId: string,
@@ -66,7 +71,8 @@ export async function pumpCommunityNdjson<S extends { nativeId: string | null }>
         opts.emit({
           type: "error",
           code: "provider_failed",
-          message: stderr.trim().split("\n").slice(-3).join(" ") || `${opts.failLabel} exited ${code}`,
+          message:
+            visibleCliText(stderr).split("\n").slice(-3).join(" ") || `${opts.failLabel} exited ${code}`,
         });
       }
     } else if (assistantText.length > 0) {

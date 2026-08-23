@@ -28,7 +28,7 @@
   --radius-composer: 1.25rem;
   --radius-user-message: 0.8rem;
   --control-radius: 0.5rem;
-  --workspace-topbar-height: 52px;
+  --workspace-topbar-height: 38px;
   --app-scrollbar-width: 8px;
   --app-scrollbar-thumb-hover: rgb(161 161 170);
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -238,7 +238,12 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
 
 .shell {
   display: grid;
-  grid-template-columns: var(--left-w, 260px) 1fr;
+  grid-template-columns: var(--left-w, 260px) minmax(0, 1fr);
+  grid-template-rows: var(--workspace-topbar-height) minmax(0, 1fr);
+  grid-template-areas:
+    "chrome chrome"
+    "nav main";
+  grid-auto-rows: 0;
   height: 100%;
   max-height: 100%;
   overflow: hidden;
@@ -246,6 +251,9 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
 }
 .shell.shell-right {
   grid-template-columns: var(--left-w, 260px) minmax(0, 1fr) var(--right-w, 420px);
+  grid-template-areas:
+    "chrome chrome chrome"
+    "nav main right";
 }
 /* Grid items default to min-height:auto and can blow past the viewport when a
    tall right pane (Changes/Files) is open — then the prompt scrolls away. */
@@ -308,6 +316,7 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
 /* -------------------------------- main ----------------------------------- */
 
 .main {
+  grid-area: main;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -338,14 +347,18 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
 }
 
 .topbar {
+  grid-area: chrome;
   height: var(--workspace-topbar-height);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 16px;
+  gap: 0;
+  padding: 0 16px 0 0;
   flex-shrink: 0;
   background: var(--background);
+  position: relative;
+  z-index: 10;
+  overflow: visible;
 }
 
 .crumb {
@@ -492,11 +505,11 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
 }
 
 .draft-hero {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 8px;
   padding: 24px 24px 0;
   min-height: 0;
@@ -506,15 +519,11 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   overflow-y: auto;
   padding-bottom: 8px;
 }
-.draft-spacer {
-  flex: 1 1 auto;
-  min-height: 16px;
-}
 .draft-stack .draft-hero {
-  flex: 0 0 auto;
   padding-bottom: 16px;
 }
 .draft-stack .branch-strip {
@@ -524,11 +533,31 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
 .draft-stack .composer-wrap {
   flex-shrink: 0;
   padding-top: 8px;
-  padding-bottom: 20px;
-  /* Keep the prompt in view — never let it center past the fold. */
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+  padding-bottom: 32px;
+}
+.draft-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 24px 48px;
+  overflow-y: auto;
+}
+.draft-stage .branch-strip {
+  padding: 0;
+  width: auto;
+  max-width: none;
+}
+.draft-stage .composer-wrap.composer-hero {
+  width: 100%;
+  padding: 4px 0 0;
+}
+.draft-stage .banner {
+  margin-bottom: 0;
 }
 .draft-headline {
   margin: 0;
@@ -548,20 +577,84 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
 
 .empty.landing {
   justify-content: stretch;
+  align-items: stretch;
   padding: 0;
   gap: 0;
 }
-.empty.landing .draft-stack {
+.empty.landing .draft-stack,
+.empty.landing .landing-stage {
   width: 100%;
 }
-.topbar-landing {
-  border-bottom-color: transparent;
+
+.landing-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-6) var(--space-9);
+  overflow-y: auto;
+}
+.landing-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  text-align: center;
+}
+.landing-stage .composer-wrap {
+  width: 100%;
+  padding: var(--space-5) 0 0;
 }
 
-/* Empty draft: pull composer up into the hero stack. */
+.landing-empty {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-8) var(--space-6) var(--space-9);
+  text-align: center;
+}
+.landing-empty .draft-headline {
+  margin: 0;
+}
+.landing-empty .draft-sub {
+  max-width: 28rem;
+}
+
+.brand-mark-wrap {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: stretch;
+}
+.brand-mark-wrap > .brand-mark {
+  grid-area: 1 / 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 0;
+}
+html.dark .brand-mark-wrap:not(.is-on-light) .brand-mark-light {
+  display: none;
+}
+html:not(.dark) .brand-mark-wrap .brand-mark-dark {
+  display: none;
+}
+
+.thread-column:has(.draft-stage) .composer-wrap {
+  padding-top: 4px;
+  padding-bottom: 0;
+}
 .thread-column:has(.draft-hero) .composer-wrap {
   padding-top: 12px;
-  padding-bottom: 16px;
+  padding-bottom: 32px;
 }
 .thread-column:has(.draft-hero) .branch-strip {
   justify-content: center;
@@ -605,7 +698,7 @@ html.desktop-vibrancy:not(.dark) .terminal-dock {
   padding-bottom: 28px;
 }
 .composer-hero .composer textarea {
-  min-height: 72px;
+  min-height: 88px;
   font-size: var(--text-lead);
   line-height: 22px;
 }
@@ -795,6 +888,7 @@ button.icon:hover {
 .dialog-backdrop {
   position: fixed;
   inset: 0;
+  z-index: 80;
   background: rgba(0, 0, 0, 0.4);
   display: grid;
   place-items: center;
@@ -975,6 +1069,19 @@ button.icon:hover {
   flex-direction: column;
   gap: 6px;
   font-size: 13px;
+}
+.diff-files li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.diff-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .diff-patch {
   margin: 0;
@@ -1358,6 +1465,7 @@ button.btn.secondary {
 /* ------------------------------- right panel ------------------------------ */
 
 .right-panel {
+  grid-area: right;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1617,9 +1725,11 @@ button.btn.secondary {
   flex-shrink: 0;
 }
 .changes-stats .adds,
-.changes-file-counts .adds { color: var(--success); }
+.changes-file-counts .adds,
+.diff-line-counts .adds { color: var(--success); }
 .changes-stats .dels,
-.changes-file-counts .dels { color: var(--destructive-foreground); }
+.changes-file-counts .dels,
+.diff-line-counts .dels { color: var(--destructive-foreground); }
 .changes-stats .meta { color: var(--muted-foreground); }
 
 .changes-stream {
@@ -1677,10 +1787,11 @@ button.btn.secondary {
 .changes-file-base {
   font-weight: 500;
 }
-.changes-file-counts {
+.changes-file-counts,
+.diff-line-counts {
   display: inline-flex;
-  gap: 6px;
-  font-size: 11px;
+  gap: var(--space-3);
+  font-size: var(--text-meta);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
@@ -1902,6 +2013,7 @@ html.dark .diff-line.del {
   display: flex;
   align-items: center;
   gap: 4px;
+  z-index: 12;
 }
 .git-actions .btn.compact,
 .btn.compact {
@@ -1956,31 +2068,115 @@ html.dark .diff-line.del {
 }
 .git-commit-popover {
   position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
+  left: 0;
+  top: calc(100% + 8px);
   z-index: 25;
-  width: min(320px, 80vw);
+  width: min(360px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--menu-surface);
+  border: 1px solid var(--menu-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-menu);
+  transform-origin: top left;
+}
+.git-commit-kicker {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+.git-commit-label {
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+textarea.field.git-commit-field {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 88px;
+  padding: 8px 10px;
+  resize: none;
+  line-height: 1.45;
+  box-sizing: border-box;
+  background: var(--muted);
+  border-radius: 10px;
+}
+textarea.field.git-commit-field:focus {
+  border-color: color-mix(in srgb, var(--foreground) 22%, var(--input));
+}
+.git-commit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.git-result {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 24;
+  width: min(420px, calc(100vw - 32px));
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px;
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  padding: 12px 12px 12px 14px;
+  background: var(--menu-surface);
+  border: 1px solid var(--menu-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-menu);
+  transform-origin: top left;
 }
-.git-commit-popover .actions {
+.git-result.is-inline {
+  position: static;
+  width: auto;
+  max-width: none;
+  box-shadow: none;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+.git-result-error {
+  border-color: color-mix(in srgb, var(--destructive) 45%, var(--menu-border));
+  background: color-mix(in srgb, var(--destructive) 8%, var(--menu-surface));
+}
+.git-result-ok {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--menu-border));
+}
+.git-result-head {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
-.git-hint {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 4px);
-  white-space: nowrap;
+.git-result-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.git-result-error .git-result-title {
+  color: var(--destructive-foreground);
+}
+.git-result-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.git-result-body {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--muted-foreground);
-  pointer-events: none;
+  line-height: 1.45;
+  color: var(--foreground);
 }
 .banner.tight {
   margin: 8px;
@@ -1988,47 +2184,52 @@ html.dark .diff-line.del {
   font-size: 12px;
 }
 
-.changed-files-card {
-  margin-top: 10px;
+.file-change-list {
+  margin-top: var(--space-5);
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  width: 100%;
 }
-.changed-files-summary {
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ring);
-  cursor: pointer;
-}
-.changed-files-chips {
+.file-change-row,
+.file-change-more {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.file-chip {
-  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  max-width: 160px;
+  gap: var(--space-3);
+  width: 100%;
+  margin: 0;
+  padding: var(--space-3) 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0;
+}
+.file-change-row:last-child,
+.file-change-more:last-child {
+  border-bottom: 0;
+}
+.file-change-row:hover,
+.file-change-more:hover {
+  background: var(--accent);
+}
+.file-change-row > svg {
+  color: var(--muted-foreground);
+  opacity: var(--icon-rest);
+}
+.file-change-path {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--code-block);
-  color: var(--foreground);
-  cursor: pointer;
 }
-.file-chip.more {
+.file-change-more {
   color: var(--muted-foreground);
+  font-size: var(--text-meta);
 }
 
 .file-tree {
@@ -2124,8 +2325,12 @@ html.dark .diff-line.del {
   .shell-files,
   .shell-right {
     grid-template-columns: var(--left-w, 260px) minmax(0, 1fr);
+    grid-template-areas:
+      "chrome chrome"
+      "nav main";
   }
   .right-panel {
+    grid-area: auto;
     position: fixed;
     top: 0;
     right: 0;
@@ -2148,10 +2353,14 @@ html.dark .diff-line.del {
   .shell,
   .shell-files,
   .shell-right {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "chrome"
+      "main";
   }
 
   .sidebar {
+    grid-area: auto;
     position: fixed;
     inset: 0 auto 0 0;
     width: min(300px, 85vw);
@@ -2204,6 +2413,10 @@ html.dark .diff-line.del {
   .topbar {
     padding: 0 10px;
     gap: 6px;
+  }
+  .topbar-chrome {
+    width: auto;
+    padding-left: 0;
   }
   .crumb {
     overflow: hidden;

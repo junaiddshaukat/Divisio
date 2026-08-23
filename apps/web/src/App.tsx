@@ -10,6 +10,7 @@ import type {
   PermissionMode,
   ProjectView,
   ProviderView,
+  ProviderUpdate,
   ModelCatalog,
   ThreadView,
   DaemonIncompatibility,
@@ -21,7 +22,10 @@ import { Client, type ConnectionState } from "./client.ts";
 import { useFiles } from "./hooks/useFiles.ts";
 import { useAttention } from "./hooks/useAttention.ts";
 import { AttentionToasts } from "./components/AttentionToasts.tsx";
+import { UpdateToast } from "./components/UpdateToast.tsx";
 import { Onboarding } from "./components/onboarding/Onboarding.tsx";
+import { LandingEmpty } from "./components/onboarding/LandingEmpty.tsx";
+import { BrandMark } from "./components/BrandMark.tsx";
 import { pickDirectory, reloadApp } from "./platform.ts";
 import { AddProjectDialog } from "./components/AddProjectDialog.tsx";
 import { ApprovalBar, type PendingApproval } from "./components/ApprovalBar.tsx";
@@ -32,10 +36,10 @@ import type { WorkEntry } from "./components/WorkEntries.tsx";
 import { Transcript, type Bubble } from "./components/Transcript.tsx";
 import { NewThreadDialog } from "./components/NewThreadDialog.tsx";
 import { SessionBoard } from "./components/SessionBoard.tsx";
-import { ThreadTopbar } from "./components/ThreadTopbar.tsx";
+import { ThreadTopbar, TopbarLead } from "./components/ThreadTopbar.tsx";
 import { UsageLimitBanner } from "./components/UsageLimitBanner.tsx";
 import { Button, IconButton } from "./components/ui/Button.tsx";
-import { CloseIcon, MenuIcon, SearchIcon, SidebarShowIcon } from "./components/ui/icons.ts";
+import { CloseIcon } from "./components/ui/icons.ts";
 import { SettingsShell, type SettingsSection } from "./components/SettingsShell.tsx";
 
 /**
@@ -85,14 +89,55 @@ import { isProviderEnabled, loadProviderPrefs } from "./providerPrefs.ts";
 const PORT = 4577;
 const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
 
+const LIVE_THREAD_STATUS = new Set(["running", "stopping", "awaiting_approval"]);
+
+/** Active chat plus every thread still mid-turn — so background streams keep arriving. */
+function subscriptionThreadIds(activeId: string | null, threads: ThreadView[]): string[] {
+  const ids = new Set<string>();
+  if (activeId) ids.add(activeId);
+  for (const t of threads) {
+    if (LIVE_THREAD_STATUS.has(t.status)) ids.add(t.id);
+  }
+  return [...ids];
+}
+
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 function readTokenSync(): string {
+  // Desktop: never trust the webview's leftover token. A previous paste, a
+  // pairing session, or an older daemon writes `divisio:token` and then every
+  // /ws upgrade is rejected as bad_token while the chip sits on Connecting.
+  if (isTauri()) return "";
   const fromEnv = import.meta.env["VITE_DIVISIO_TOKEN"];
   if (typeof fromEnv === "string" && fromEnv.length > 0) return fromEnv;
   return localStorage.getItem("divisio:token") ?? "";
+}
+
+async function readDaemonToken(): Promise<string> {
+  if (!isTauri()) return "";
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const token = await invoke<string>("auth_token");
+    if (token) {
+      localStorage.setItem("divisio:token", token);
+      return token;
+    }
+  } catch {
+    /* daemon may still be booting */
+  }
+  return "";
+}
+
+async function readDaemonError(): Promise<string> {
+  if (!isTauri()) return "";
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return (await invoke<string | null>("daemon_error")) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -138,23 +183,6 @@ async function redeemPairing(token: string): Promise<string> {
   }
 }
 
-async function readTokenAsync(): Promise<string> {
-  const sync = readTokenSync();
-  if (sync) return sync;
-  if (!isTauri()) return "";
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const token = await invoke<string>("auth_token");
-    if (token) {
-      localStorage.setItem("divisio:token", token);
-      return token;
-    }
-  } catch {
-    /* daemon may still be booting */
-  }
-  return "";
-}
-
 function upsertAssistantMessage(prev: MessageView[], incoming: MessageView): MessageView[] {
   const idx = prev.findIndex((m) => m.turnId === incoming.turnId && m.role === incoming.role);
   if (idx === -1) return [...prev, incoming];
@@ -178,6 +206,7 @@ export function App() {
   const [projects, setProjects] = useState<ProjectView[]>([]);
   const [threads, setThreads] = useState<ThreadView[]>([]);
   const [providers, setProviders] = useState<ProviderView[]>([]);
+  const [cliUpdates, setCliUpdates] = useState<ProviderUpdate[]>([]);
   const [modelCatalogs, setModelCatalogs] = useState<Record<string, ModelCatalog>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageView[]>([]);
@@ -227,10 +256,8 @@ export function App() {
   const [leftWidth, setLeftWidth] = useState(() => clampLeft(loadWidth("left", LEFT_DEFAULT)));
   /** Sidebar is an overlay below tablet width; this drives it. */
   const [navOpen, setNavOpen] = useState(false);
-  /** Desktop collapse — persists across sessions. */
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => localStorage.getItem("divisio:sidebar-collapsed") === "1",
-  );
+  /** Sidebar starts open. Hide/show is always in the window title bar. */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
   const [laneBusy, setLaneBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
@@ -263,16 +290,16 @@ export function App() {
   } | null>(null);
 
   const clientRef = useRef<Client | null>(null);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
   const streamingRef = useRef(streaming);
   streamingRef.current = streaming;
+  const streamingByThreadRef = useRef(new Map<string, { turnId: string; text: string }>());
 
   const activeThread = useMemo(() => threads.find((t) => t.id === activeId) ?? null, [threads, activeId]);
-  const threadRunning =
-    activeThread?.status === "running" ||
-    activeThread?.status === "stopping" ||
-    activeThread?.status === "awaiting_approval";
+  const threadRunning = !!activeThread && LIVE_THREAD_STATUS.has(activeThread.status);
   /** Stop / disable send — status can lag behind events, so OR both signals. */
   const turnBusy = !!activeTurn || threadRunning || handoffBusy;
 
@@ -356,7 +383,7 @@ export function App() {
     const client = clientRef.current;
     if (!client) return;
     setActiveId(threadId);
-    setStreaming(null);
+    setStreaming(streamingByThreadRef.current.get(threadId) ?? null);
     setWork([]);
     setActiveTurn(null);
     setError(null);
@@ -364,8 +391,8 @@ export function App() {
     setDiffByTurn(new Map());
     setChangesView(null);
     setGitStatus(null);
-    client.subscribe([threadId]);
     const snap = await client.send("thread.snapshot", { threadId });
+    if (activeIdRef.current !== threadId) return;
     setMessages(snap.messages);
     setThreads((prev) => prev.map((t) => (t.id === snap.thread.id ? snap.thread : t)));
     // Restore Stop/busy after refresh or handoff — turn.started may already have fired.
@@ -379,6 +406,18 @@ export function App() {
         ? [...snap.messages].reverse().find((m) => m.role === "user")?.turnId ?? null
         : null);
     setActiveTurn(restoredTurn);
+    if (snap.partial?.text) {
+      const local = streamingByThreadRef.current.get(threadId);
+      const buf =
+        local?.turnId === snap.partial.turnId && local.text.length > snap.partial.text.length
+          ? local
+          : { turnId: snap.partial.turnId, text: snap.partial.text };
+      streamingByThreadRef.current.set(threadId, buf);
+      setStreaming(buf);
+    } else if (!running) {
+      streamingByThreadRef.current.delete(threadId);
+      setStreaming(null);
+    }
     const next = new Map<string, DiffFileEntry[]>();
     for (const d of snap.diffs) {
       if (d.files.length > 0) next.set(d.turnId, d.files);
@@ -396,7 +435,9 @@ export function App() {
       const p = event.payload as Record<string, unknown>;
       switch (event.type) {
         case "turn.message": {
-          if (p["threadId"] !== activeIdRef.current) break;
+          const threadId = String(p["threadId"]);
+          if (p["role"] === "assistant") streamingByThreadRef.current.delete(threadId);
+          if (threadId !== activeIdRef.current) break;
           const msg: MessageView = {
             turnId: String(p["turnId"]),
             role: p["role"] as "user" | "assistant",
@@ -416,42 +457,27 @@ export function App() {
           break;
         case "turn.completed":
         case "turn.interrupted":
-          if (p["threadId"] === activeIdRef.current) {
-            const streamed = streamingRef.current;
-            if (streamed?.text) {
-              setMessages((prev) =>
-                upsertAssistantMessage(prev, {
-                  turnId: streamed.turnId,
-                  role: "assistant",
-                  text: streamed.text,
-                  at: event.at,
-                }),
-              );
-            }
-            setActiveTurn(null);
-            setStreaming(null);
-            setPendingApproval(null);
+        case "turn.failed": {
+          const threadId = String(p["threadId"]);
+          const streamed = streamingByThreadRef.current.get(threadId);
+          streamingByThreadRef.current.delete(threadId);
+          if (threadId !== activeIdRef.current) break;
+          if (streamed?.text) {
+            setMessages((prev) =>
+              upsertAssistantMessage(prev, {
+                turnId: streamed.turnId,
+                role: "assistant",
+                text: streamed.text,
+                at: event.at,
+              }),
+            );
           }
+          setActiveTurn(null);
+          setStreaming(null);
+          setPendingApproval(null);
+          if (event.type === "turn.failed") setError(String(p["message"]));
           break;
-        case "turn.failed":
-          if (p["threadId"] === activeIdRef.current) {
-            const streamed = streamingRef.current;
-            if (streamed?.text) {
-              setMessages((prev) =>
-                upsertAssistantMessage(prev, {
-                  turnId: streamed.turnId,
-                  role: "assistant",
-                  text: streamed.text,
-                  at: event.at,
-                }),
-              );
-            }
-            setActiveTurn(null);
-            setStreaming(null);
-            setPendingApproval(null);
-            setError(String(p["message"]));
-          }
-          break;
+        }
         case "tool.started":
           if (p["threadId"] === activeIdRef.current) {
             setWork((w) => [
@@ -517,30 +543,30 @@ export function App() {
           setThreads((prev) =>
             prev.map((t) => (t.id === p["threadId"] ? { ...t, status: p["status"] as never } : t)),
           );
-          if (p["threadId"] === activeIdRef.current) {
+          {
+            const threadId = String(p["threadId"]);
             const status = String(p["status"]);
-            if (
-              status === "ready" ||
-              status === "closed" ||
-              status === "connecting" ||
-              status === "error"
-            ) {
-              const streamed = streamingRef.current;
-              if (streamed?.text && status !== "connecting") {
-                setMessages((prev) =>
-                  upsertAssistantMessage(prev, {
-                    turnId: streamed.turnId,
-                    role: "assistant",
-                    text: streamed.text,
-                    at: event.at,
-                  }),
-                );
+            const settled = status === "ready" || status === "closed" || status === "error";
+            if (settled) streamingByThreadRef.current.delete(threadId);
+            if (threadId === activeIdRef.current) {
+              if (settled || status === "connecting") {
+                const streamed = streamingRef.current;
+                if (streamed?.text && status !== "connecting") {
+                  setMessages((prev) =>
+                    upsertAssistantMessage(prev, {
+                      turnId: streamed.turnId,
+                      role: "assistant",
+                      text: streamed.text,
+                      at: event.at,
+                    }),
+                  );
+                }
+                setActiveTurn(null);
+                setStreaming(null);
               }
-              setActiveTurn(null);
-              setStreaming(null);
-            }
-            if (status === "error") {
-              setError(String(p["detail"] ?? "session error"));
+              if (status === "error") {
+                setError(String(p["detail"] ?? "session error"));
+              }
             }
           }
           break;
@@ -573,12 +599,15 @@ export function App() {
         case "thread.renamed":
         case "thread.deleted":
           void (clientRef.current && refresh(clientRef.current));
-          if (event.type === "thread.deleted" && p["threadId"] === activeIdRef.current) {
-            setActiveId(null);
-            setMessages([]);
-            setStreaming(null);
-            setActiveTurn(null);
-            setWork([]);
+          if (event.type === "thread.deleted") {
+            streamingByThreadRef.current.delete(String(p["threadId"]));
+            if (p["threadId"] === activeIdRef.current) {
+              setActiveId(null);
+              setMessages([]);
+              setStreaming(null);
+              setActiveTurn(null);
+              setWork([]);
+            }
           }
           if (event.type === "project.removed") {
             const removedId = p["projectId"] as string;
@@ -603,22 +632,28 @@ export function App() {
   );
 
   // Desktop shell injects the userdata token — no paste gate.
+  // Do not skip this when localStorage already has a value: that leftover is
+  // what produced the bad_token storm after a daemon restart.
   useEffect(() => {
-    if (token || !isTauri()) return;
+    if (!isTauri()) return;
     let cancelled = false;
     const boot = async () => {
       for (let i = 0; i < 40; i++) {
-        const next = await readTokenAsync();
+        const next = await readDaemonToken();
         if (cancelled) return;
         if (next) {
-          setToken(next);
+          if (next !== tokenRef.current) setToken(next);
+          setBootError(null);
           return;
         }
+        const err = await readDaemonError();
+        if (err && !cancelled) setBootError(err);
         await new Promise((r) => setTimeout(r, 250));
       }
-      if (!cancelled) {
+      if (!cancelled && !tokenRef.current) {
         setBootError(
-          "Could not reach the Divisio daemon. Is Bun installed and on PATH? Check the terminal for [daemon] logs.",
+          (await readDaemonError()) ||
+            "Could not reach the Divisio daemon. Stop whatever is using port 4577 and reopen Divisio.",
         );
       }
     };
@@ -626,7 +661,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, []);
 
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
@@ -640,13 +675,21 @@ export function App() {
     const client = new Client(WS_URL, token, {
       onEvent: (event) => onEventRef.current(event),
       onDelta: (threadId, turnId, text) => {
-        if (threadId !== activeIdRef.current) return;
-        setStreaming((prev) =>
-          prev?.turnId === turnId ? { turnId, text: prev.text + text } : { turnId, text },
-        );
+        const prev = streamingByThreadRef.current.get(threadId);
+        const next =
+          prev?.turnId === turnId ? { turnId, text: prev.text + text } : { turnId, text };
+        streamingByThreadRef.current.set(threadId, next);
+        if (threadId === activeIdRef.current) setStreaming(next);
       },
       onIncompatible: setIncompatible,
       onState: setState,
+      onHandshakeFailed: () => {
+        if (!isTauri()) return;
+        void (async () => {
+          const next = await readDaemonToken();
+          if (next && next !== tokenRef.current) setToken(next);
+        })();
+      },
       onResync: () => {
         const id = activeIdRef.current;
         void refreshRef.current(client);
@@ -712,6 +755,33 @@ export function App() {
     void refresh(client);
     void refreshProviders();
   }, [state, refresh, refreshProviders]);
+
+  useEffect(() => {
+    if (state !== "open") {
+      setCliUpdates([]);
+      return;
+    }
+    const client = clientRef.current;
+    if (!client) return;
+    let cancelled = false;
+    void client
+      .send("provider.updates", {})
+      .then((r) => {
+        if (!cancelled) setCliUpdates(r.updates);
+      })
+      .catch(() => {
+        if (!cancelled) setCliUpdates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [state]);
+
+  useEffect(() => {
+    const client = clientRef.current;
+    if (!client || state !== "open") return;
+    client.subscribe(subscriptionThreadIds(activeId, threads));
+  }, [activeId, threads, state, token]);
 
   const send = async (
     text: string,
@@ -1059,6 +1129,9 @@ export function App() {
     localStorage.setItem("divisio:sidebar-collapsed", hidden ? "1" : "0");
     setSidebarCollapsed(hidden);
   }, []);
+  const toggleSidebar = useCallback(() => {
+    setSidebarHidden(!sidebarCollapsed);
+  }, [sidebarCollapsed, setSidebarHidden]);
 
   const renameThread = useCallback(async (threadId: string, title: string) => {
     const client = clientRef.current;
@@ -1077,6 +1150,7 @@ export function App() {
       if (!client) return;
       try {
         await client.send("thread.delete", { threadId });
+        streamingByThreadRef.current.delete(threadId);
         setThreads((prev) => prev.filter((t) => t.id !== threadId));
         if (activeIdRef.current === threadId) {
           setActiveId(null);
@@ -1212,6 +1286,16 @@ export function App() {
 
   const openSettings = useCallback((section: SettingsSection = "providers") => {
     setSettingsOpen(section);
+  }, []);
+
+  const reconnectDaemon = useCallback(() => {
+    clientRef.current?.reconnect();
+    if (isTauri()) {
+      void (async () => {
+        const next = await readDaemonToken();
+        if (next && next !== tokenRef.current) setToken(next);
+      })();
+    }
   }, []);
 
   const loadSettingsToolchain = useCallback(async () => {
@@ -1382,6 +1466,7 @@ export function App() {
     if (isTauri()) {
       return (
         <div className="empty">
+          <BrandMark size={56} />
           <h1>{bootError ? "Daemon unavailable" : "Starting Divisio…"}</h1>
           <p>
             {bootError ??
@@ -1475,6 +1560,7 @@ export function App() {
         <SettingsShell
           key={settingsOpen}
           providers={providers}
+          providerUpdates={cliUpdates}
           pairing={pairing}
           connectionState={state}
           client={clientRef.current}
@@ -1499,9 +1585,72 @@ export function App() {
             await refreshPairing();
           }}
           onReplayWelcome={replayOnboarding}
+          onReconnect={reconnectDaemon}
         />
       ) : (
         <>
+      {view === "board" ? (
+        <header className="topbar" data-tauri-drag-region>
+          <TopbarLead
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={toggleSidebar}
+            onSearch={() => setPaletteOpen(true)}
+            onNav={() => setNavOpen((v) => !v)}
+          />
+          <div className="crumb">
+            <span className="crumb-thread">Board</span>
+            <span className="crumb-sep">·</span>
+            <span className="crumb-project">parallel lanes</span>
+          </div>
+        </header>
+      ) : activeThread ? (
+        <ThreadTopbar
+          thread={activeThread}
+          projectName={projects.find((p) => p.id === activeThread.projectId)?.name ?? "project"}
+          providers={providers}
+          rightSurface={rightSurface}
+          terminalDock={terminalDock}
+          busy={turnBusy}
+          handoffBusy={handoffBusy}
+          dirty={!!gitStatus?.dirty}
+          workdir={
+            activeThread.laneId
+              ? (lanes.find((l) => l.id === activeThread.laneId)?.root ?? null)
+              : (projects.find((p) => p.id === activeThread.projectId)?.rootPath ?? null)
+          }
+          onNav={() => setNavOpen((v) => !v)}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
+          onSearch={() => setPaletteOpen(true)}
+          onSurface={(surface) => openSurface(surface)}
+          onCloseSurface={closeRight}
+          onToggleDock={() => setTerminalDock((v) => !v)}
+          onHandoff={(kind) => void handoff(kind)}
+          onHint={(msg) => setError(msg)}
+          gitActions={
+            gitStatus?.git ? (
+              <GitActionsControl
+                dirty={!!gitStatus.dirty}
+                hasRemote={!!gitStatus.hasRemote}
+                canPr={!!activeThread.laneId}
+                busy={turnBusy}
+                onCommit={(msg) => commitThread(msg)}
+                onPush={pushThread}
+                onOpenPr={activeThread.laneId ? openThreadPr : undefined}
+              />
+            ) : undefined
+          }
+        />
+      ) : (
+        <header className="topbar" data-tauri-drag-region>
+          <TopbarLead
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={toggleSidebar}
+            onSearch={() => setPaletteOpen(true)}
+            onNav={() => setNavOpen((v) => !v)}
+          />
+        </header>
+      )}
       <Sidebar
         projects={projects}
         threads={threads}
@@ -1519,14 +1668,13 @@ export function App() {
         onProviders={() => openSettings("providers")}
         onSettings={() => openSettings("providers")}
         onConnection={() => openSettings("general")}
+        onRetry={reconnectDaemon}
         onProfile={() => openSettings("profile")}
         onDevices={() => void openPairing()}
-        onSearch={() => setPaletteOpen(true)}
         onLanes={() => {
           setView("board");
           setNavOpen(false);
         }}
-        onHideSidebar={() => setSidebarHidden(true)}
         onRenameThread={(id, title) => void renameThread(id, title)}
         onDeleteThread={(id) => void deleteThread(id)}
         onRemoveProject={(id) => void removeProject(id)}
@@ -1538,88 +1686,9 @@ export function App() {
         }}
         width={leftWidth}
       />
-      {sidebarCollapsed && (
-        <div className="sidebar-rail" role="toolbar" aria-label="Sidebar">
-          <IconButton
-            label="Show sidebar"
-            icon={<SidebarShowIcon />}
-            size="sm"
-            onClick={() => setSidebarHidden(false)}
-          />
-          <IconButton
-            label="Search (⌘K)"
-            icon={<SearchIcon />}
-            size="sm"
-            onClick={() => setPaletteOpen(true)}
-          />
-        </div>
-      )}
       {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}
 
       <main className="main">
-        {view === "board" ? (
-          <header className="topbar">
-            <IconButton
-              label="Menu"
-              icon={<MenuIcon />}
-              size="sm"
-              className="nav-toggle"
-              onClick={() => setNavOpen((v) => !v)}
-            />
-            <div className="crumb">
-              <span className="crumb-thread">Board</span>
-              <span className="crumb-sep">·</span>
-              <span className="crumb-project">parallel lanes</span>
-            </div>
-          </header>
-        ) : activeThread ? (
-          <ThreadTopbar
-            thread={activeThread}
-            projectName={projects.find((p) => p.id === activeThread.projectId)?.name ?? "project"}
-            providers={providers}
-            rightSurface={rightSurface}
-            terminalDock={terminalDock}
-            busy={turnBusy}
-            handoffBusy={handoffBusy}
-            dirty={!!gitStatus?.dirty}
-            workdir={
-              activeThread.laneId
-                ? (lanes.find((l) => l.id === activeThread.laneId)?.root ?? null)
-                : (projects.find((p) => p.id === activeThread.projectId)?.rootPath ?? null)
-            }
-            onNav={() => setNavOpen((v) => !v)}
-            onSurface={(surface) => openSurface(surface)}
-            onCloseSurface={closeRight}
-            onToggleDock={() => setTerminalDock((v) => !v)}
-            onHandoff={(kind) => void handoff(kind)}
-            onHint={(msg) => setError(msg)}
-            gitActions={
-              gitStatus?.git ? (
-                <GitActionsControl
-                  dirty={!!gitStatus.dirty}
-                  hasRemote={!!gitStatus.hasRemote}
-                  canPr={!!activeThread.laneId}
-                  busy={turnBusy}
-                  onCommit={(msg) => commitThread(msg)}
-                  onPush={pushThread}
-                  onOpenPr={activeThread.laneId ? openThreadPr : undefined}
-                />
-              ) : undefined
-            }
-          />
-        ) : (
-          <header className="topbar topbar-landing">
-            <IconButton
-              label="Menu"
-              icon={<MenuIcon />}
-              size="sm"
-              className="nav-toggle"
-              onClick={() => setNavOpen((v) => !v)}
-            />
-          </header>
-        )}
-
-
         {view === "board" ? (
           <SessionBoard
             lanes={lanes}
@@ -1644,11 +1713,9 @@ export function App() {
         ) : activeThread ? (
           <div className="thread-column">
             {messages.length === 0 && !streaming && !turnBusy ? (
-              <div className="draft-stack">
-                <div className="draft-spacer" aria-hidden />
-                <div className="draft-hero">
-                  <h1 className="draft-headline">What should we build?</h1>
-                </div>
+              <div className="draft-stage">
+                <BrandMark size={40} />
+                <h1 className="draft-headline">What should we build?</h1>
                 {error && <div className="banner">{error}</div>}
                 <BranchStrip
                   envLabel={
@@ -1775,39 +1842,45 @@ export function App() {
               </Suspense>
             )}
           </div>
+        ) : projects.length === 0 ? (
+          <div className="empty landing">
+            <LandingEmpty onAddProject={() => setAddProjectOpen(true)} />
+          </div>
         ) : (
           <div className="empty landing">
-            <div className="draft-stack">
-              <div className="draft-spacer" aria-hidden />
-              <div className="draft-hero">
+            <div className="landing-stage">
+              <BrandMark size={44} />
+              <div className="landing-copy">
                 <h1 className="draft-headline">What should we build?</h1>
                 <p className="draft-sub">Start a chat — agents run under your own CLI logins.</p>
               </div>
               {error && <div className="banner">{error}</div>}
-              <Composer
-                busy={landingBusy}
-                landing
-                provider={draftProvider}
-                model={draftModel}
-                providers={providers}
-                catalogs={modelCatalogs}
-                permissionMode={draftPermission}
-                hasHistory={false}
-                projectId={draftProjectId}
-                projects={projects.map((p) => ({ id: p.id, name: p.name }))}
-                onProjectChange={(id) => {
-                  setDraftProjectId(id);
-                  localStorage.setItem("divisio:draft-project", id);
-                }}
-                onSend={(text, model, images) => void sendFromLanding(text, model, images)}
-                onInterrupt={() => undefined}
-                onPermissionMode={setDraftPermission}
-                onAgentSelect={(next) => {
-                  setDraftProvider(next.provider);
-                  setDraftModel(next.model);
-                  localStorage.setItem("divisio:draft-provider", next.provider);
-                }}
-              />
+              {!addProjectOpen && (
+                <Composer
+                  busy={landingBusy}
+                  landing
+                  provider={draftProvider}
+                  model={draftModel}
+                  providers={providers}
+                  catalogs={modelCatalogs}
+                  permissionMode={draftPermission}
+                  hasHistory={false}
+                  projectId={draftProjectId || projects[0]?.id}
+                  projects={projects.map((p) => ({ id: p.id, name: p.name, root: p.rootPath }))}
+                  onProjectChange={(id) => {
+                    setDraftProjectId(id);
+                    localStorage.setItem("divisio:draft-project", id);
+                  }}
+                  onSend={(text, model, images) => void sendFromLanding(text, model, images)}
+                  onInterrupt={() => undefined}
+                  onPermissionMode={setDraftPermission}
+                  onAgentSelect={(next) => {
+                    setDraftProvider(next.provider);
+                    setDraftModel(next.model);
+                    localStorage.setItem("divisio:draft-provider", next.provider);
+                  }}
+                />
+              )}
             </div>
           </div>
         )}
@@ -1882,6 +1955,11 @@ export function App() {
         </>
       )}
 
+      <UpdateToast
+        updates={cliUpdates}
+        onReview={() => openSettings("providers")}
+      />
+
       <AttentionToasts
         items={attention.items}
         onOpen={(id) => {
@@ -1950,6 +2028,7 @@ function TokenGate({ onSubmit }: { onSubmit(token: string): void }) {
   const [value, setValue] = useState("");
   return (
     <div className="empty">
+      <BrandMark size={56} />
       <h1>Connect to the daemon</h1>
       <p>
         Paste the token from <code>~/.divisio/userdata/auth-token</code>. Auth is required on loopback too —

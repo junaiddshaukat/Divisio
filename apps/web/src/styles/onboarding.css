@@ -10,6 +10,67 @@
   background: var(--background);
 }
 
+.onboarding-welcome-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--space-6);
+}
+
+.onboarding-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-6);
+  max-width: 420px;
+}
+
+.onboarding-welcome-copy h1 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-display);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.02em;
+}
+
+.onboarding-welcome-copy p {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-relaxed);
+  color: var(--muted-foreground);
+}
+
+.onboarding-welcome .linkish {
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--text-ui);
+  cursor: pointer;
+  padding: 0;
+}
+
+.onboarding-welcome .linkish:hover {
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .onboarding-welcome {
+    animation: onboarding-in 280ms var(--ease-out) both;
+  }
+}
+
+@keyframes onboarding-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .onboarding-inner {
   max-width: 680px;
   margin: 0 auto;
@@ -19,8 +80,14 @@
   gap: var(--space-7);
 }
 
+.onboarding-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
 .onboarding-head h1 {
-  margin: 0 0 var(--space-4);
+  margin: 0;
   font-size: var(--text-display);
   font-weight: var(--weight-semibold);
   letter-spacing: -0.02em;

@@ -31,6 +31,11 @@ interface Handlers {
   onState(state: ConnectionState): void;
   /** Cursor was too old to replay; caller must refetch from scratch. */
   onResync(): void;
+  /**
+   * Upgrade closed before the socket opened — almost always a rejected
+   * handshake (stale token). Caller should re-read the daemon token.
+   */
+  onHandshakeFailed?(): void;
 }
 
 interface Pending {
@@ -49,6 +54,8 @@ export class Client {
   /** Terminal output is routed per session rather than broadcast. */
   private readonly terminalSinks = new Map<string, TerminalSink>();
   private closedByUser = false;
+  /** True once this socket's onopen has fired. Handshake rejects never open. */
+  private sawOpen = false;
 
   constructor(
     private readonly url: string,
@@ -58,6 +65,7 @@ export class Client {
 
   connect() {
     this.closedByUser = false;
+    this.sawOpen = false;
     this.clearReconnectTimer();
     this.detachSocket();
     this.handlers.onState("connecting");
@@ -70,6 +78,7 @@ export class Client {
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
+      this.sawOpen = true;
       this.retry = 0;
       this.handlers.onState("open");
     };
@@ -91,6 +100,7 @@ export class Client {
       for (const p of this.pending.values()) p.reject(new Error("connection closed"));
       this.pending.clear();
       if (this.closedByUser) return;
+      if (!this.sawOpen) this.handlers.onHandshakeFailed?.();
       this.handlers.onState(this.retry >= 8 ? "closed" : "connecting");
       this.scheduleReconnect();
     };
@@ -255,5 +265,11 @@ export class Client {
     this.closedByUser = true;
     this.clearReconnectTimer();
     this.detachSocket();
+  }
+
+  /** Drop backoff and open a socket now — used by the Disconnected chip. */
+  reconnect() {
+    this.retry = 0;
+    this.connect();
   }
 }

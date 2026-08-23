@@ -20,6 +20,16 @@ function looksLikeMissingCommand(message: string): boolean {
   return /unknown command/i.test(message);
 }
 
+function usageErrorMessage(message: string): string {
+  if (looksLikeMissingCommand(message)) {
+    return "This daemon build does not report usage yet. Restart Divisio to pick up the latest daemon.";
+  }
+  if (message === "not connected" || message === "connection closed") {
+    return "Disconnected from the local daemon. Click Retry in the sidebar.";
+  }
+  return message;
+}
+
 function sessionsLabel(n: number): string {
   return n === 1 ? "1 session" : `${formatTokenCount(n)} sessions`;
 }
@@ -43,11 +53,7 @@ export function UsageSettings({ load, providers }: Props) {
       .catch((err) => {
         if (!alive) return;
         const message = err instanceof Error ? err.message : String(err);
-        setError(
-          looksLikeMissingCommand(message)
-            ? "This daemon build does not report usage yet. Restart Divisio to pick up the latest daemon."
-            : message,
-        );
+        setError(usageErrorMessage(message));
       })
       .finally(() => {
         if (alive) setLoading(false);

@@ -41,7 +41,14 @@ export function ProfileSettings({ load, providers }: Props) {
         }
       })
       .catch((err) => {
-        if (alive) setError(err instanceof Error ? err.message : String(err));
+        if (alive) {
+          const message = err instanceof Error ? err.message : String(err);
+          setError(
+            message === "not connected" || message === "connection closed"
+              ? "Disconnected from the local daemon. Click Retry in the sidebar."
+              : message,
+          );
+        }
       })
       .finally(() => {
         if (alive) setLoading(false);

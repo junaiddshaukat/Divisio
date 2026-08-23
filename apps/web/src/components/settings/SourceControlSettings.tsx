@@ -37,7 +37,12 @@ export function SourceControlSettings({ load }: Props) {
     try {
       setStatus(await load());
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(
+        message === "not connected" || message === "connection closed"
+          ? "Disconnected from the local daemon. Click Retry in the sidebar."
+          : message,
+      );
     } finally {
       setLoading(false);
     }

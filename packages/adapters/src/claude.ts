@@ -16,6 +16,34 @@ import { pushModelArg } from "./shared/modelArg.ts";
 
 const log = logger("adapter:claude");
 
+/** Tools that still prompt under default/acceptEdits and get auto-denied in `--print`. */
+const PRINT_ALLOWED_TOOLS = "WebSearch,WebFetch";
+
+/**
+ * Spawn argv for one print-mode turn. Network tools are allowlisted because
+ * there is no TTY for Claude's permission prompt.
+ *
+ * `--allowedTools` is a Commander `<tools...>` option: a separate argv token
+ * after it consumes every following non-flag, including the prompt, which
+ * surfaces as "Input must be provided either through stdin or as a prompt
+ * argument when using --print". The `=` form keeps the list on the flag;
+ * `--` then the prompt keeps a leading-dash message from looking like a flag.
+ */
+export function claudeTurnArgs(input: {
+  text: string;
+  nativeId: string | null;
+  permissionMode: PermissionMode;
+  model?: string;
+}): string[] {
+  const args = ["--print", "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
+  args.push("--permission-mode", input.permissionMode === "full_access" ? "acceptEdits" : "manual");
+  args.push(`--allowedTools=${PRINT_ALLOWED_TOOLS}`);
+  if (input.nativeId) args.push("--resume", input.nativeId);
+  pushModelArg(args, input.model);
+  args.push("--", input.text);
+  return args;
+}
+
 /**
  * Claude Code adapter — Stream tier.
  *
@@ -29,6 +57,8 @@ const log = logger("adapter:claude");
  * what the product roadmap wants. `approvals` is false: in print mode the CLI
  * runs its own permission engine and does not hand us a decision point. Claiming
  * otherwise would put an approve/deny dialog in the UI that controls nothing.
+ * WebSearch/WebFetch are allowlisted on spawn so `--print` does not auto-deny
+ * them; that is not the same as `bypassPermissions`.
  */
 
 /** stdin ignored, stdout+stderr piped — keeps stdout typed as a ReadableStream. */
@@ -102,18 +132,12 @@ export class ClaudeAdapter implements ProviderAdapter {
     if (!session) throw new Error(`no session for thread ${handle.threadId}`);
     if (session.proc) throw new Error("turn already running");
 
-    const args = ["--print", "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
-
-    // Without an explicit mode the CLI refuses every edit in print mode, so a
-    // thread could talk but never change a file and full access meant nothing.
-    // `acceptEdits` allows file writes while still refusing the destructive
-    // classes the CLI gates separately — closer to what "full access" implies
-    // here than bypassing every check.
-    args.push("--permission-mode", session.permissionMode === "full_access" ? "acceptEdits" : "manual");
-
-    if (session.nativeId) args.push("--resume", session.nativeId);
-    pushModelArg(args, turn.model);
-    args.push(turn.text);
+    const args = claudeTurnArgs({
+      text: turn.text,
+      nativeId: session.nativeId,
+      permissionMode: session.permissionMode,
+      model: turn.model,
+    });
 
     log.info("spawning turn", { threadId: session.threadId, turnId: turn.turnId, resume: !!session.nativeId });
 

@@ -4,6 +4,7 @@
  */
 
 .sidebar {
+  grid-area: nav;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
   display: flex;
@@ -14,11 +15,6 @@
 
 html.desktop-vibrancy:not(.dark) .sidebar {
   background: var(--sidebar);
-}
-
-/* Overlay titlebar: traffic lights sit over the sidebar — leave room + drag. */
-html.desktop-vibrancy .sidebar-head {
-  padding-top: calc(var(--space-4) + 36px);
 }
 
 .sidebar-head {
@@ -40,7 +36,7 @@ html.desktop-vibrancy .sidebar-head {
 .sidebar-brand {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   border: 0;
   background: transparent;
   color: var(--foreground);
@@ -242,22 +238,53 @@ html.desktop-vibrancy .sidebar-head {
 }
 
 .project-head-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
+  width: 100%;
   min-width: 0;
+  border-radius: var(--radius-md);
+}
+.project-head-row:hover,
+.project-head-row:focus-within {
+  background: var(--sidebar-row-hover);
 }
 .project-head-row .project-head {
   flex: 1;
   min-width: 0;
+  background: transparent;
+}
+.project-head-row .project-head:hover {
+  background: transparent;
+  color: var(--foreground);
 }
 .project-new-thread {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
   opacity: 0;
   flex-shrink: 0;
+  pointer-events: none;
+  transition: opacity 80ms linear;
+}
+.project-head-row .nav-count {
+  transition: opacity 80ms linear;
 }
 .project-head-row:hover .project-new-thread,
+.project-head-row:focus-within .project-new-thread,
 .project-new-thread:focus-visible {
   opacity: 1;
+  pointer-events: auto;
+}
+.project-head-row:hover .nav-count,
+.project-head-row:focus-within .nav-count {
+  opacity: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .project-new-thread:active {
+    transform: translateY(-50%) scale(0.97);
+  }
 }
 
 /* --------------------------------- nav row -------------------------------- */
@@ -320,8 +347,8 @@ html.desktop-vibrancy .sidebar-head {
 .project-group {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin-bottom: 2px;
+  gap: 3px;
+  margin-bottom: 6px;
 }
 
 .project-head {
@@ -331,7 +358,7 @@ html.desktop-vibrancy .sidebar-head {
   font-weight: var(--weight-medium);
   color: var(--muted-foreground);
 }
-.project-head:hover { background: var(--sidebar-row-hover); color: var(--foreground); }
+.project-head:hover { color: var(--foreground); }
 .project-head svg { color: var(--foreground-subtle); flex-shrink: 0; }
 .project-head:hover svg { color: var(--muted-foreground); }
 .project-name {

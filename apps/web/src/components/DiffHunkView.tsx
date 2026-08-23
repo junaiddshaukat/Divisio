@@ -40,6 +40,32 @@ export function countDiffStats(patch: string | null | undefined): { adds: number
   return { adds, dels };
 }
 
+/** Prefer git `--numstat` on the entry; fall back to a unified-patch count. */
+export function resolvedLineCounts(
+  file: { additions?: number; deletions?: number },
+  fromPatch?: { adds: number; dels: number } | null,
+): { adds: number; dels: number } | null {
+  if (typeof file.additions === "number" && typeof file.deletions === "number") {
+    return { adds: file.additions, dels: file.deletions };
+  }
+  return fromPatch ?? null;
+}
+
+/** Sum stored numstat when every file has it; otherwise `null` (caller uses the patch). */
+export function sumStoredLineCounts(
+  files: Array<{ additions?: number; deletions?: number }>,
+): { adds: number; dels: number } | null {
+  if (files.length === 0) return { adds: 0, dels: 0 };
+  let adds = 0;
+  let dels = 0;
+  for (const file of files) {
+    if (typeof file.additions !== "number" || typeof file.deletions !== "number") return null;
+    adds += file.additions;
+    dels += file.deletions;
+  }
+  return { adds, dels };
+}
+
 type Segment =
   | { type: "lines"; lines: DiffLine[]; start: number }
   | { type: "collapse"; count: number; lines: DiffLine[]; start: number };

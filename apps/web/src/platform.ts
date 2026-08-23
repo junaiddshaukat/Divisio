@@ -112,3 +112,49 @@ export async function copyPath(path: string): Promise<boolean> {
     return false;
   }
 }
+
+/** http(s) and mailto only — agent markdown can otherwise smuggle file: / javascript:. */
+export function isSafeExternalUrl(href: string): boolean {
+  const url = href.trim();
+  if (!url || /[\r\n\0]/.test(url)) return false;
+  return /^(https?:\/\/|mailto:)/i.test(url);
+}
+
+/** Open a URL in the system browser (desktop) or a new tab (web). */
+export async function openUrl(url: string): Promise<boolean> {
+  if (!isSafeExternalUrl(url)) return false;
+  if (isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_url", { url: url.trim() });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  window.open(url.trim(), "_blank", "noopener,noreferrer");
+  return true;
+}
+
+/**
+ * Tauri webviews swallow `target="_blank"`. Capture clicks on safe links and
+ * hand them to the OS instead — chat, board, settings, everywhere.
+ */
+export function installExternalLinkOpener(): void {
+  if (typeof document === "undefined") return;
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const href = anchor.getAttribute("href");
+      if (!href || !isSafeExternalUrl(href)) return;
+      event.preventDefault();
+      void openUrl(href);
+    },
+    true,
+  );
+}

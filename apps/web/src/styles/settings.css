@@ -2,9 +2,12 @@
 
 .shell.shell-settings {
   grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "settings";
 }
 
 .settings-shell {
+  grid-area: settings;
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
   width: 100%;
@@ -293,6 +296,14 @@ html.desktop-vibrancy .settings-nav-head {
   flex: 1;
 }
 
+.settings-about-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
 .settings-row-label {
   font-size: 13px;
   font-weight: 550;
@@ -360,6 +371,17 @@ html.desktop-vibrancy .settings-nav-head {
 }
 .settings-row.provider-row .provider-pref-panel {
   padding: 4px 14px 12px;
+}
+.provider-update-hint {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-meta);
+  color: var(--muted-foreground);
+  line-height: var(--leading-normal);
+}
+.provider-update-hint code {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  word-break: break-all;
 }
 .provider-row .settings-row-button:hover {
   background: transparent;

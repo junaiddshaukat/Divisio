@@ -4,7 +4,7 @@ import { PermissionModeSelect } from "./ApprovalBar.tsx";
 import { AgentPicker } from "./AgentPicker.tsx";
 import { MenuSelect } from "./MenuSelect.tsx";
 import { Button, IconButton } from "./ui/Button.tsx";
-import { AttachIcon, CloseIcon, SendIcon, StopIcon } from "./ui/icons.ts";
+import { AttachIcon, CloseIcon, ProjectIcon, SendIcon, StopIcon } from "./ui/icons.ts";
 import { capabilityOn, vendorResumeNote } from "../capabilityFlags.ts";
 
 export interface ComposerImage {
@@ -30,7 +30,7 @@ interface Props {
   /** Home landing: real prompt before a thread exists. */
   landing?: boolean;
   projectId?: string;
-  projects?: Array<{ id: string; name: string }>;
+  projects?: Array<{ id: string; name: string; root?: string }>;
   onProjectChange?(id: string): void;
   onSend(
     text: string,
@@ -44,6 +44,12 @@ interface Props {
 
 const MAX_IMAGES = 8;
 const MAX_BYTES = 5 * 1024 * 1024;
+
+function shortFolder(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 2) return path;
+  return parts.slice(-2).join("/");
+}
 
 function readImageFile(file: File): Promise<ComposerImage | null> {
   if (!file.type.startsWith("image/")) return Promise.resolve(null);
@@ -230,18 +236,21 @@ export function Composer({
             title="Attach images"
             onClick={() => fileRef.current?.click()}
           />
-          {landing && projects && projects.length > 1 && projectId && onProjectChange ? (
+          {landing && projects && projects.length > 0 && onProjectChange ? (
             <MenuSelect
               aria-label="Project"
               className="composer-project"
-              value={projectId}
-              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+              variant="pill"
+              value={projectId || projects[0]!.id}
+              options={projects.map((p) => ({
+                value: p.id,
+                label: p.name,
+                detail: p.root ? shortFolder(p.root) : undefined,
+                icon: <ProjectIcon />,
+              }))}
               onChange={onProjectChange}
               disabled={busy}
             />
-          ) : null}
-          {landing && projects && projects.length === 1 ? (
-            <span className="composer-project-label">{projects[0].name}</span>
           ) : null}
           <AgentPicker
             provider={provider}
@@ -276,9 +285,6 @@ export function Composer({
         </div>
       </div>
       {resumeNote && <p className="composer-resume-note">{resumeNote}</p>}
-      {landing && (!projects || projects.length === 0) && (
-        <p className="composer-resume-note">Add a project first — the agent needs a folder to work in.</p>
-      )}
     </div>
   );
 }

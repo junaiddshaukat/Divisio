@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import type { ProjectView, ProviderView } from "@divisio/contracts";
+import { PRODUCT_NAME } from "@divisio/shared/brand";
 import { canPickDirectory, listenFolderDrop, pathFromDroppedFolder } from "../../platform.ts";
+import { BrandMark } from "../BrandMark.tsx";
 import { Button, IconButton } from "../ui/Button.tsx";
 import { ProviderMark } from "../ProviderMark.tsx";
 import {
@@ -37,7 +39,7 @@ export interface OnboardingProps {
   onSkip(): void;
 }
 
-type Step = "providers" | "project" | "first-prompt";
+type Step = "welcome" | "providers" | "project" | "first-prompt";
 
 const SUGGESTIONS = [
   "Give me a tour of this codebase — what are the main pieces?",
@@ -63,7 +65,7 @@ export function Onboarding({
   const ready = useMemo(() => providers.filter((p) => p.available), [providers]);
   const missing = useMemo(() => providers.filter((p) => !p.available), [providers]);
 
-  const [step, setStep] = useState<Step>(ready.length > 0 ? "project" : "providers");
+  const [step, setStep] = useState<Step>("welcome");
   const [project, setProject] = useState<ProjectView | null>(projects[0] ?? null);
   const [provider, setProvider] = useState(ready[0]?.kind ?? "");
   const [prompt, setPrompt] = useState("");
@@ -181,13 +183,41 @@ export function Onboarding({
     }
   };
 
+  const begin = () => {
+    setStep(ready.length > 0 ? (projects.length > 0 || project ? "first-prompt" : "project") : "providers");
+  };
+
+  if (step === "welcome") {
+    return (
+      <div className="onboarding onboarding-welcome-screen">
+        <div className="onboarding-welcome">
+          <BrandMark size={64} />
+          <div className="onboarding-welcome-copy">
+            <h1>Welcome to {PRODUCT_NAME}</h1>
+            <p>
+              A local command center for the coding agents you already pay for. Each agent keeps its
+              own login — nothing is uploaded.
+            </p>
+          </div>
+          <Button variant="primary" size="lg" onClick={begin}>
+            Get started
+          </Button>
+          <button type="button" className="linkish" onClick={onSkip}>
+            Skip — I&rsquo;ll set this up myself
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="onboarding">
       <div className="onboarding-inner">
         <header className="onboarding-head">
-          <h1>Welcome to Divisio</h1>
+          <BrandMark size={32} />
+          <h1>{PRODUCT_NAME}</h1>
           <p>
-            Divisio drives the coding agents you already pay for. It never asks for an API key —
+            {PRODUCT_NAME} drives the coding agents you already pay for. It never asks for an API key —
             each agent keeps its own login, and everything stays on this machine.
           </p>
         </header>

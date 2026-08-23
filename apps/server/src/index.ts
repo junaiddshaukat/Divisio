@@ -18,7 +18,6 @@ import { syncCustomAdapters } from "./syncCustomAdapters.ts";
 import { dirname, join, normalize } from "node:path";
 import { existsSync } from "node:fs";
 import { userDataDir } from "@divisio/shared/paths";
-import { warmUsageCache } from "./usage/collectUsage.ts";
 
 const log = logger("daemon");
 
@@ -358,7 +357,8 @@ log.info(`${PRODUCT_NAME} daemon listening`, {
   remote,
   tls: !!network.tls,
 });
-warmUsageCache(store);
+
+watchDesktopParent();
 
 if (remote) {
   const { token, expiresAt } = pairing.createPairingToken();
@@ -401,3 +401,25 @@ process.on("unhandledRejection", (reason) => {
   log.error("unhandled rejection", { err: String(reason) });
   void shutdown("fatal");
 });
+
+/**
+ * Desktop sidecar: when Tauri is killed (SIGTERM on `tauri dev`, crash, Cmd+Q
+ * without a window event), the child used to keep :4577 and the next launch
+ * could not attach. Poll the parent; if it is gone, shut down.
+ */
+function watchDesktopParent(): void {
+  const raw = process.env[`${ENV_PREFIX}_PARENT_PID`];
+  if (!raw) return;
+  const parent = Number(raw);
+  if (!Number.isInteger(parent) || parent <= 1) return;
+  const timer = setInterval(() => {
+    try {
+      process.kill(parent, 0);
+    } catch {
+      clearInterval(timer);
+      log.info("desktop parent is gone, shutting down");
+      void shutdown("parent");
+    }
+  }, 2000);
+  timer.unref?.();
+}

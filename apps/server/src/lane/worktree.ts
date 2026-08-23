@@ -5,6 +5,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { PRODUCT_SLUG } from "@divisio/shared/brand";
 import { resolveHome } from "@divisio/shared/paths";
 import { logger } from "@divisio/shared/log";
+import type { DiffFileEntry } from "@divisio/contracts";
+import { attachLineCounts, numstatMap, parseNameStatusLine } from "../git/diffMeta.ts";
 
 const log = logger("lane");
 
@@ -257,7 +259,7 @@ export async function currentBranch(root: string): Promise<string | null> {
  */
 export async function diffWorkingTree(root: string) {
   if (!(await isGitRepo(root))) {
-    return { files: [] as Array<{ path: string; status: "A" | "M" | "D" | "R" | "?" }>, patch: null, status: "skipped" as const, detail: "not a git repository" };
+    return { files: [] as DiffFileEntry[], patch: null, status: "skipped" as const, detail: "not a git repository" };
   }
 
   const status = await git(root, ["status", "--porcelain", "-uall"]);
@@ -269,18 +271,20 @@ export async function diffWorkingTree(root: string) {
     .split("\n")
     .filter((l) => l.trim())
     .map((line) => parsePorcelainLine(line))
-    .filter((f): f is { path: string; status: "A" | "M" | "D" | "R" | "?" } => !!f);
+    .filter((f): f is DiffFileEntry => !!f);
 
   const patch = await git(root, ["diff", "HEAD"]);
+  const numstat = await git(root, ["diff", "--numstat", "HEAD"]);
+  const counted = numstat.code === 0 ? attachLineCounts(files, numstatMap(numstat.stdout)) : files;
   return {
-    files,
+    files: counted,
     patch: patch.code === 0 ? patch.stdout || null : null,
     status: "ready" as const,
   };
 }
 
 /** Parses one `git status --porcelain` line into a DiffFileEntry-shaped row. */
-export function parsePorcelainLine(line: string): { path: string; status: "A" | "M" | "D" | "R" | "?" } | null {
+export function parsePorcelainLine(line: string): DiffFileEntry | null {
   if (line.length < 4) return null;
   const x = line[0] ?? " ";
   const y = line[1] ?? " ";
@@ -339,19 +343,13 @@ export async function diffLane(root: string, baseSha: string) {
   }
   const files = names.stdout
     .split("\n")
-    .filter((l) => l.trim())
-    .map((line) => {
-      const [statusRaw, ...rest] = line.split("\t");
-      const char = (statusRaw?.[0] ?? "?") as "A" | "M" | "D" | "R" | "?";
-      return {
-        path: rest.join("\t"),
-        status: (["A", "M", "D", "R"].includes(char) ? char : "?") as "A" | "M" | "D" | "R" | "?",
-      };
-    })
-    .filter((f) => f.path);
+    .map((line) => parseNameStatusLine(line))
+    .filter((f): f is DiffFileEntry => !!f);
 
   const patch = await git(root, ["diff", baseSha]);
-  return { files, patch: patch.code === 0 ? patch.stdout || null : null, status: "ready" as const };
+  const numstat = await git(root, ["diff", "--numstat", baseSha]);
+  const counted = numstat.code === 0 ? attachLineCounts(files, numstatMap(numstat.stdout)) : files;
+  return { files: counted, patch: patch.code === 0 ? patch.stdout || null : null, status: "ready" as const };
 }
 
 export async function headSha(projectRoot: string): Promise<string | null> {

@@ -58,6 +58,12 @@ describe("checkpoint store", () => {
     const paths = diff.files.map((f) => f.path).sort();
     expect(paths).toContain("a.txt");
     expect(paths).toContain("b.txt");
+    const edited = diff.files.find((f) => f.path === "a.txt");
+    expect(edited?.additions).toBe(1);
+    expect(edited?.deletions).toBe(1);
+    const added = diff.files.find((f) => f.path === "b.txt");
+    expect(added?.additions).toBe(1);
+    expect(added?.deletions).toBe(0);
     expect(diff.patch).toContain("two");
 
     expect(checkpointRef("thr_1", "trn_1", "pre")).toContain("checkpoints/thr_1/trn_1/pre");

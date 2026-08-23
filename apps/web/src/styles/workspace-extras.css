@@ -490,46 +490,28 @@
 .provider-mark.accent-teal .pm-claude,
 .provider-mark.accent-teal .pm-gemini { fill: #14b8a6; }
 
-/* Sidebar collapse — hide the sidebar column only; main keeps full width.
-   Using `0 1fr` + `display:none` on sidebar left main in the zero-width track. */
+/* Sidebar collapse — hide the tree. Toggle/search stay in the window chrome. */
 .shell.shell-sidebar-collapsed {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "chrome"
+    "main";
 }
 .shell.shell-sidebar-collapsed.shell-right {
   grid-template-columns: minmax(0, 1fr) var(--right-w, 420px);
+  grid-template-areas:
+    "chrome chrome"
+    "main right";
 }
 .shell.shell-sidebar-collapsed > .sidebar {
   display: none;
 }
-.sidebar-rail {
-  position: fixed;
-  left: 10px;
-  top: 12px;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--menu-surface);
-  box-shadow: var(--shadow-menu);
-}
-.sidebar-rail .icon-btn {
-  color: var(--muted-foreground);
-}
-.sidebar-rail .icon-btn:hover {
-  color: var(--foreground);
-}
-html.desktop-vibrancy .sidebar-rail {
-  top: 36px;
-}
 
 @media (max-width: 860px) {
   .shell.shell-sidebar-collapsed {
-    grid-template-columns: 1fr;
-  }
-  .sidebar-rail {
-    display: none;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "chrome"
+      "main";
   }
 }

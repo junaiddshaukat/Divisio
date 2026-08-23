@@ -5,19 +5,22 @@
 Three panes:
 
 ```text
-┌────────────────┬───────────────────────────────┬────────────────────┐
-│ LEFT           │ CENTER                        │ RIGHT              │
-│ ~240–280px     │ flex                          │ ~320–400px or      │
-│ projects +     │ transcript + composer         │ collapsed to rail  │
-│ threads        │ (+ docked terminal optional)  │ surfaces           │
-└────────────────┴───────────────────────────────┴────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ traffic · sidebar toggle · search     crumb              actions │
+├────────────────┬─────────────────────────────────┬───────────────┤
+│ LEFT           │ CENTER                          │ RIGHT         │
+│ ~240–280px     │ transcript + composer           │ ~320–400px or │
+│ projects +     │ (+ docked terminal optional)    │ collapsed     │
+│ threads        │                                 │               │
+└────────────────┴─────────────────────────────────┴───────────────┘
 ```
 
 | Pane | Contents |
 | --- | --- |
-| **Left** | App name / search (⌘K), New chat, Projects tree, thread rows + relative time, Settings footer |
-| **Center** | Breadcrumb `project / thread`, actions (open in editor, git), transcript or empty headline, composer, optional bottom terminal |
-| **Right** | “Open a surface” empty state **or** tabs: Changes, Browser, Terminal, Files |
+| **Title bar** | Full-window chrome: macOS traffic lights, sidebar toggle (always visible), search (⌘K), breadcrumb `project / thread`, actions (open in editor, git, surfaces) |
+| **Left** | App name, New chat, Projects tree, thread rows + relative time, Settings footer |
+| **Center** | Transcript or empty headline, composer, optional bottom terminal |
+| **Right** | “Open a surface” empty state **or** Changes, Browser, Files |
 
 Defaults (persist locally):
 
@@ -26,7 +29,7 @@ Defaults (persist locally):
 | Left width | `260px` (min ~200, max ~360) |
 | Right width | `360px` (min ~280); `0` when collapsed to icon rail |
 | Double-click resize rail | Reset to default |
-| Top bar | `52px` (`--workspace-topbar-height`) |
+| Top bar | `38px` (`--workspace-topbar-height`) |
 
 ## Density
 

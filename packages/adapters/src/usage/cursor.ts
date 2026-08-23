@@ -11,6 +11,44 @@ function stringField(...values: unknown[]): string {
   return "";
 }
 
+export interface CursorBubbleFields {
+  inputTokens?: unknown;
+  outputTokens?: unknown;
+  createdAt?: unknown;
+  timestamp?: unknown;
+  model?: unknown;
+  bubbleId?: unknown;
+}
+
+/**
+ * Token counters only. Callers that already extracted fields from SQLite
+ * must not pass the composer blob — those values are multi-megabyte chats.
+ */
+export function cursorUsageFromFields(key: string, fields: CursorBubbleFields): TranscriptUsage | null {
+  const inputTokens = int(fields.inputTokens);
+  const outputTokens = int(fields.outputTokens);
+  if (inputTokens + outputTokens === 0) return null;
+
+  const timestampMs = parseTimestampMs(fields.createdAt) ?? parseTimestampMs(fields.timestamp);
+  if (timestampMs === null) return null;
+
+  const keyParts = key.split(":");
+  const sessionId = keyParts.length >= 2 ? keyParts[1]! : "";
+  const bubbleId = stringField(fields.bubbleId, keyParts.at(-1), key);
+
+  return {
+    provider: "cursor",
+    timestampMs,
+    model: stringField(fields.model) || "cursor",
+    sessionId,
+    inputTokens,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    outputTokens,
+    dedupeKey: bubbleId,
+  };
+}
+
 /**
  * Cursor composer bubbles store native `tokenCount.inputTokens` /
  * `outputTokens`. `key` is `bubbleId:<composerId>:<bubbleId>`.
@@ -26,31 +64,13 @@ export function parseCursorBubble(value: string, key: string): TranscriptUsage |
   if (!rec) return null;
   const tokenCount = asRecord(rec["tokenCount"]);
   if (!tokenCount) return null;
-
-  const inputTokens = int(tokenCount["inputTokens"]) || int(tokenCount["input_tokens"]);
-  const outputTokens = int(tokenCount["outputTokens"]) || int(tokenCount["output_tokens"]);
-  if (inputTokens + outputTokens === 0) return null;
-
-  const timestampMs = parseTimestampMs(rec["createdAt"]) ?? parseTimestampMs(rec["timestamp"]);
-  if (timestampMs === null) return null;
-
   const modelInfo = asRecord(rec["modelInfo"]) ?? {};
-  const model =
-    stringField(rec["modelName"], rec["model"], modelInfo["modelName"], modelInfo["model"]) || "cursor";
-
-  const keyParts = key.split(":");
-  const sessionId = keyParts.length >= 2 ? keyParts[1]! : "";
-  const bubbleId = stringField(rec["bubbleId"], keyParts.at(-1), key);
-
-  return {
-    provider: "cursor",
-    timestampMs,
-    model,
-    sessionId,
-    inputTokens,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    outputTokens,
-    dedupeKey: bubbleId,
-  };
+  return cursorUsageFromFields(key, {
+    inputTokens: tokenCount["inputTokens"] ?? tokenCount["input_tokens"],
+    outputTokens: tokenCount["outputTokens"] ?? tokenCount["output_tokens"],
+    createdAt: rec["createdAt"],
+    timestamp: rec["timestamp"],
+    model: stringField(rec["modelName"], rec["model"], modelInfo["modelName"], modelInfo["model"]),
+    bubbleId: rec["bubbleId"],
+  });
 }

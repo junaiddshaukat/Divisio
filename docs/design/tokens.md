@@ -15,7 +15,7 @@ Apply with `color-scheme: light | dark`. Prefer `oklch` / zinc scales where note
 | `--radius-xl` | `calc(var(--radius) + 4px)` | Composer shell |
 | `--radius-user-message` | `0.8rem` | User bubbles |
 | `--control-radius` | `0.5rem` | Compact controls |
-| `--workspace-topbar-height` | `52px` | Titlebar / drag region |
+| `--workspace-topbar-height` | `38px` | Titlebar / drag region |
 | `--app-scrollbar-width` | `8px` | Visible overlay scrollbars |
 
 ## Light mode (`:root`)

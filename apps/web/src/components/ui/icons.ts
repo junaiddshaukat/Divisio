@@ -39,6 +39,7 @@ export {
   Square as StopIcon,
   Loader as LoadingIcon,
   CircleAlert as ErrorIcon,
+  TriangleAlert as WarningIcon,
   ShieldQuestion as ApprovalIcon,
   ArrowRightLeft as HandoffIcon,
 

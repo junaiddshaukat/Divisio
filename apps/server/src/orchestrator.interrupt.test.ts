@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AdapterRegistry, MockPeerAdapter } from "@divisio/adapters";
+import { AdapterRegistry, MockPeerAdapter, type MockPeerOptions } from "@divisio/adapters";
 import type { DomainEvent } from "@divisio/contracts";
 import { Orchestrator, type Broadcaster } from "./orchestrator.ts";
 import { EventStore } from "./store/log.ts";
@@ -36,12 +36,12 @@ describe("interrupt → stopping (mock peer)", () => {
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  async function setup() {
+  async function setup(options: MockPeerOptions = {}) {
     dir = mkdtempSync(join(tmpdir(), "divisio-interrupt-"));
     // project.create requires an existing path
     writeFileSync(join(dir, ".keep"), "");
     store = new EventStore(join(dir, "state.sqlite"));
-    mock = new MockPeerAdapter({ turnDelayMs: 500 });
+    mock = new MockPeerAdapter({ turnDelayMs: 500, ...options });
     const registry = new AdapterRegistry([mock]);
     const bus = new RecordingBus();
     orchestrator = new Orchestrator(store, registry, bus);
@@ -146,5 +146,44 @@ describe("interrupt → stopping (mock peer)", () => {
     expect(
       bus.eventsLog.flat().some((e) => e.type === "turn.completed" && (e.payload as { turnId: string }).turnId === turnId),
     ).toBe(true);
+  });
+
+  test("snapshot returns in-flight assistant text while a turn is running", async () => {
+    await setup({ immediateDelta: "partial hello" });
+
+    const { project } = await orchestrator.dispatch("project.create", {
+      name: "demo",
+      rootPath: dir,
+    });
+    const { thread } = await orchestrator.dispatch("thread.create", {
+      projectId: project.id,
+      title: "t",
+      provider: "mock",
+    });
+    const { turnId } = await orchestrator.dispatch("turn.send", {
+      threadId: thread.id,
+      text: "slow please",
+    });
+
+    const snap = await orchestrator.dispatch("thread.snapshot", { threadId: thread.id });
+    expect(snap.activeTurnId).toBe(turnId);
+    expect(snap.partial).toEqual({ turnId, text: "partial hello" });
+    expect(snap.messages.some((m) => m.role === "assistant")).toBe(false);
+  });
+
+  test("idle snapshot has no partial text", async () => {
+    await setup();
+    const { project } = await orchestrator.dispatch("project.create", {
+      name: "demo",
+      rootPath: dir,
+    });
+    const { thread } = await orchestrator.dispatch("thread.create", {
+      projectId: project.id,
+      title: "t",
+      provider: "mock",
+    });
+    const snap = await orchestrator.dispatch("thread.snapshot", { threadId: thread.id });
+    expect(snap.activeTurnId).toBeNull();
+    expect(snap.partial).toBeNull();
   });
 });

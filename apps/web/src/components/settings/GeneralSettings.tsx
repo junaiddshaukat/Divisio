@@ -1,11 +1,13 @@
 import { PRODUCT_NAME } from "@divisio/shared/brand";
 import type { ConnectionState } from "../../client.ts";
+import { BrandMark } from "../BrandMark.tsx";
 import { Button } from "../ui/Button.tsx";
 
 interface Props {
   connectionState: ConnectionState;
   /** Clear first-run dismissal and show the welcome flow again. */
   onReplayWelcome?(): void;
+  onReconnect?(): void;
 }
 
 function connectionLabel(state: ConnectionState): string {
@@ -15,7 +17,7 @@ function connectionLabel(state: ConnectionState): string {
 }
 
 /** Product about + environment facts — no fake toggles. */
-export function GeneralSettings({ connectionState, onReplayWelcome }: Props) {
+export function GeneralSettings({ connectionState, onReplayWelcome, onReconnect }: Props) {
   const vibrancy = document.documentElement.classList.contains("desktop-vibrancy");
 
   return (
@@ -24,9 +26,12 @@ export function GeneralSettings({ connectionState, onReplayWelcome }: Props) {
         <h4 className="settings-group-title">About</h4>
         <div className="settings-rows">
           <div className="settings-row">
-            <div className="settings-row-copy">
-              <span className="settings-row-label">{PRODUCT_NAME}</span>
-              <span className="settings-row-meta">Local-first multi-agent command center</span>
+            <div className="settings-about-brand">
+              <BrandMark size={28} />
+              <div className="settings-row-copy">
+                <span className="settings-row-label">{PRODUCT_NAME}</span>
+                <span className="settings-row-meta">Local-first multi-agent command center</span>
+              </div>
             </div>
           </div>
           <div className="settings-row">
@@ -34,6 +39,11 @@ export function GeneralSettings({ connectionState, onReplayWelcome }: Props) {
               <span className="settings-row-label">Daemon</span>
               <span className="settings-row-meta">{connectionLabel(connectionState)}</span>
             </div>
+            {connectionState !== "open" && onReconnect && (
+              <Button variant="ghost" size="sm" onClick={onReconnect}>
+                Retry
+              </Button>
+            )}
           </div>
         </div>
       </div>
