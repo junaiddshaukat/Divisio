@@ -1,6 +1,6 @@
 # Divisio
 
-**Working name — brand TBD.** Local-first command center for the coding agents you already pay for.
+Local-first command center for the coding agents you already pay for.
 
 Divisio is not an AI model and does not sell tokens. It is a control surface: one workspace that drives the CLIs you already run — Claude Code, Codex, Cursor, Grok, Qwen, OpenCode, Gemini, Copilot, Antigravity, plus OpenAI-compatible endpoints you add — with parallel git worktrees, diffs, PRs, terminals, and cross-provider handoff. Each provider keeps its own login.
 
