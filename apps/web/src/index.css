@@ -2836,3 +2836,34 @@ textarea.field.git-commit-field:focus {
 .file-change-more:hover {
   background: var(--surface-hover, rgba(127, 127, 127, 0.08));
 }
+
+/* ------------------------------- queued turns -----------------------------
+ * A message typed while the agent is still working. Shown in place, dimmed and
+ * dashed so it reads as "not yet sent" rather than as part of the conversation.
+ */
+.msg-user.is-queued {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0.62;
+  border: 1px dashed var(--border);
+  background: transparent;
+}
+.msg-queued-text {
+  flex: 1;
+  min-width: 0;
+}
+.msg-queued-cancel {
+  flex: none;
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  color: var(--muted-foreground, var(--foreground));
+  font: inherit;
+  font-size: var(--text-meta);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.msg-queued-cancel:hover {
+  color: var(--foreground);
+}

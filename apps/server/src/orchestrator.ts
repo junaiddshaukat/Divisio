@@ -116,6 +116,14 @@ interface LiveSession {
   /** Epoch ms of the last turn activity. Drives idle reaping. */
   lastUsedAt: number;
   /**
+   * Messages accepted while a turn was running, in the order they were sent.
+   *
+   * People type their next instruction while watching the agent work.
+   * Rejecting that was technically defensible and read as broken, so a message
+   * sent mid-turn waits here and runs when the current one settles.
+   */
+  queued: Array<{ turnId: string; text: string; model?: string }>;
+  /**
    * Files the provider said it wrote, per turn.
    *
    * Only a fallback: a git checkpoint is the better record because it carries
@@ -146,7 +154,7 @@ export const ORCHESTRATOR_COMMANDS = [
   "project.create", "project.list", "project.clone", "project.remove",
   "thread.create", "thread.rename", "thread.delete", "thread.snapshot", "thread.setPermissionMode", "thread.setProvider", "thread.handoff",
   "thread.commit", "thread.diff", "thread.gitStatus", "thread.push",
-  "turn.send", "turn.interrupt", "turn.diff", "turn.restore",
+  "turn.send", "turn.interrupt", "turn.dequeue", "turn.diff", "turn.restore",
   "approval.respond", "provider.detect", "provider.updates", "provider.models", "customProvider.list", "customProvider.upsert", "customProvider.delete",
   "toolchain.status", "stats.activity", "stats.usage",
   "lane.create", "lane.list", "lane.archive", "lane.diff", "lane.openPr",
@@ -225,6 +233,8 @@ export class Orchestrator {
         return await this.setProvider(payload);
       case "turn.send":
         return await this.sendTurn(payload);
+      case "turn.dequeue":
+        return this.dequeueTurn(payload);
       case "turn.interrupt":
         return await this.interrupt(payload);
       case "turn.diff":
@@ -1360,6 +1370,7 @@ export class Orchestrator {
       stoppingTurnId: null,
       cancelledTurns: new Set(),
       lastUsedAt: Date.now(),
+      queued: [],
       editedByTurn: new Map(),
     };
     this.sessions.set(threadId, live);
@@ -1389,6 +1400,15 @@ export class Orchestrator {
     if (images.length > 8) {
       throw new CommandError("invalid_payload", "at most 8 images per turn");
     }
+    if (images.length > 0) {
+      const live = this.sessions.get(p.threadId);
+      if (live?.activeTurnId) {
+        // Images are written into the working tree as part of sending. Holding
+        // them in memory until the queue drains is a different feature; saying
+        // so beats silently dropping the attachment.
+        throw new CommandError("session_busy", "finish the current turn before sending images");
+      }
+    }
 
     // Validate before anything is mutated. Rejecting after `activeTurnId` was
     // set left the thread permanently busy with no turn behind it.
@@ -1396,7 +1416,22 @@ export class Orchestrator {
 
     const session = await this.ensureSession(p.threadId);
     if (session.activeTurnId) {
-      throw new CommandError("session_busy", "a turn is already running on this thread");
+      // Queue rather than reject. The id is minted now so the message can be
+      // shown in the transcript and cancelled before it ever runs.
+      const queuedTurnId = newId("trn");
+      session.queued.push({
+        turnId: queuedTurnId,
+        text: p.text.trim(),
+        ...(requestedModel ? { model: requestedModel } : {}),
+      });
+      this.commit([
+        {
+          type: "turn.queued",
+          threadId: p.threadId,
+          payload: { threadId: p.threadId, turnId: queuedTurnId, text: p.text.trim() },
+        },
+      ]);
+      return { turnId: queuedTurnId, queued: true };
     }
 
     const thread = this.store.getThread(p.threadId);
@@ -1490,6 +1525,119 @@ export class Orchestrator {
     return { turnId };
   }
 
+  /** Drop a message that is still waiting to run. */
+  private dequeueTurn(p: CommandPayloads["turn.dequeue"]): CommandResults["turn.dequeue"] {
+    const session = this.sessions.get(p.threadId);
+    if (!session) return { removed: false };
+    const before = session.queued.length;
+    session.queued = session.queued.filter((q) => q.turnId !== p.turnId);
+    if (session.queued.length === before) return { removed: false };
+    this.commit([
+      { type: "turn.dequeued", threadId: p.threadId, payload: { threadId: p.threadId, turnId: p.turnId } },
+    ]);
+    return { removed: true };
+  }
+
+  /**
+   * Start the next queued message, if the thread is free.
+   *
+   * Runs after a turn settles. A failure to start is reported against the
+   * queued turn's own id and the queue keeps moving — one bad message must not
+   * strand everything typed behind it.
+   */
+  private async drainQueue(threadId: string): Promise<void> {
+    for (;;) {
+      const session = this.sessions.get(threadId);
+      if (!session || session.activeTurnId) return;
+      const next = session.queued.shift();
+      if (!next) return;
+
+      try {
+        await this.startQueuedTurn(threadId, session, next);
+        return;
+      } catch (err) {
+        this.commit([
+          {
+            type: "turn.failed",
+            threadId,
+            payload: {
+              threadId,
+              turnId: next.turnId,
+              code: "send_failed",
+              message: err instanceof Error ? err.message : String(err),
+            },
+          },
+        ]);
+        // Try the next one rather than leaving the rest stuck behind it.
+      }
+    }
+  }
+
+  private async startQueuedTurn(
+    threadId: string,
+    session: LiveSession,
+    queued: { turnId: string; text: string; model?: string },
+  ): Promise<void> {
+    const thread = this.store.getThread(threadId);
+    if (!thread) throw new CommandError("not_found", `no such thread: ${threadId}`);
+    const project = this.store.getProject(thread.projectId);
+
+    const turnId = queued.turnId;
+    session.lastUsedAt = Date.now();
+    session.activeTurnId = turnId;
+    session.stoppingTurnId = null;
+    session.pendingApprovals.clear();
+    session.cancelledTurns.clear();
+
+    this.commit([
+      {
+        type: "turn.started",
+        threadId,
+        payload: { threadId, turnId, provider: thread.provider },
+      },
+      {
+        type: "turn.message",
+        threadId,
+        payload: { threadId, turnId, role: "user", text: queued.text },
+      },
+    ]);
+
+    if (project) {
+      const pre = await captureCheckpoint(this.workdirFor(thread), threadId, turnId, "pre", {
+        skipIfExists: true,
+      });
+      this.commit([
+        {
+          type: "checkpoint.captured",
+          threadId,
+          payload: {
+            threadId,
+            turnId,
+            phase: "pre",
+            ref: pre.ref,
+            sha: pre.sha,
+            status: pre.status,
+            ...(pre.detail ? { detail: pre.detail } : {}),
+          },
+        },
+      ]);
+    }
+
+    if (session.cancelledTurns.has(turnId)) {
+      session.cancelledTurns.delete(turnId);
+      return;
+    }
+
+    const adapter = this.registry.get(session.provider);
+    const model = (validateModel(queued.model) ?? validateModel(thread.model)) ?? undefined;
+    try {
+      await adapter!.sendTurn(session.handle, { turnId, text: queued.text, ...(model ? { model } : {}) });
+    } catch (err) {
+      session.activeTurnId = null;
+      throw err;
+    }
+  }
+
   private async interrupt(p: CommandPayloads["turn.interrupt"]): Promise<CommandResults["turn.interrupt"]> {
     const session = this.sessions.get(p.threadId);
     if (!session) throw new CommandError("not_found", `no live session for thread ${p.threadId}`);
@@ -1503,6 +1651,10 @@ export class Orchestrator {
     // Claim the turn before any await. If the adapter has not been handed it
     // yet, `sendTurn` sees this and refuses to dispatch after its checkpoint.
     session.cancelledTurns.add(p.turnId);
+    // Take the queue before asking the adapter to stop. Stopping emits
+    // `turn.completed`, which drains the queue — so anything still sitting here
+    // would start the very work the user just cancelled.
+    const abandoned = session.queued.splice(0);
     this.flushPartialAssistant(session, p.threadId, p.turnId);
 
     const adapter = this.registry.get(session.provider);
@@ -1516,6 +1668,11 @@ export class Orchestrator {
       session.stoppingTurnId = null;
       session.pendingApprovals.clear();
       this.commit([
+        ...abandoned.map((q) => ({
+          type: "turn.dequeued" as const,
+          threadId: p.threadId,
+          payload: { threadId: p.threadId, turnId: q.turnId },
+        })),
         {
           type: "turn.failed",
           threadId: p.threadId,
@@ -1531,8 +1688,14 @@ export class Orchestrator {
     }
     session.activeTurnId = null;
     session.pendingApprovals.clear();
+
     this.commit([
       { type: "turn.interrupted", threadId: p.threadId, payload: { threadId: p.threadId, turnId: p.turnId } },
+      ...abandoned.map((q) => ({
+        type: "turn.dequeued" as const,
+        threadId: p.threadId,
+        payload: { threadId: p.threadId, turnId: q.turnId },
+      })),
     ]);
     return {};
   }
@@ -1897,6 +2060,9 @@ export class Orchestrator {
         void this.finalizeCheckpoints(threadId, event.turnId).catch((err) => {
           log.warn("checkpoint finalize failed", { threadId, turnId: event.turnId, err: String(err) });
         });
+        void this.drainQueue(threadId).catch((err) => {
+          log.warn("queue drain failed", { threadId, err: String(err) });
+        });
         return;
 
       case "status":
@@ -1929,6 +2095,11 @@ export class Orchestrator {
         if (session) {
           session.activeTurnId = null;
           session.pendingApprovals.clear();
+        }
+        if (turnId) {
+          void this.drainQueue(threadId).catch((err) => {
+            log.warn("queue drain failed", { threadId, err: String(err) });
+          });
         }
         const events: NewEvent[] = [];
         if (turnId) {

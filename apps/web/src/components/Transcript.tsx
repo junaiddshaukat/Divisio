@@ -9,7 +9,7 @@ import { CheckIcon, CopyIcon } from "./ui/icons.ts";
 import { WorkEntries, type WorkEntry } from "./WorkEntries.tsx";
 
 export interface Bubble {
-  kind: "user" | "assistant" | "streaming" | "work" | "thinking";
+  kind: "user" | "assistant" | "streaming" | "work" | "thinking" | "queued";
   work?: WorkEntry[];
   text: string;
   key: string;
@@ -27,10 +27,13 @@ export function Transcript({
   bubbles,
   onOpenChanges,
   onOpenDiff,
+  onCancelQueued,
 }: {
   bubbles: Bubble[];
   onOpenChanges?(turnId: string, path?: string): void;
   onOpenDiff?(turnId: string): void;
+  onCancelQueued?(turnId: string): void;
+  onCancelQueued?(turnId: string): void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -57,6 +60,21 @@ export function Transcript({
           // their own markdown would mangle pasted snippets.
           if (b.kind === "user") return <div key={b.key} className="msg-user">{b.text}</div>;
           if (b.kind === "work") return <WorkEntries key={b.key} entries={b.work ?? []} />;
+          if (b.kind === "queued") {
+            return (
+              <div key={b.key} className="msg-user is-queued">
+                <span className="msg-queued-text">{b.text}</span>
+                <button
+                  type="button"
+                  className="msg-queued-cancel"
+                  title="Remove this message from the queue"
+                  onClick={() => b.turnId && onCancelQueued?.(b.turnId)}
+                >
+                  Cancel
+                </button>
+              </div>
+            );
+          }
           if (b.kind === "thinking") {
             return (
               <div key={b.key} className="msg-thinking">
@@ -97,6 +115,7 @@ const AssistantMessage = memo(function AssistantMessage({
   changedFiles,
   onOpenChanges,
   onOpenDiff,
+  onCancelQueued,
 }: {
   text: string;
   turnId?: string;

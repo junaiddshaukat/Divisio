@@ -30,6 +30,10 @@ export const EVENT_VERSIONS = {
    */
   "session.resume_outcome": 1,
   "turn.started": 1,
+  /** A message accepted while another turn was running, waiting its turn. */
+  "turn.queued": 1,
+  /** A queued message removed before it ran. */
+  "turn.dequeued": 1,
   "turn.message": 1,
   "turn.completed": 1,
   "turn.interrupted": 1,
@@ -129,6 +133,12 @@ export interface EventPayloads {
     detail?: string;
   };
   "turn.started": { threadId: string; turnId: string; provider: string };
+  /**
+   * Accepted while a turn was running. The id is minted now so the message can
+   * be shown, tracked, and cancelled before it ever reaches a provider.
+   */
+  "turn.queued": { threadId: string; turnId: string; text: string };
+  "turn.dequeued": { threadId: string; turnId: string };
   /** A complete message. Streaming deltas are transport-only and never stored. */
   "turn.message": { threadId: string; turnId: string; role: TurnRole; text: string };
   "turn.completed": { threadId: string; turnId: string };

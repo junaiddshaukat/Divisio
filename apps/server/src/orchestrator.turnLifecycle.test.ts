@@ -164,3 +164,122 @@ describe("warm session management", () => {
     expect(turnId).toBeString();
   });
 });
+
+/**
+ * People type their next instruction while watching the agent work. Rejecting
+ * that was technically defensible and read as broken.
+ */
+describe("sending while a turn is running", () => {
+  let dir: string;
+  let store: EventStore;
+  let orchestrator: Orchestrator;
+  let bus: RecordingBus;
+
+  afterEach(async () => {
+    await orchestrator?.shutdown();
+    await Bun.sleep(50);
+    store?.close();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function setup(turnDelayMs = 300) {
+    dir = mkdtempSync(join(tmpdir(), "divisio-queue-"));
+    writeFileSync(join(dir, ".keep"), "");
+    store = new EventStore(join(dir, "state.sqlite"));
+    bus = new RecordingBus();
+    const mock = new MockPeerAdapter({ turnDelayMs });
+    orchestrator = new Orchestrator(store, new AdapterRegistry([mock]), bus);
+    const { project } = await orchestrator.dispatch("project.create", { name: "d", rootPath: dir });
+    const { thread } = await orchestrator.dispatch("thread.create", {
+      projectId: project.id,
+      title: "t",
+      provider: mock.kind,
+    });
+    return thread;
+  }
+
+  const payloadsOf = (type: string) =>
+    bus.eventsLog.flat().filter((e) => e.type === type).map((e) => e.payload as Record<string, unknown>);
+
+  test("a message sent mid-turn is queued rather than refused", async () => {
+    const thread = await setup();
+    const first = await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "one" });
+    const second = await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "two" });
+
+    expect(second.queued).toBe(true);
+    expect(second.turnId).not.toBe(first.turnId);
+    expect(payloadsOf("turn.queued").map((p) => p.text)).toEqual(["two"]);
+  });
+
+  test("the queued message runs once the current turn settles", async () => {
+    const thread = await setup(150);
+    await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "one" });
+    const queued = await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "two" });
+
+    await Bun.sleep(700);
+    const started = payloadsOf("turn.started").map((p) => p.turnId);
+    expect(started).toContain(queued.turnId);
+    // And it keeps the id it was given while waiting, so the UI can track it.
+    const userText = payloadsOf("turn.message")
+      .filter((p) => p.role === "user")
+      .map((p) => p.text);
+    expect(userText).toEqual(["one", "two"]);
+  });
+
+  test("queue order is preserved", async () => {
+    const thread = await setup(120);
+    await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "one" });
+    await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "two" });
+    await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "three" });
+
+    await Bun.sleep(1200);
+    const userText = payloadsOf("turn.message")
+      .filter((p) => p.role === "user")
+      .map((p) => p.text);
+    expect(userText).toEqual(["one", "two", "three"]);
+  });
+
+  test("a queued message can be cancelled before it runs", async () => {
+    const thread = await setup();
+    await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "one" });
+    const queued = await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "two" });
+
+    const res = await orchestrator.dispatch("turn.dequeue", {
+      threadId: thread.id,
+      turnId: queued.turnId,
+    });
+    expect(res.removed).toBe(true);
+
+    await Bun.sleep(600);
+    const userText = payloadsOf("turn.message")
+      .filter((p) => p.role === "user")
+      .map((p) => p.text);
+    expect(userText).toEqual(["one"]);
+  });
+
+  test("Stop abandons what was typed behind it", async () => {
+    const thread = await setup(500);
+    const first = await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "one" });
+    await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "two" });
+
+    await orchestrator.dispatch("turn.interrupt", { threadId: thread.id, turnId: first.turnId });
+    await Bun.sleep(500);
+
+    // Draining after an explicit Stop would start the work just cancelled.
+    const userText = payloadsOf("turn.message")
+      .filter((p) => p.role === "user")
+      .map((p) => p.text);
+    expect(userText).toEqual(["one"]);
+    expect(payloadsOf("turn.dequeued")).toHaveLength(1);
+  });
+
+  test("cancelling an unknown id reports that nothing was removed", async () => {
+    const thread = await setup();
+    await orchestrator.dispatch("turn.send", { threadId: thread.id, text: "one" });
+    const res = await orchestrator.dispatch("turn.dequeue", {
+      threadId: thread.id,
+      turnId: "trn_nope",
+    });
+    expect(res.removed).toBe(false);
+  });
+});

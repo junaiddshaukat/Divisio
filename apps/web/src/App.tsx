@@ -230,6 +230,8 @@ export function App() {
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
   /** Stop was pressed; flip the UI now rather than after the daemon replies. */
   const [stopping, setStopping] = useState(false);
+  /** Messages accepted while a turn was running, still waiting to start. */
+  const [queuedTurns, setQueuedTurns] = useState<Array<{ turnId: string; text: string }>>([]);
   /** Pending coalesced streaming commit. See `onDelta`. */
   const streamingFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [work, setWork] = useState<WorkEntry[]>([]);
@@ -476,6 +478,9 @@ export function App() {
       streamingByThreadRef.current.delete(threadId);
       setStreaming(null);
     }
+    // The queue lives on the live session, not in the log, so a thread that is
+    // being opened fresh has nothing pending by definition.
+    setQueuedTurns([]);
     const next = new Map<string, DiffFileEntry[]>();
     for (const d of snap.diffs) {
       if (d.files.length > 0) next.set(d.turnId, d.files);
@@ -510,11 +515,23 @@ export function App() {
           }
           break;
         }
+        case "turn.queued":
+          if (p["threadId"] === activeIdRef.current) {
+            setQueuedTurns((q) => [...q, { turnId: String(p["turnId"]), text: String(p["text"]) }]);
+            setPendingUserText(null);
+          }
+          break;
+        case "turn.dequeued":
+          if (p["threadId"] === activeIdRef.current) {
+            setQueuedTurns((q) => q.filter((t) => t.turnId !== p["turnId"]));
+          }
+          break;
         case "turn.started":
           if (p["threadId"] === activeIdRef.current) {
             setActiveTurn(String(p["turnId"]));
             setWork([]);
             setPendingApproval(null);
+            setQueuedTurns((q) => q.filter((t) => t.turnId !== p["turnId"]));
           }
           break;
         case "turn.completed":
@@ -856,6 +873,18 @@ export function App() {
     if (!client || state !== "open") return;
     client.subscribe(subscriptionThreadIds(activeId, threads));
   }, [activeId, threads, state, token]);
+
+  const cancelQueued = useCallback(async (turnId: string) => {
+    const client = clientRef.current;
+    if (!client || !activeIdRef.current) return;
+    // Drop it locally first; the daemon confirms with `turn.dequeued`.
+    setQueuedTurns((q) => q.filter((t) => t.turnId !== turnId));
+    try {
+      await client.send("turn.dequeue", { threadId: activeIdRef.current, turnId });
+    } catch {
+      // Already started or gone — the turn events will correct the list.
+    }
+  }, []);
 
   const send = async (
     text: string,
@@ -1600,6 +1629,12 @@ export function App() {
         ? { changedFiles: diffByTurn.get(m.turnId) }
         : {}),
     })),
+    ...queuedTurns.map((q) => ({
+      kind: "queued" as const,
+      text: q.text,
+      key: `queued:${q.turnId}`,
+      turnId: q.turnId,
+    })),
     ...(work.length > 0 ? [{ kind: "work" as const, text: "", key: "work", work }] : []),
     ...(streaming && streaming.text.length > 0
       ? [{ kind: "streaming" as const, text: streaming.text, key: "streaming" }]
@@ -1613,7 +1648,7 @@ export function App() {
           },
         ]
       : []),
-  ], [messagesWithPending, diffByTurn, work, streaming, showThinking, handoffBusy]);
+  ], [messagesWithPending, diffByTurn, work, streaming, showThinking, handoffBusy, queuedTurns]);
 
   // Stable identity: an inline arrow here would defeat the transcript's row
   // memoization on every render.
@@ -1914,6 +1949,7 @@ export function App() {
                     bubbles={bubbles}
                     onOpenChanges={openChanges}
                     onOpenDiff={openTurnDiff}
+                    onCancelQueued={cancelQueued}
                   />
                   {error && looksLikeUsageLimit({ message: error }) && activeThread ? (
                     <UsageLimitBanner

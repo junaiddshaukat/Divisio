@@ -36,6 +36,8 @@ export interface CommandPayloads {
     images?: Array<{ name: string; mimeType: string; dataBase64: string }>;
   };
   "turn.interrupt": { threadId: string; turnId: string };
+  /** Drop a message that is waiting to run. */
+  "turn.dequeue": { threadId: string; turnId: string };
   "turn.diff": { threadId: string; turnId: string };
   /** Restores the working tree to the state before or after a turn. */
   "turn.restore": { threadId: string; turnId: string; phase: "pre" | "post" };
@@ -256,8 +258,10 @@ export interface CommandResults {
   };
   "thread.setPermissionMode": { thread: ThreadView };
   "thread.setProvider": { thread: ThreadView };
-  "turn.send": { turnId: string };
+  /** `queued` when another turn was running and this one is waiting behind it. */
+  "turn.send": { turnId: string; queued?: boolean };
   "turn.interrupt": Record<string, never>;
+  "turn.dequeue": { removed: boolean };
   "turn.diff": {
     turnId: string;
     files: DiffFileEntry[];

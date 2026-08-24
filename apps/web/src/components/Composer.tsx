@@ -120,7 +120,13 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canSend = (!!text.trim() || images.length > 0) && !busy && !(landing && (!projects || projects.length === 0));
+  // Text may be sent while a turn runs — it queues behind it. Images may not:
+  // they are written into the working tree as part of sending, so they wait.
+  const blockedByTurn = busy && images.length > 0;
+  const canSend =
+    (!!text.trim() || images.length > 0) &&
+    !blockedByTurn &&
+    !(landing && (!projects || projects.length === 0));
   const resumeNote = vendorResumeNote({
     hasHistory,
     sessionResume: capabilityOn(providers.find((p) => p.kind === provider)?.capabilities, "sessionResume"),
@@ -270,7 +276,7 @@ export function Composer({
             onChange={onPermissionMode}
           />
           <span className="composer-spacer" />
-          {busy ? (
+          {busy && (
             <Button
               variant="danger"
               size="sm"
@@ -280,17 +286,19 @@ export function Composer({
             >
               {stopping ? "Stopping…" : "Stop"}
             </Button>
-          ) : (
-            <button
-              type="button"
-              className="composer-send"
-              disabled={!canSend}
-              aria-label="Send"
-              onClick={submit}
-            >
-              <SendIcon />
-            </button>
           )}
+          {/* Send stays available while a turn runs so the next instruction can
+              be queued — Stop is beside it rather than in its place. */}
+          <button
+            type="button"
+            className="composer-send"
+            disabled={!canSend}
+            aria-label={busy ? "Queue this message" : "Send"}
+            title={busy ? "Send when the current turn finishes" : undefined}
+            onClick={submit}
+          >
+            <SendIcon />
+          </button>
         </div>
       </div>
       {resumeNote && <p className="composer-resume-note">{resumeNote}</p>}
