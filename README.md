@@ -11,7 +11,7 @@ runs Claude Code, Codex, Cursor, Grok and five more side by side — under your 
 CLI logins, on your own machine.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/macOS-11%2B-black.svg)](#install)
+[![Platform](https://img.shields.io/badge/macOS%2011%2B-Apple%20silicon-black.svg)](#install)
 [![Built with Bun](https://img.shields.io/badge/built%20with-Bun-black.svg)](https://bun.com)
 
 [Download](https://github.com/junaiddshaukat/Divisio/releases/latest) ·
@@ -48,7 +48,7 @@ CLIs do not give you on their own:
 ## Install
 
 **Download the app** — [latest release](https://github.com/junaiddshaukat/Divisio/releases/latest).
-Signed and notarized, Apple silicon and Intel. The daemon is compiled into the
+Signed and notarized, Apple silicon, macOS 11+. The daemon is compiled into the
 `.app`, so there is no runtime to install and nothing left running afterwards.
 
 Then install at least one agent CLI and sign in to it. Divisio detects what is on
